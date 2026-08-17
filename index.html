@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<title>G.K.IO</title>
+<script>
+// Aplica o tema salvo de forma síncrona, antes do primeiro paint,
+// para evitar o "flash" de tema claro/cor padrão. A lógica completa
+// (com reatividade) vive em js/theme.js.
+(function () {
+  try {
+    var raw = localStorage.getItem('gkio-theme-prefs');
+    var prefs = raw ? JSON.parse(raw) : {};
+    var mode = prefs.mode || 'light';
+    if (mode === 'auto') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', mode);
+    var accents = {
+      teal: { a: '#1F6F78', s: '#16545C', so: 'rgba(31,111,120,0.12)', g: 'rgba(31,111,120,0.25)' },
+      indigo: { a: '#4C5FD5', s: '#3945A8', so: 'rgba(76,95,213,0.12)', g: 'rgba(76,95,213,0.25)' },
+      rose: { a: '#C24868', s: '#9C3550', so: 'rgba(194,72,104,0.12)', g: 'rgba(194,72,104,0.25)' },
+      amber: { a: '#B9812E', s: '#8F6221', so: 'rgba(185,129,46,0.12)', g: 'rgba(185,129,46,0.25)' },
+      emerald: { a: '#22916A', s: '#186F51', so: 'rgba(34,145,106,0.12)', g: 'rgba(34,145,106,0.25)' },
+      violet: { a: '#7C4FC2', s: '#5F3A98', so: 'rgba(124,79,194,0.12)', g: 'rgba(124,79,194,0.25)' },
+    };
+    var acc = accents[prefs.accent] || accents.teal;
+    var root = document.documentElement.style;
+    root.setProperty('--gk-accent', acc.a);
+    root.setProperty('--gk-accent-strong', acc.s);
+    root.setProperty('--gk-accent-soft', acc.so);
+    root.setProperty('--gk-accent-glow', acc.g);
+  } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
+})();
+</script>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ======================= AUTENTICAÇÃO ======================= -->
+<div id="gk-auth">
+  <div class="gk-auth-card">
+    <div class="gk-auth-logo">
+      <div class="gk-mark">GK</div>
+      <div class="gk-wordmark">G.K<span>.IO</span></div>
+    </div>
+    <h2 id="gk-auth-title">Entrar no G.K.IO</h2>
+    <p class="gk-modal-sub" id="gk-auth-sub">Bem-vindo de volta.</p>
+    <form id="gk-auth-form">
+      <div class="gk-field" id="gk-auth-username-field" style="display:none;">
+        <label>Nome de usuário</label>
+        <input type="text" id="gk-auth-username" autocomplete="username" placeholder="seu-nome">
+      </div>
+      <div class="gk-field">
+        <label>E-mail</label>
+        <input type="email" id="gk-auth-email" autocomplete="email" required placeholder="voce@email.com">
+      </div>
+      <div class="gk-field">
+        <label>Senha</label>
+        <input type="password" id="gk-auth-password" autocomplete="current-password" required placeholder="••••••••">
+        <div class="gk-error" id="gk-auth-error"></div>
+      </div>
+      <button type="submit" class="gk-btn gk-btn-primary gk-btn-block" id="gk-auth-submit">Entrar</button>
+    </form>
+    <p style="text-align:center;margin-top:14px;font-size:13px;color:var(--gk-gray-500);cursor:pointer;" id="gk-auth-mode-toggle">Não tem conta? Criar conta</p>
+  </div>
+</div>
+
+<!-- ======================= APP SHELL ======================= -->
+<div id="gk-app">
+
+  <!-- Painel de navegação (rail de servidores + sidebar) — em telas
+       de smartphone vira uma gaveta deslizante, aberta pelo botão
+       de menu (☰) no topbar. -->
+  <div class="gk-nav-drawer" id="gk-nav-drawer">
+
+  <!-- Rail de servidores -->
+  <div class="gk-rail">
+    <div class="gk-rail-item gk-active" id="gk-dm-rail-item" title="Mensagens diretas">
+      <div class="gk-rail-pill"></div>
+      <span style="font-size:18px;">&#9993;</span>
+    </div>
+    <div class="gk-rail-divider"></div>
+    <div id="gk-rail-servers"></div>
+    <div class="gk-server-menu-wrap">
+      <div class="gk-rail-item gk-add" id="gk-add-server-btn" title="Adicionar servidor">+</div>
+      <div class="gk-server-menu" id="gk-server-menu">
+        <button id="gk-create-server-btn">➕ Criar servidor</button>
+        <button id="gk-join-server-btn">🔑 Entrar com convite</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar (canais ou DMs) -->
+  <div class="gk-sidebar">
+    <div class="gk-sidebar-header">
+      <span id="gk-sidebar-header-title">Mensagens diretas</span>
+      <div style="display:flex;gap:2px;">
+        <button id="gk-add-friend-btn" title="Adicionar amigo">👤+</button>
+        <button id="gk-server-settings-btn" title="Convidar para o servidor" style="display:none;">🔗</button>
+      </div>
+    </div>
+    <div class="gk-sidebar-body" id="gk-sidebar-body"></div>
+    <div class="gk-mini-profile" id="gk-mini-profile">
+      <div class="gk-avatar gk-sz-32" id="gk-mini-avatar-wrap" data-status="online">
+        <img id="gk-mini-avatar" src="">
+      </div>
+      <div>
+        <div class="gk-name" id="gk-mini-name">—</div>
+        <div class="gk-status-text" id="gk-mini-status">—</div>
+      </div>
+      <div class="gk-mini-actions">
+        <button id="gk-status-online" title="Online">🟢</button>
+        <button id="gk-status-idle" title="Ausente">🟡</button>
+        <button id="gk-status-dnd" title="Não perturbe">🔴</button>
+        <button id="gk-settings-btn" title="Configurações">⚙️</button>
+        <button id="gk-logout-btn" title="Sair">⏻</button>
+      </div>
+    </div>
+  </div>
+
+  </div>
+  <!-- Fundo escurecido atrás das gavetas móveis (nav e membros) -->
+  <div class="gk-mobile-backdrop" id="gk-mobile-backdrop"></div>
+
+  <!-- Área principal de chat -->
+  <div class="gk-main">
+    <div class="gk-topbar">
+      <button class="gk-icon-btn gk-mobile-menu-btn" id="gk-mobile-menu-btn" title="Menu" style="display:none;">☰</button>
+      <span class="gk-title" id="gk-topbar-title">Selecione uma conversa</span>
+      <span class="gk-subtitle" id="gk-topbar-subtitle"></span>
+      <div class="gk-spacer"></div>
+      <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;">📞</button>
+      <button class="gk-icon-btn" id="gk-video-call-btn" title="Chamada de vídeo" style="display:none;">🎥</button>
+      <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;">👥</button>
+    </div>
+    <div class="gk-messages" id="gk-messages"></div>
+    <div class="gk-composer">
+      <div class="gk-composer-box">
+        <button id="gk-attach-btn" title="Anexar mídia">📎</button>
+        <input type="file" id="gk-file-input" style="display:none;">
+        <textarea id="gk-composer-input" rows="1" placeholder="Escreva uma mensagem..." enterkeyhint="send"></textarea>
+        <button id="gk-emoji-btn" title="Emojis, emojis personalizados e GIFs">😊</button>
+        <button class="gk-send" id="gk-send-btn" title="Enviar">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Painel de membros -->
+  <div class="gk-members" id="gk-members" style="display:none;"></div>
+</div>
+
+<!-- ======================= MODAL GENÉRICO ======================= -->
+<div class="gk-overlay" id="gk-generic-modal-overlay">
+  <div class="gk-modal" id="gk-generic-modal"></div>
+</div>
+
+<!-- ======================= CONFIGURAÇÕES ======================= -->
+<div class="gk-overlay" id="gk-settings-overlay">
+  <div class="gk-settings-shell" id="gk-settings-shell">
+    <div class="gk-settings-nav" id="gk-settings-nav"></div>
+    <div class="gk-settings-content" id="gk-settings-content"></div>
+    <button class="gk-settings-close" id="gk-settings-close" title="Fechar">✕</button>
+  </div>
+</div>
+
+<!-- ======================= CHAMADA ======================= -->
+<div class="gk-call-bar" id="gk-call-bar">
+  <span class="gk-call-label" id="gk-call-bar-label">Em chamada</span>
+  <button id="gk-mute-btn" title="Mutar/desmutar">🎤</button>
+  <button id="gk-screenshare-btn" title="Compartilhar tela">🖥️</button>
+  <button class="gk-hangup" id="gk-hangup-btn" title="Encerrar">☎</button>
+</div>
+<div class="gk-call-video-grid" id="gk-call-video-grid"></div>
+<div class="gk-screenshare-grid" id="gk-screenshare-grid"></div>
+<div id="gk-incoming-call-toast" style="position:fixed;top:calc(16px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:410;display:none;"></div>
+
+<!-- ======================= TOASTS ======================= -->
+<div id="gk-toast-stack"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

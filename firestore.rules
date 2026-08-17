@@ -1,0 +1,127 @@
+rules_version = '2';
+
+// ============================================================
+// G.K.IO — Regras de segurança do Firestore (ponto de partida)
+// Cole isto em: Console do Firebase > Firestore Database > Regras.
+// São regras razoáveis para o MVP/uso com amigos — antes de um
+// lançamento público mais amplo, revise com mais rigor (ex.:
+// validação de schema de cada campo, rate limiting via App Check).
+// ============================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return request.auth.uid == uid; }
+    function isServerMember(serverId) {
+      return request.auth.uid in get(/databases/$(database)/documents/servers/$(serverId)).data.memberIds;
+    }
+    // Edição de mensagem: só o autor, e só pode alterar 'content' e 'editedAt'
+    // (autorId, createdAt e anexos ficam travados).
+    function isValidMessageEdit() {
+      return resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'editedAt']);
+    }
+
+    // ---------- Usuários e perfil ----------
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow write: if isSelf(uid);
+
+      match /socialLinks/{linkId} {
+        allow read: if signedIn();
+        allow write: if isSelf(uid);
+      }
+    }
+
+    // ---------- Amizades ----------
+    match /friendships/{friendshipId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.userIds;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.userIds;
+      allow update: if signedIn() && request.auth.uid in resource.data.userIds;
+    }
+
+    // ---------- Mensagens diretas ----------
+    match /directMessages/{dmId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.participantIds;
+      allow update: if signedIn() && request.auth.uid in resource.data.participantIds;
+
+      match /messages/{msgId} {
+        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds;
+        allow create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
+          && request.resource.data.authorId == request.auth.uid;
+        allow update: if signedIn() && isValidMessageEdit();
+      }
+    }
+
+    // ---------- Servidores ----------
+    match /servers/{serverId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == request.resource.data.ownerId;
+      allow update: if signedIn() && (request.auth.uid in resource.data.memberIds || request.auth.uid in request.resource.data.memberIds);
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
+
+      match /categories/{catId} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && isServerMember(serverId);
+      }
+
+      match /channels/{channelId} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && isServerMember(serverId);
+
+        match /messages/{msgId} {
+          allow read: if signedIn() && isServerMember(serverId);
+          allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
+          allow update: if signedIn() && isServerMember(serverId) && isValidMessageEdit();
+        }
+
+        match /voicePresence/{uid} {
+          allow read: if signedIn() && isServerMember(serverId);
+          allow write: if signedIn() && isSelf(uid);
+        }
+
+        match /voiceSignaling/{pairId} {
+          allow read, write: if signedIn() && isServerMember(serverId);
+
+          match /candidates/{candId} {
+            allow read, write: if signedIn() && isServerMember(serverId);
+          }
+        }
+      }
+
+      match /members/{uid} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && (isSelf(uid) || request.auth.uid == get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId);
+      }
+    }
+
+    // ---------- Convites ----------
+    match /invites/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy;
+      allow update: if signedIn();
+    }
+
+    // ---------- Chamadas (DM) ----------
+    match /calls/{callId} {
+      allow read: if signedIn() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.calleeId);
+      allow create: if signedIn() && request.auth.uid == request.resource.data.callerId;
+      allow update: if signedIn() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.calleeId);
+
+      match /candidates/{candId} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    // ---------- Emojis personalizados (biblioteca compartilhada) ----------
+    match /customEmojis/{emojiId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uploaderId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uploaderId == request.auth.uid;
+    }
+  }
+}

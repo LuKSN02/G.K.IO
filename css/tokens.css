@@ -1,0 +1,148 @@
+/* ============================================================
+   G.K.IO — Design Tokens
+   Paleta: Ice White / Gray, com um único accent "glacial teal".
+   Tipografia: Space Grotesk (display) + Inter (corpo) + IBM Plex Mono (dados/status)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  /* --- Superfícies --- */
+  --gk-bg: #F5F8F9;              /* Ice White — fundo geral */
+  --gk-surface: #FFFFFF;         /* Cards, painéis, modais */
+  --gk-surface-sunken: #EEF2F4;  /* Áreas recuadas (input bar, sidebar de canais) */
+  --gk-rail: #FAFBFC;            /* Rail de servidores (mais claro que o bg) */
+
+  /* --- Cinzas (bordas, texto, ícones) --- */
+  --gk-gray-100: #E6EAEC;
+  --gk-gray-200: #D6DCE0;
+  --gk-gray-300: #C1C9CE;
+  --gk-gray-400: #9AA5AB;
+  --gk-gray-500: #77828A;
+  --gk-gray-600: #565F66;
+  --gk-gray-700: #3C4348;
+  --gk-gray-800: #262B2E;
+  --gk-gray-900: #16191B;
+
+  /* --- Accent único da marca: "glacial teal" --- */
+  --gk-accent: #1F6F78;
+  --gk-accent-strong: #16545C;
+  --gk-accent-soft: #DCEEEF;
+  --gk-accent-glow: rgba(31, 111, 120, 0.25);
+
+  /* --- Estados de presença --- */
+  --gk-status-online: #2FA36B;
+  --gk-status-idle: #D6A429;
+  --gk-status-dnd: #D64545;
+  --gk-status-offline: #AEB6BB;
+
+  /* --- Semântica --- */
+  --gk-danger: #D64545;
+  --gk-danger-soft: #FBE9E9;
+  --gk-warning: #D6A429;
+
+  /* --- Tipografia --- */
+  --gk-font-display: 'Space Grotesk', sans-serif;
+  --gk-font-body: 'Inter', sans-serif;
+  --gk-font-mono: 'IBM Plex Mono', monospace;
+
+  /* --- Layout --- */
+  --gk-rail-w: 76px;
+  --gk-sidebar-w: 268px;
+  --gk-members-w: 232px;
+  --gk-radius-sm: 6px;
+  --gk-radius-md: 10px;
+  --gk-radius-lg: 16px;
+  --gk-radius-hex: 28%; /* cantos do "ícone de servidor gelado" */
+
+  /* --- Sombra (difusa, nunca "flat dark") --- */
+  --gk-shadow-sm: 0 1px 2px rgba(22, 25, 27, 0.06);
+  --gk-shadow-md: 0 4px 16px rgba(22, 25, 27, 0.08);
+  --gk-shadow-lg: 0 12px 32px rgba(22, 25, 27, 0.12);
+
+  --gk-transition: 160ms cubic-bezier(.2,.8,.2,1);
+  --gk-transition-slow: 240ms cubic-bezier(.2,.8,.2,1);
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   Tema escuro — ativado via [data-theme="dark"] no <html>
+   (definido por js/theme.js, com fallback síncrono no <head>
+   de index.html para evitar flash).
+   ============================================================ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --gk-bg: #14171A;
+  --gk-surface: #1B1F22;
+  --gk-surface-sunken: #101315;
+  --gk-rail: #101315;
+
+  --gk-gray-100: #262B2E;
+  --gk-gray-200: #333A3E;
+  --gk-gray-300: #454D52;
+  --gk-gray-400: #6B7378;
+  --gk-gray-500: #8B949A;
+  --gk-gray-600: #AAB2B7;
+  --gk-gray-700: #C7CDD1;
+  --gk-gray-800: #E7EBED;
+  --gk-gray-900: #F5F8F9;
+
+  --gk-accent-soft: rgba(31, 111, 120, 0.18);
+  --gk-accent-glow: rgba(31, 111, 120, 0.38);
+
+  --gk-danger-soft: rgba(214, 69, 69, 0.16);
+
+  --gk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --gk-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
+  --gk-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.48);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+  background: var(--gk-bg);
+  color: var(--gk-gray-800);
+  font-family: var(--gk-font-body);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  transition: background var(--gk-transition-slow), color var(--gk-transition-slow);
+}
+
+h1, h2, h3, .gk-display {
+  font-family: var(--gk-font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--gk-gray-900);
+}
+
+.gk-mono { font-family: var(--gk-font-mono); }
+
+a { color: var(--gk-accent); }
+
+::selection { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+
+/* Scrollbar discreta, ainda "clara" */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gk-gray-200); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--gk-gray-300); background-clip: padding-box; }
+
+button {
+  font-family: var(--gk-font-body);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gk-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
