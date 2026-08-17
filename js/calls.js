@@ -109,6 +109,22 @@ export async function startDmCall(withVideo = false) {
 
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
+  // IMPORTANTE: pc.onicecandidate precisa ser atribuído ANTES de
+  // setLocalDescription(offer) — a geração de candidatos ICE começa assim
+  // que a descrição local é aplicada, e um handler atribuído depois disso
+  // perde os candidatos que já dispararam (não há "replay" de eventos).
+  // Como ainda não sabemos o id da chamada (só existe depois do addDoc
+  // abaixo), bufferizamos os candidatos localmente e escrevemos no
+  // Firestore assim que o id estiver disponível.
+  const pendingCandidates = [];
+  let candidatesColRef = null;
+  pc.onicecandidate = (e) => {
+    if (!e.candidate) return;
+    const payload = { senderId: auth.currentUser.uid, candidate: e.candidate.toJSON() };
+    if (candidatesColRef) addDoc(candidatesColRef, payload);
+    else pendingCandidates.push(payload);
+  };
+
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
@@ -120,6 +136,10 @@ export async function startDmCall(withVideo = false) {
     createdAt: serverTimestamp(),
   });
   state.activeCall.id = callRef.id;
+
+  candidatesColRef = collection(db, 'calls', callRef.id, 'candidates');
+  pendingCandidates.forEach((payload) => addDoc(candidatesColRef, payload));
+  pendingCandidates.length = 0;
 
   attachRenegotiation(pc, {
     onOffer: (offerDesc) => updateDoc(callDoc(callRef.id), { renegoOffer: offerDesc, renegoBy: auth.currentUser.uid }),
@@ -169,6 +189,15 @@ async function acceptIncomingCall(call) {
   wirePeerConnection(pc, () => renderCallBar(callerSnap.data()?.displayName || callerSnap.data()?.username || 'Chamada'));
 
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+
+  // Mesma correção do lado de quem liga: registra o envio de candidatos
+  // ICE ANTES de criar a resposta. Aqui já sabemos o id da chamada (é o
+  // doc que o outro lado criou), então não precisa buffer.
+  const candidatesColRef = collection(db, 'calls', call.id, 'candidates');
+  pc.onicecandidate = (e) => {
+    if (e.candidate) addDoc(candidatesColRef, { senderId: auth.currentUser.uid, candidate: e.candidate.toJSON() });
+  };
+
   await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
@@ -216,11 +245,10 @@ function listenCallDoc(callId, pc) {
     });
   });
 
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      addDoc(candidatesCol, { senderId: auth.currentUser.uid, candidate: e.candidate.toJSON() });
-    }
-  };
+  // O envio de candidatos locais (pc.onicecandidate) agora é montado em
+  // startDmCall/acceptIncomingCall, antes da oferta/resposta ser criada —
+  // ver comentário lá. Aqui só ficamos responsáveis por RECEBER os
+  // candidatos remotos (acima).
 }
 
 export async function hangupCall() {

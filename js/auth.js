@@ -5,7 +5,7 @@ import {
   auth, db, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
 } from './db.js';
-import { state, toast, fallbackAvatar } from './state.js';
+import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
 
 let onReadyCallback = null;
 
@@ -34,6 +34,7 @@ export function initAuthListener() {
 }
 
 async function bootstrapUserDoc(uid, username, email) {
+  username = normalizeUsername(username) || `usuario-${uid.slice(0, 6)}`;
   await setDoc(userDoc(uid), {
     username,
     displayName: username,
@@ -55,7 +56,7 @@ export async function setPresence(statusPresence) {
 }
 
 export async function registerUser(username, email, password) {
-  username = username.trim().toLowerCase().replace(/\s+/g, '-');
+  username = normalizeUsername(username);
   if (username.length < 3) throw new Error('O nome de usuário precisa ter ao menos 3 caracteres.');
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   await fbUpdateProfile(cred.user, { displayName: username });

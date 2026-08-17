@@ -12,6 +12,7 @@ export const state = {
   serverMembersCache: new Map(), // serverId -> Map(uid -> memberData+userData)
   dms: new Map(),            // dmId -> dm data (com participantes resolvidos)
   friends: new Map(),        // uid -> user data
+  incomingFriendRequests: [], // pedidos de amizade pendentes recebidos, resolvidos com dados do outro usuário
   unsubscribers: {           // listeners ativos que precisam ser desligados ao trocar de canal/dm
     messages: null,
     channels: null,
@@ -88,4 +89,17 @@ export function genInviteCode(len = 8) {
   let out = '';
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
+}
+
+// Normalização única de nome de usuário — usada tanto no cadastro
+// (auth.js) quanto na busca de amigo por username (dms.js), para
+// que "João Silva", "joao silva" e "joao-silva" sempre resolvam
+// para o mesmo valor salvo no Firestore.
+export function normalizeUsername(raw = '') {
+  return raw
+    .trim()
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/\s+/g, '-')                              // espaços -> hífen
+    .replace(/[^a-z0-9_-]/g, '');                       // só caracteres seguros
 }

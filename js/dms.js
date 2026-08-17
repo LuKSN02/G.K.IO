@@ -6,7 +6,7 @@ import {
   collection, doc, addDoc, setDoc, updateDoc, getDoc, getDocs,
   query, where, onSnapshot, serverTimestamp,
 } from './db.js';
-import { state, el, toast, fallbackAvatar, cleanupListener } from './state.js';
+import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername } from './state.js';
 import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
 
@@ -32,7 +32,10 @@ export function listenFriendsAndDms() {
     }
     state.friends.clear();
     accepted.forEach((f) => state.friends.set(f.uid, f));
-    renderFriendRequests(incoming);
+    // Guarda os pedidos pendentes no estado global — assim o listener de
+    // DMs (abaixo) também enxerga a lista correta quando re-renderiza o
+    // sidebar, em vez de apagá-la com um array vazio.
+    state.incomingFriendRequests = incoming;
     renderDmSidebar();
   });
 
@@ -93,7 +96,10 @@ function renderDmSidebar() {
     ]);
     body.appendChild(row);
   }
-  renderFriendRequests([]);
+  // Usa o cache em state (populado pelo listener de friendships) em vez de
+  // um array vazio "chumbado" — é isso que fazia a aba de pedidos de
+  // amizade sumir sempre que o listener de DMs re-renderizava o sidebar.
+  renderFriendRequests(state.incomingFriendRequests || []);
 }
 
 function statusLabel(s) {
@@ -101,7 +107,8 @@ function statusLabel(s) {
 }
 
 export async function sendFriendRequestByUsername(username) {
-  username = username.trim().toLowerCase();
+  username = normalizeUsername(username);
+  if (!username) throw new Error('Digite um nome de usuário válido.');
   const uid = auth.currentUser.uid;
   const q = query(usersCol(), where('username', '==', username));
   const snap = await getDocs(q);
