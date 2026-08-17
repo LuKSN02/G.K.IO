@@ -37,6 +37,10 @@ const voicePeers = new Map(); // uid -> RTCPeerConnection (canal de voz, mesh)
 const voiceUnsubs = new Map();
 let dmCameraTrackId = null; // id da track de vídeo "câmera" na chamada de DM atual (para distinguir de telas)
 
+// Estado da tela cheia de chamada (DM) — cronômetro e se está minimizada
+let callTimerInterval = null;
+let callStartedAt = null;
+
 // ============================================================
 // Utilitário: getUserMedia respeitando as preferências salvas
 // ============================================================
@@ -104,8 +108,9 @@ export async function startDmCall(withVideo = false) {
   localStream = await getLocalStream(withVideo);
   dmCameraTrackId = withVideo ? localStream.getVideoTracks()[0]?.id || null : null;
   const pc = new RTCPeerConnection(ICE_SERVERS);
-  state.activeCall = { kind: 'dm', id: null, pc, dmId: state.currentDmId, remoteUid: dm.other.uid, withVideo, screenSharing: false };
-  wirePeerConnection(pc, () => renderCallBar(dm.other.displayName || dm.other.username));
+  const peer = { uid: dm.other.uid, displayName: dm.other.displayName || dm.other.username, avatarUrl: dm.other.avatarUrl || '' };
+  state.activeCall = { kind: 'dm', id: null, pc, dmId: state.currentDmId, remoteUid: dm.other.uid, withVideo, screenSharing: false, peer };
+  wirePeerConnection(pc, onDmCallConnected);
 
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
@@ -146,7 +151,7 @@ export async function startDmCall(withVideo = false) {
   });
 
   listenCallDoc(callRef.id, pc);
-  showCallBar(`Chamando ${dm.other.displayName || dm.other.username}...`);
+  openCallScreen({ peer, withVideo, statusText: 'Chamando...' });
 }
 
 export function joinDmCall() { /* alias usado pelo cartão de perfil */ return startDmCall(false); }
@@ -166,27 +171,34 @@ export function listenIncomingCalls() {
 
 function promptIncomingCall(call) {
   getDoc(userDoc(call.callerId)).then((snap) => {
-    const caller = snap.exists() ? snap.data() : { username: 'alguém' };
-    const bar = document.getElementById('gk-incoming-call-toast');
-    bar.innerHTML = '';
-    bar.appendChild(el('div', { class: 'gk-toast gk-incoming-call', style: 'display:flex;align-items:center;gap:10px;opacity:1;transform:none;pointer-events:all;' }, [
-      el('img', { src: caller.avatarUrl || fallbackAvatar(caller.username), style: 'width:28px;height:28px;border-radius:8px;' }),
-      el('span', {}, `${caller.displayName || caller.username} está ligando`),
-      el('button', { class: 'gk-btn gk-btn-primary', style: 'padding:5px 10px;', onclick: () => acceptIncomingCall(call) }, 'Atender'),
-      el('button', { class: 'gk-btn gk-btn-danger', style: 'padding:5px 10px;', onclick: () => declineIncomingCall(call) }, 'Recusar'),
+    const caller = snap.exists() ? { uid: call.callerId, ...snap.data() } : { uid: call.callerId, username: 'alguém' };
+    const overlay = document.getElementById('gk-incoming-call-overlay');
+    const card = document.getElementById('gk-incoming-call-card');
+    card.innerHTML = '';
+    card.appendChild(el('div', { class: 'gk-incoming-call-avatar-wrap' }, [
+      el('div', { class: 'gk-incoming-call-ring' }),
+      el('img', { src: caller.avatarUrl || fallbackAvatar(caller.username) }),
     ]));
-    bar.style.display = 'block';
+    card.appendChild(el('div', { class: 'gk-incoming-call-info' }, [
+      el('div', { class: 'gk-incoming-call-name' }, caller.displayName || caller.username),
+      el('div', { class: 'gk-incoming-call-sub' }, call.withVideo ? 'Chamada de vídeo recebida' : 'Chamada de voz recebida'),
+    ]));
+    card.appendChild(el('div', { class: 'gk-incoming-call-actions' }, [
+      el('button', { class: 'gk-incoming-call-btn gk-incoming-decline', title: 'Recusar', onclick: () => declineIncomingCall(call) }, '☎'),
+      el('button', { class: 'gk-incoming-call-btn gk-incoming-accept', title: 'Atender', onclick: () => acceptIncomingCall(call, caller) }, call.withVideo ? '🎥' : '📞'),
+    ]));
+    overlay.classList.add('gk-open');
   });
 }
 
-async function acceptIncomingCall(call) {
-  document.getElementById('gk-incoming-call-toast').style.display = 'none';
+async function acceptIncomingCall(call, caller) {
+  document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
   localStream = await getLocalStream(call.withVideo);
   dmCameraTrackId = call.withVideo ? localStream.getVideoTracks()[0]?.id || null : null;
   const pc = new RTCPeerConnection(ICE_SERVERS);
-  state.activeCall = { kind: 'dm', id: call.id, pc, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false };
-  const callerSnap = await getDoc(userDoc(call.callerId));
-  wirePeerConnection(pc, () => renderCallBar(callerSnap.data()?.displayName || callerSnap.data()?.username || 'Chamada'));
+  const peer = { uid: call.callerId, displayName: caller.displayName || caller.username, avatarUrl: caller.avatarUrl || '' };
+  state.activeCall = { kind: 'dm', id: call.id, pc, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer };
+  wirePeerConnection(pc, onDmCallConnected);
 
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
@@ -208,11 +220,11 @@ async function acceptIncomingCall(call) {
   });
 
   listenCallDoc(call.id, pc);
-  showCallBar(`Em chamada com ${callerSnap.data()?.displayName || callerSnap.data()?.username}`);
+  openCallScreen({ peer, withVideo: call.withVideo, statusText: 'Conectando...' });
 }
 
 async function declineIncomingCall(call) {
-  document.getElementById('gk-incoming-call-toast').style.display = 'none';
+  document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
   await updateDoc(callDoc(call.id), { status: 'declined' });
 }
 
@@ -270,7 +282,10 @@ function endCall(closeConnection) {
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
   dmCameraTrackId = null;
+  const wasDm = !!(state.activeCall && state.activeCall.kind === 'dm');
   state.activeCall = null;
+  stopCallTimer();
+  if (wasDm) closeCallScreen();
   hideCallBar();
 }
 
@@ -511,10 +526,12 @@ function maybeHideScreenGrid() {
   if (grid && !grid.children.length) grid.classList.remove('gk-open');
 }
 function updateScreenShareButton(active) {
-  const btn = document.getElementById('gk-screenshare-btn');
-  if (!btn) return;
-  btn.classList.toggle('gk-active', active);
-  btn.title = active ? 'Parar compartilhamento de tela' : 'Compartilhar tela';
+  ['gk-call-screenshare-btn', 'gk-call-bar-screenshare-btn'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.toggle('gk-active', active);
+    btn.title = active ? 'Parar compartilhamento de tela' : 'Compartilhar tela';
+  });
 }
 
 // ============================================================
@@ -545,8 +562,11 @@ function wirePeerConnection(pc, onConnected) {
       grid.appendChild(videoEl);
       videoEl.srcObject = e.streams[0];
       grid.classList.add('gk-open');
+      // O outro lado ligou a câmera (ou a chamada já era de vídeo) — troca
+      // a visão de avatar pulsando pela grade de vídeo, como no Discord.
+      setCallLayout('video');
     } else {
-      const label = document.getElementById('gk-call-bar-label')?.textContent?.replace('Em chamada com ', '') || 'alguém';
+      const label = state.activeCall?.peer?.displayName || 'alguém';
       renderRemoteScreenTile(state.activeCall?.remoteUid || 'peer', e.streams[0], { displayName: label });
       e.track.onended = () => removeRemoteScreenTile(state.activeCall?.remoteUid || 'peer');
     }
@@ -556,14 +576,156 @@ function wirePeerConnection(pc, onConnected) {
   };
 }
 
+// ---------- Tela cheia de chamada de DM (estilo Discord/Skype) ----------
+
+function openCallScreen({ peer, withVideo, statusText }) {
+  const avatarSrc = peer.avatarUrl || fallbackAvatar(peer.displayName || peer.username);
+  document.getElementById('gk-call-avatar-img').src = avatarSrc;
+  document.getElementById('gk-call-peer-name').textContent = peer.displayName || peer.username || 'Chamada';
+  document.getElementById('gk-call-screen-bg').style.backgroundImage = `url(${avatarSrc})`;
+  setCallStatusText(statusText);
+
+  const selfVideo = document.getElementById('gk-call-self-video');
+  selfVideo.srcObject = localStream;
+  document.getElementById('gk-call-self-pip').style.display = withVideo ? 'block' : 'none';
+  setCallLayout(withVideo ? 'video' : 'audio');
+
+  updateMuteButtons(false);
+  updateCameraButtons(withVideo);
+  updateScreenShareButton(false);
+
+  document.getElementById('gk-call-bar').classList.remove('gk-open');
+  document.getElementById('gk-call-screen').classList.add('gk-open');
+}
+
+function onDmCallConnected() {
+  if (!state.activeCall) return;
+  startCallTimer();
+  renderCallBar(state.activeCall.peer?.displayName || 'alguém');
+}
+
+function setCallLayout(mode) {
+  const audioView = document.getElementById('gk-call-audio-view');
+  const videoGrid = document.getElementById('gk-call-video-grid');
+  if (!audioView || !videoGrid) return;
+  if (mode === 'video') {
+    audioView.style.display = 'none';
+    videoGrid.classList.add('gk-open');
+  } else {
+    audioView.style.display = 'flex';
+    videoGrid.classList.remove('gk-open');
+  }
+}
+
+function setCallStatusText(text) {
+  const top = document.getElementById('gk-call-screen-status');
+  if (top) top.textContent = text;
+  const sub = document.getElementById('gk-call-peer-sub');
+  if (sub) sub.textContent = text;
+}
+
+function startCallTimer() {
+  callStartedAt = Date.now();
+  stopCallTimer();
+  setCallStatusText('00:00');
+  callTimerInterval = setInterval(() => {
+    const secs = Math.floor((Date.now() - callStartedAt) / 1000);
+    const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+    const ss = String(secs % 60).padStart(2, '0');
+    setCallStatusText(`${mm}:${ss}`);
+  }, 1000);
+}
+function stopCallTimer() {
+  if (callTimerInterval) { clearInterval(callTimerInterval); callTimerInterval = null; }
+  callStartedAt = null;
+}
+
+function closeCallScreen() {
+  document.getElementById('gk-call-screen').classList.remove('gk-open');
+  const selfVideo = document.getElementById('gk-call-self-video');
+  if (selfVideo) selfVideo.srcObject = null;
+  document.getElementById('gk-call-self-pip').style.display = 'none';
+}
+
+function minimizeCallScreen() {
+  if (!state.activeCall || state.activeCall.kind !== 'dm') return;
+  document.getElementById('gk-call-screen').classList.remove('gk-open');
+  showCallBar(`Em chamada com ${state.activeCall.peer?.displayName || 'alguém'}`);
+}
+
+function expandCallScreen() {
+  if (!state.activeCall || state.activeCall.kind !== 'dm') return;
+  document.getElementById('gk-call-bar').classList.remove('gk-open');
+  document.getElementById('gk-call-screen').classList.add('gk-open');
+}
+
+function updateMuteButtons(muted) {
+  const icon = muted ? '🔇' : '🎤';
+  ['gk-call-mute-btn', 'gk-call-bar-mute-btn'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (btn) btn.textContent = icon;
+  });
+}
+
+function updateCameraButtons(on) {
+  const btn = document.getElementById('gk-call-camera-btn');
+  if (!btn) return;
+  const isDm = state.activeCall?.kind === 'dm';
+  btn.style.display = isDm ? 'flex' : 'none';
+  btn.textContent = on ? '🎥' : '📷';
+  btn.title = on ? 'Desativar câmera' : 'Ativar câmera';
+  btn.classList.toggle('gk-active', !!on);
+}
+
+async function toggleCameraInCall() {
+  if (!state.activeCall || state.activeCall.kind !== 'dm' || !localStream) return;
+  let videoTrack = localStream.getVideoTracks()[0];
+
+  if (videoTrack) {
+    // Já existe uma track de câmera nesta chamada — apenas ativa/desativa.
+    videoTrack.enabled = !videoTrack.enabled;
+    updateCameraButtons(videoTrack.enabled);
+    document.getElementById('gk-call-self-pip').style.display = videoTrack.enabled ? 'block' : 'none';
+    setCallLayout(videoTrack.enabled ? 'video' : (document.getElementById('gk-remote-video') ? 'video' : 'audio'));
+    return;
+  }
+
+  // Chamada começou só de voz — pede a câmera agora e "sobe de nível" para
+  // vídeo, adicionando a nova track à conexão já existente (isso dispara
+  // a renegociação automática configurada em attachRenegotiation).
+  try {
+    const prefs = getMediaPrefs();
+    const camStream = await navigator.mediaDevices.getUserMedia({
+      video: prefs.camId ? { deviceId: { exact: prefs.camId } } : true,
+    });
+    videoTrack = camStream.getVideoTracks()[0];
+    localStream.addTrack(videoTrack);
+    dmCameraTrackId = videoTrack.id;
+    if (state.activeCall.pc) state.activeCall.pc.addTrack(videoTrack, localStream);
+    state.activeCall.withVideo = true;
+
+    document.getElementById('gk-call-self-video').srcObject = localStream;
+    document.getElementById('gk-call-self-pip').style.display = 'block';
+    setCallLayout('video');
+    updateCameraButtons(true);
+  } catch (e) {
+    toast('Não foi possível acessar a câmera.', 'danger');
+  }
+}
+
 function showCallBar(label) {
   const bar = document.getElementById('gk-call-bar');
   document.getElementById('gk-call-bar-label').textContent = label;
   bar.classList.add('gk-open');
+  const expandBtn = document.getElementById('gk-call-bar-expand-btn');
+  if (expandBtn) expandBtn.style.display = state.activeCall?.kind === 'dm' ? 'inline-flex' : 'none';
   updateScreenShareButton(false);
 }
 function renderCallBar(label) {
-  document.getElementById('gk-call-bar-label').textContent = `Em chamada com ${label}`;
+  // Mantém o texto da barra minimizada atualizado mesmo enquanto ela está
+  // escondida (tela cheia aberta) — assim, ao minimizar, o texto já está certo.
+  const labelEl = document.getElementById('gk-call-bar-label');
+  if (labelEl) labelEl.textContent = `Em chamada com ${label}`;
 }
 function hideCallBar() {
   document.getElementById('gk-call-bar').classList.remove('gk-open');
@@ -576,16 +738,31 @@ function hideCallBar() {
 }
 
 export function wireCallBar() {
-  document.getElementById('gk-hangup-btn').addEventListener('click', hangupCall);
-  document.getElementById('gk-mute-btn').addEventListener('click', () => {
-    if (!localStream) return;
-    const track = localStream.getAudioTracks()[0];
-    track.enabled = !track.enabled;
-    document.getElementById('gk-mute-btn').textContent = track.enabled ? '🎤' : '🔇';
-  });
+  document.getElementById('gk-call-hangup-btn').addEventListener('click', hangupCall);
+  document.getElementById('gk-call-bar-hangup-btn').addEventListener('click', hangupCall);
+
+  document.getElementById('gk-call-mute-btn').addEventListener('click', toggleMute);
+  document.getElementById('gk-call-bar-mute-btn').addEventListener('click', toggleMute);
+
+  document.getElementById('gk-call-camera-btn').addEventListener('click', toggleCameraInCall);
+
+  document.getElementById('gk-call-screenshare-btn').addEventListener('click', toggleScreenShareBtn);
+  document.getElementById('gk-call-bar-screenshare-btn').addEventListener('click', toggleScreenShareBtn);
+
+  document.getElementById('gk-call-minimize-btn').addEventListener('click', minimizeCallScreen);
+  document.getElementById('gk-call-bar-expand-btn').addEventListener('click', expandCallScreen);
+
   document.getElementById('gk-call-btn').addEventListener('click', () => startDmCall(false));
   document.getElementById('gk-video-call-btn').addEventListener('click', () => startDmCall(true));
-  document.getElementById('gk-screenshare-btn').addEventListener('click', () => {
-    if (isScreenSharing()) stopScreenShare(); else startScreenShare();
-  });
+}
+
+function toggleMute() {
+  if (!localStream) return;
+  const track = localStream.getAudioTracks()[0];
+  if (!track) return;
+  track.enabled = !track.enabled;
+  updateMuteButtons(!track.enabled);
+}
+function toggleScreenShareBtn() {
+  if (isScreenSharing()) stopScreenShare(); else startScreenShare();
 }

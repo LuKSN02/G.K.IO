@@ -164,16 +164,55 @@
   </div>
 </div>
 
-<!-- ======================= CHAMADA ======================= -->
+<!-- ======================= CHAMADA — TELA CHEIA (DM, estilo Discord/Skype) ======================= -->
+<div class="gk-call-screen" id="gk-call-screen">
+  <div class="gk-call-screen-bg" id="gk-call-screen-bg"></div>
+
+  <div class="gk-call-screen-top">
+    <span class="gk-call-screen-status" id="gk-call-screen-status">Chamando...</span>
+    <button class="gk-call-minimize-btn" id="gk-call-minimize-btn" title="Minimizar chamada">⌄</button>
+  </div>
+
+  <!-- Modo áudio: avatar grande com anéis pulsantes, como a tela de "chamando/tocando" do Skype -->
+  <div class="gk-call-audio-view" id="gk-call-audio-view">
+    <div class="gk-call-avatar-rings">
+      <div class="gk-call-avatar-ring gk-ring-1"></div>
+      <div class="gk-call-avatar-ring gk-ring-2"></div>
+      <div class="gk-call-avatar-ring gk-ring-3"></div>
+      <img class="gk-call-avatar-img" id="gk-call-avatar-img" src="" alt="">
+    </div>
+    <div class="gk-call-peer-name" id="gk-call-peer-name">—</div>
+    <div class="gk-call-peer-sub" id="gk-call-peer-sub">Chamando...</div>
+  </div>
+
+  <!-- Modo vídeo: grade de vídeos remotos + miniatura da própria câmera -->
+  <div class="gk-call-video-grid" id="gk-call-video-grid"></div>
+  <div class="gk-call-self-pip" id="gk-call-self-pip" style="display:none;">
+    <video id="gk-call-self-video" autoplay muted playsinline></video>
+  </div>
+
+  <div class="gk-call-controls" id="gk-call-controls">
+    <button class="gk-call-ctrl-btn" id="gk-call-mute-btn" title="Mutar/desmutar">🎤</button>
+    <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera">📷</button>
+    <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela">🖥️</button>
+    <button class="gk-call-ctrl-btn gk-call-hangup-btn" id="gk-call-hangup-btn" title="Encerrar chamada">☎</button>
+  </div>
+</div>
+
+<!-- Barra minimizada — chamada em segundo plano (DM minimizada ou canal de voz de servidor) -->
 <div class="gk-call-bar" id="gk-call-bar">
   <span class="gk-call-label" id="gk-call-bar-label">Em chamada</span>
-  <button id="gk-mute-btn" title="Mutar/desmutar">🎤</button>
-  <button id="gk-screenshare-btn" title="Compartilhar tela">🖥️</button>
-  <button class="gk-hangup" id="gk-hangup-btn" title="Encerrar">☎</button>
+  <button id="gk-call-bar-expand-btn" title="Expandir chamada" style="display:none;">⤢</button>
+  <button id="gk-call-bar-mute-btn" title="Mutar/desmutar">🎤</button>
+  <button id="gk-call-bar-screenshare-btn" title="Compartilhar tela">🖥️</button>
+  <button class="gk-hangup" id="gk-call-bar-hangup-btn" title="Encerrar">☎</button>
 </div>
-<div class="gk-call-video-grid" id="gk-call-video-grid"></div>
 <div class="gk-screenshare-grid" id="gk-screenshare-grid"></div>
-<div id="gk-incoming-call-toast" style="position:fixed;top:calc(16px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:410;display:none;"></div>
+
+<!-- Chamada recebida — cartão "tocando", estilo Discord/Skype -->
+<div class="gk-incoming-call-overlay" id="gk-incoming-call-overlay">
+  <div class="gk-incoming-call-card" id="gk-incoming-call-card"></div>
+</div>
 
 <!-- ======================= TOASTS ======================= -->
 <div id="gk-toast-stack"></div>

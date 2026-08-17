@@ -444,7 +444,152 @@
 .gk-profile-link:hover { text-decoration: underline; }
 .gk-profile-actions { display: flex; gap: 8px; }
 
-/* ---------- Chamada (overlay flutuante) ---------- */
+/* ============================================================
+   Chamadas — tela cheia de DM (estilo Discord/Skype) + barra
+   minimizada (usada também pelos canais de voz de servidor).
+   ============================================================ */
+
+/* ---------- Tela cheia de chamada (DM) ---------- */
+.gk-call-screen {
+  position: fixed; inset: 0; z-index: 300; display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  background: #14171A; overflow: hidden;
+}
+.gk-call-screen.gk-open { display: flex; }
+.gk-call-screen-bg {
+  position: absolute; inset: 0; background-size: cover; background-position: center;
+  filter: blur(60px) brightness(0.4); transform: scale(1.15);
+  opacity: 0.85;
+}
+.gk-call-screen-bg::after {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(20,23,26,0.2), rgba(20,23,26,0.92) 75%);
+}
+.gk-call-screen-top {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: calc(18px + env(safe-area-inset-top)) 18px 18px;
+}
+.gk-call-screen-status {
+  font-family: var(--gk-font-mono); font-size: 13px; letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.08);
+  padding: 6px 14px; border-radius: 999px;
+}
+.gk-call-minimize-btn {
+  position: absolute; right: 18px; top: calc(18px + env(safe-area-inset-top));
+  width: 34px; height: 34px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,0.1); color: #fff; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--gk-transition);
+}
+.gk-call-minimize-btn:hover { background: rgba(255,255,255,0.2); }
+
+/* ---------- Modo áudio: avatar grande com anéis pulsantes ---------- */
+.gk-call-audio-view {
+  position: relative; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 18px;
+}
+.gk-call-avatar-rings {
+  position: relative; width: 168px; height: 168px;
+  display: flex; align-items: center; justify-content: center;
+}
+.gk-call-avatar-img {
+  width: 152px; height: 152px; border-radius: 34px; object-fit: cover;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4); position: relative; z-index: 2;
+  background: var(--gk-gray-200);
+}
+.gk-call-avatar-ring {
+  position: absolute; inset: 0; border-radius: 34px;
+  border: 2px solid var(--gk-accent);
+  animation: gk-call-ring-pulse 2.4s ease-out infinite;
+  opacity: 0;
+}
+.gk-call-avatar-ring.gk-ring-2 { animation-delay: 0.8s; }
+.gk-call-avatar-ring.gk-ring-3 { animation-delay: 1.6s; }
+@keyframes gk-call-ring-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+.gk-call-peer-name {
+  font-family: var(--gk-font-display); font-size: 24px; font-weight: 600; color: #fff;
+}
+.gk-call-peer-sub {
+  font-family: var(--gk-font-mono); font-size: 14px; color: rgba(255,255,255,0.6);
+}
+
+/* ---------- Modo vídeo: grade de vídeo + PIP local ---------- */
+.gk-call-screen .gk-call-video-grid {
+  position: relative; z-index: 2; display: none; gap: 12px; flex-wrap: wrap;
+  align-items: center; justify-content: center; max-width: 92vw; max-height: 74vh;
+}
+.gk-call-screen .gk-call-video-grid.gk-open { display: flex; }
+.gk-call-screen .gk-call-video-grid video {
+  width: min(72vw, 720px); max-height: 68vh; border-radius: var(--gk-radius-lg);
+  background: #000; object-fit: contain; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+}
+.gk-call-self-pip {
+  position: absolute; z-index: 3; bottom: calc(112px + env(safe-area-inset-bottom));
+  right: 24px; width: 168px; border-radius: var(--gk-radius-md); overflow: hidden;
+  box-shadow: var(--gk-shadow-lg); border: 1px solid rgba(255,255,255,0.15);
+}
+.gk-call-self-pip video { width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover; background: #000; transform: scaleX(-1); }
+
+/* ---------- Barra de controles central (pílula flutuante) ---------- */
+.gk-call-controls {
+  position: absolute; z-index: 3; bottom: calc(32px + env(safe-area-inset-bottom));
+  left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(255,255,255,0.08); padding: 12px; border-radius: 999px;
+  backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08);
+}
+.gk-call-ctrl-btn {
+  width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(255,255,255,0.12); color: #fff; font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--gk-transition), transform var(--gk-transition);
+}
+.gk-call-ctrl-btn:hover { background: rgba(255,255,255,0.22); transform: translateY(-1px); }
+.gk-call-ctrl-btn.gk-active { background: var(--gk-accent); }
+.gk-call-ctrl-btn.gk-off { background: rgba(214,69,69,0.28); }
+.gk-call-hangup-btn { background: var(--gk-danger); width: 60px; height: 60px; font-size: 22px; }
+.gk-call-hangup-btn:hover { background: #C13A3A; }
+
+/* ---------- Chamada recebida — cartão "tocando" ---------- */
+.gk-incoming-call-overlay {
+  position: fixed; top: calc(16px + env(safe-area-inset-top)); left: 50%;
+  transform: translateX(-50%); z-index: 410; display: none;
+}
+.gk-incoming-call-overlay.gk-open { display: block; }
+.gk-incoming-call-card {
+  display: flex; align-items: center; gap: 14px;
+  background: #1B1F22; color: #fff; padding: 12px 16px 12px 12px;
+  border-radius: 999px; box-shadow: var(--gk-shadow-lg);
+  border: 1px solid rgba(255,255,255,0.08);
+  animation: gk-pop-in var(--gk-transition-slow) both;
+}
+.gk-incoming-call-avatar-wrap { position: relative; width: 44px; height: 44px; flex-shrink: 0; }
+.gk-incoming-call-avatar-wrap img {
+  width: 44px; height: 44px; border-radius: 12px; object-fit: cover; position: relative; z-index: 2;
+}
+.gk-incoming-call-ring {
+  position: absolute; inset: 0; border-radius: 12px; border: 2px solid var(--gk-accent);
+  animation: gk-call-ring-pulse 1.6s ease-out infinite;
+}
+.gk-incoming-call-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.gk-incoming-call-name { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.gk-incoming-call-sub { font-size: 12px; color: rgba(255,255,255,0.6); font-family: var(--gk-font-mono); white-space: nowrap; }
+.gk-incoming-call-actions { display: flex; gap: 8px; }
+.gk-incoming-call-btn {
+  width: 38px; height: 38px; border-radius: 50%; border: none; cursor: pointer;
+  color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center;
+  transition: background var(--gk-transition);
+}
+.gk-incoming-decline { background: var(--gk-danger); }
+.gk-incoming-decline:hover { background: #C13A3A; }
+.gk-incoming-accept { background: var(--gk-status-online); }
+.gk-incoming-accept:hover { background: #268F5B; }
+
+/* ---------- Barra minimizada (chamada em 2º plano / canal de voz) ---------- */
 .gk-call-bar {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
   background: #1B1F22; color: #fff; border-radius: 999px;
@@ -473,11 +618,6 @@
 }
 .gk-toast.gk-show { opacity: 1; transform: translateY(0); }
 .gk-toast.gk-danger { background: var(--gk-danger); }
-
-/* Toast especial de chamada recebida (reaproveita .gk-toast, mas
-   controlado via style inline em calls.js — precisa ficar sempre
-   visível/opaco, então isolamos aqui para não depender de .gk-show) */
-.gk-incoming-call { gap: 10px; }
 
 /* ============================================================
    Configurações — menu lateral + painel de conteúdo
@@ -622,7 +762,7 @@
   position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,0.55); color: #fff;
   font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
 }
-#gk-screenshare-btn.gk-active { background: var(--gk-accent); color: #fff; }
+#gk-call-bar-screenshare-btn.gk-active { background: var(--gk-accent); color: #fff; }
 
 /* ---------- Lightbox de imagens (clique para zoom) ---------- */
 .gk-lightbox-overlay {
@@ -714,6 +854,19 @@
   .gk-call-video-grid { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); right: 8px; left: 8px; justify-content: center; flex-wrap: wrap; }
   .gk-call-video-grid video { width: 42vw; height: auto; aspect-ratio: 16/9; }
   .gk-screenshare-grid { bottom: calc(96px + env(safe-area-inset-bottom)); max-width: 96vw; }
+
+  /* Tela cheia de chamada de DM — avatar/controles menores, PIP no canto */
+  .gk-call-avatar-rings { width: 132px; height: 132px; }
+  .gk-call-avatar-img { width: 118px; height: 118px; border-radius: 28px; }
+  .gk-call-peer-name { font-size: 20px; }
+  .gk-call-screen .gk-call-video-grid video { width: 92vw; max-height: 46vh; }
+  .gk-call-self-pip { width: 108px; right: 14px; bottom: calc(104px + env(safe-area-inset-bottom)); }
+  .gk-call-controls { gap: 10px; padding: 10px; bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .gk-call-ctrl-btn { width: 46px; height: 46px; font-size: 17px; }
+  .gk-call-hangup-btn { width: 54px; height: 54px; }
+  .gk-incoming-call-overlay { left: 12px; right: 12px; transform: none; }
+  .gk-incoming-call-card { width: 100%; }
+  .gk-incoming-call-name, .gk-incoming-call-sub { white-space: normal; }
 
   /* Toasts ocupando a largura, respeitando notch */
   #gk-toast-stack { left: 12px; right: 12px; top: calc(10px + env(safe-area-inset-top)); }
