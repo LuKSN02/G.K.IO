@@ -24,6 +24,7 @@ export async function uploadProfileImage(file, folder) {
 export function refreshMiniProfile() {
   document.getElementById('gk-mini-avatar').src = state.user.avatarUrl || fallbackAvatar(state.user.username);
   document.getElementById('gk-mini-avatar-wrap').setAttribute('data-status', state.user.statusPresence || 'online');
+  document.getElementById('gk-mini-avatar-wrap').setAttribute('data-frame', state.user.frameStyle || 'none');
   document.getElementById('gk-mini-name').textContent = state.user.displayName || state.user.username;
   document.getElementById('gk-mini-status').textContent = state.user.bio || '@' + state.user.username;
 }
@@ -45,7 +46,7 @@ export async function openProfileCard(uid) {
     class: 'gk-profile-banner',
     style: user.bannerUrl ? `background-image:url(${user.bannerUrl})` : '',
   }, [
-    el('div', { class: 'gk-profile-avatar-wrap' }, [
+    el('div', { class: 'gk-profile-avatar-wrap', 'data-frame': user.frameStyle || 'none' }, [
       el('img', { src: user.avatarUrl || fallbackAvatar(user.username) }),
     ]),
   ]));
@@ -54,6 +55,14 @@ export async function openProfileCard(uid) {
     el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
     el('div', { class: 'gk-profile-handle' }, '@' + user.username + ' · ' + statusText(user.statusPresence)),
   ]);
+
+  if (user.role === 'prime') {
+    body.appendChild(el('div', { class: 'gk-badge-prime-row' }, [
+      el('span', { class: 'gk-badge-prime' }, '◆'),
+      el('span', {}, 'G.K.IO Prime'),
+    ]));
+  }
+  if (user.tag) body.appendChild(el('span', { class: 'gk-author-tag' }, user.tag));
 
   if (user.bio) body.appendChild(el('div', { class: 'gk-profile-bio' }, user.bio));
 

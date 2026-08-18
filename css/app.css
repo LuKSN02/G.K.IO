@@ -1100,3 +1100,86 @@
   .gk-call-video-grid video { width: 44vw; }
   .gk-auth-card { padding: 22px 16px; }
 }
+
+/* ============================================================
+   G.K.IO Prime — badges, tags, upsell, molduras de avatar
+   e cores de destaque exclusivas
+   ============================================================ */
+
+.gk-badge-prime {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--gk-accent-strong);
+  background: var(--gk-accent-soft);
+  border-radius: var(--gk-radius-sm);
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+
+.gk-badge-prime-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--gk-accent-strong);
+  margin-top: 4px;
+}
+
+.gk-author-tag {
+  display: inline-block;
+  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--gk-gray-500);
+  background: var(--gk-surface-sunken);
+  border-radius: var(--gk-radius-sm);
+  padding: 1px 5px;
+}
+
+/* ---------- Prime: upsell (quem ainda não é assinante) ---------- */
+.gk-prime-upsell { text-align: center; padding: 28px 20px; }
+.gk-prime-upsell-icon {
+  width: 48px; height: 48px; margin: 0 auto 12px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  font-size: 22px;
+}
+.gk-prime-upsell-title { font-family: var(--gk-font-display); font-weight: 600; font-size: 16px; color: var(--gk-gray-900); }
+.gk-prime-upsell-sub { font-size: 13px; color: var(--gk-gray-500); margin: 8px 0 16px; line-height: 1.5; }
+
+/* ---------- Prime: seletor de moldura de avatar ---------- */
+.gk-frame-style-row { display: flex; gap: 18px; flex-wrap: wrap; }
+.gk-frame-style-swatch {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  cursor: pointer; font-size: 12px; color: var(--gk-gray-600);
+  padding: 6px; border-radius: var(--gk-radius-md);
+}
+.gk-frame-style-swatch:hover { background: var(--gk-surface-sunken); }
+.gk-frame-style-swatch.gk-active { color: var(--gk-accent-strong); font-weight: 600; }
+
+/* ---------- Molduras de avatar animadas (via [data-frame]) ---------- */
+.gk-avatar[data-frame="glacial"]::before,
+.gk-avatar[data-frame="aurora"]::before,
+.gk-profile-avatar-wrap[data-frame="glacial"]::before,
+.gk-profile-avatar-wrap[data-frame="aurora"]::before {
+  content: ''; position: absolute; inset: -3px; z-index: -1;
+  padding: 3px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: gk-frame-spin 3.5s linear infinite;
+}
+.gk-avatar[data-frame="glacial"]::before,
+.gk-profile-avatar-wrap[data-frame="glacial"]::before {
+  background: conic-gradient(from 0deg, var(--gk-accent), var(--gk-gray-100), var(--gk-accent));
+}
+.gk-avatar[data-frame="aurora"]::before,
+.gk-profile-avatar-wrap[data-frame="aurora"]::before {
+  background: conic-gradient(from 0deg, var(--gk-accent), #7C4FC2, var(--gk-status-online), var(--gk-accent));
+}
+.gk-avatar[data-frame]::before { border-radius: inherit; }
+.gk-profile-avatar-wrap[data-frame]::before { border-radius: 23px; }
+
+@keyframes gk-frame-spin { to { transform: rotate(360deg); } }
+
+/* ---------- Cores de destaque exclusivas (cadeado) ---------- */
+.gk-accent-swatch.gk-locked { cursor: not-allowed; opacity: 0.55; font-size: 13px; }
+.gk-accent-swatch.gk-locked:hover { transform: none; }
+
+.gk-settings-card-title-hint {
+  font-size: 11px; font-weight: 500; color: var(--gk-gray-500);
+  text-transform: none; letter-spacing: 0;
+}

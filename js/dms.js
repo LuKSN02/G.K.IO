@@ -64,7 +64,7 @@ function renderFriendRequests(incoming) {
   box.appendChild(el('div', { class: 'gk-category-label' }, `Pedidos de amizade — ${incoming.length}`));
   for (const req of incoming) {
     box.appendChild(el('div', { class: 'gk-dm-row' }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': 'offline' }, [el('img', { src: req.avatarUrl || fallbackAvatar(req.username) })]),
+      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': 'offline', 'data-frame': req.frameStyle || 'none' }, [el('img', { src: req.avatarUrl || fallbackAvatar(req.username) })]),
       el('div', { class: 'gk-name' }, req.displayName || req.username),
       el('div', { style: 'margin-left:auto;display:flex;gap:4px;' }, [
         el('button', { class: 'gk-btn gk-btn-primary', style: 'padding:5px 9px;font-size:12px;', onclick: () => acceptFriendRequest(req.friendshipId) }, '✓'),
@@ -87,7 +87,7 @@ function renderDmSidebar() {
       'data-id': dm.id,
       onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(dm.other.statusPresence)),
     }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': dm.other.statusPresence || 'offline' }, [
+      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': dm.other.statusPresence || 'offline', 'data-frame': dm.other.frameStyle || 'none' }, [
         el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.username) }),
       ]),
       el('div', {}, [

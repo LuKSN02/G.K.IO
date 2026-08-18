@@ -105,11 +105,14 @@ function renderMessages(messages) {
       lastGroup = el('div', { class: 'gk-msg-group' }, [
         el('div', {
           class: 'gk-avatar gk-sz-40', style: 'cursor:pointer;',
+          'data-frame': msg.authorFrameStyle || 'none',
           onclick: () => openProfileCard(msg.authorId),
         }, [el('img', { src: msg.authorAvatar || fallbackAvatar(msg.authorName) })]),
         el('div', { class: 'gk-msg-body' }, [
           el('div', { class: 'gk-msg-head' }, [
             el('span', { class: 'gk-author', onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
+            msg.authorRole === 'prime' ? el('span', { class: 'gk-badge-prime', title: 'G.K.IO Prime' }, '◆') : null,
+            msg.authorTag ? el('span', { class: 'gk-author-tag' }, msg.authorTag) : null,
             el('span', { class: 'gk-time' }, formatTime(msg.createdAt)),
           ]),
         ]),
@@ -241,6 +244,9 @@ export async function sendCurrentMessage() {
     authorId: uid,
     authorName: state.user.displayName || state.user.username,
     authorAvatar: state.user.avatarUrl || '',
+    authorRole: state.user.role || 'free',
+    authorTag: state.user.tag || '',
+    authorFrameStyle: state.user.frameStyle || 'none',
     content: text,
     createdAt: serverTimestamp(),
   };
@@ -292,6 +298,9 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
     authorId: uid,
     authorName: state.user.displayName || state.user.username,
     authorAvatar: state.user.avatarUrl || '',
+    authorRole: state.user.role || 'free',
+    authorTag: state.user.tag || '',
+    authorFrameStyle: state.user.frameStyle || 'none',
     content: '',
     attachmentUrl: url,
     attachmentType,

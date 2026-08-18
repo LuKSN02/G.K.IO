@@ -60,6 +60,12 @@ async function bootstrapUserDoc(uid, username, email) {
     bio: '',
     statusPresence: 'online',
     createdAt: serverTimestamp(),
+    // ---- G.K.IO Prime ----
+    role: 'free',        // 'free' | 'prime' — só alterável via console/Cloud Function (ver firestore.rules)
+    primeSince: null,
+    tag: '',
+    frameStyle: 'none',  // 'none' | 'glacial' | 'aurora'
+    customBadges: [],
   });
 }
 

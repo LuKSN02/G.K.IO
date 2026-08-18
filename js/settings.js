@@ -6,7 +6,7 @@
 import { db, doc, userDoc, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { SOCIAL_ICONS, refreshMiniProfile, uploadProfileImage } from './profile.js';
-import { ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
+import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 
 const SECTIONS = [
@@ -14,6 +14,13 @@ const SECTIONS = [
   { id: 'audio-video', label: 'Áudio & Vídeo', icon: '🎙️' },
   { id: 'aparencia', label: 'Aparência', icon: '🎨' },
   { id: 'notificacoes', label: 'Notificações', icon: '🔔' },
+  { id: 'prime', label: 'G.K.IO Prime', icon: '◆' },
+];
+
+const FRAME_STYLES = [
+  { id: 'none', label: 'Nenhuma' },
+  { id: 'glacial', label: 'Glacial' },
+  { id: 'aurora', label: 'Aurora' },
 ];
 
 let activeSection = 'perfil';
@@ -61,6 +68,7 @@ function renderSection() {
   if (activeSection === 'audio-video') return renderAudioVideoSection(content);
   if (activeSection === 'aparencia') return renderAparenciaSection(content);
   if (activeSection === 'notificacoes') return renderNotificacoesSection(content);
+  if (activeSection === 'prime') return renderPrimeSection(content);
 }
 
 // ============================================================
@@ -308,23 +316,35 @@ function renderAparenciaSection(content) {
     }, [el('span', {}, m.icon), el('span', {}, m.label)])
   ));
 
-  const swatchRow = el('div', { class: 'gk-accent-swatch-row' }, Object.entries(ACCENTS).map(([key, a]) =>
-    el('div', {
-      class: 'gk-accent-swatch' + (prefs.accent === key ? ' gk-active' : ''),
-      style: `background:${a.accent};`,
-      title: a.name,
-      onclick: () => { setAccent(key); renderSection(); },
-    }, prefs.accent === key ? '✓' : '')
-  ));
+  const isPrime = state.user.role === 'prime';
+  const swatchRow = el('div', { class: 'gk-accent-swatch-row' }, [
+    ...Object.entries(ACCENTS).map(([key, a]) => buildAccentSwatch(key, a, prefs, false)),
+    ...Object.entries(PREMIUM_ACCENTS).map(([key, a]) => buildAccentSwatch(key, a, prefs, !isPrime)),
+  ]);
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Modo de exibição'),
     modeRow,
   ]));
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
-    el('div', { class: 'gk-settings-card-title' }, 'Cor de destaque'),
+    el('div', { class: 'gk-settings-card-title' }, [
+      'Cor de destaque',
+      !isPrime ? el('span', { class: 'gk-settings-card-title-hint' }, '  ·  cores ◆ exigem Prime') : null,
+    ]),
     swatchRow,
   ]));
+}
+
+function buildAccentSwatch(key, a, prefs, locked) {
+  return el('div', {
+    class: 'gk-accent-swatch' + (prefs.accent === key ? ' gk-active' : '') + (locked ? ' gk-locked' : ''),
+    style: `background:${a.accent};`,
+    title: locked ? `${a.name} (exclusivo G.K.IO Prime)` : a.name,
+    onclick: () => {
+      if (locked) { toast('Essa cor é exclusiva para assinantes G.K.IO Prime.', 'danger'); return; }
+      setAccent(key); renderSection();
+    },
+  }, locked ? '🔒' : (prefs.accent === key ? '✓' : ''));
 }
 
 // ============================================================
@@ -349,6 +369,105 @@ function renderNotificacoesSection(content) {
       setNotifPrefs({ desktop: v });
     }),
   ]));
+}
+
+// ============================================================
+// Seção: G.K.IO Prime
+// ============================================================
+function renderPrimeSection(content) {
+  content.appendChild(sectionHeader('G.K.IO Prime', 'Customizações e vantagens exclusivas de assinante.'));
+
+  if (state.user.role !== 'prime') {
+    renderPrimeLockedView(content);
+    return;
+  }
+
+  renderPrimeActiveView(content);
+}
+
+// ---------- Visão de quem ainda não é Prime ----------
+function renderPrimeLockedView(content) {
+  content.appendChild(el('div', { class: 'gk-settings-card gk-prime-upsell' }, [
+    el('div', { class: 'gk-prime-upsell-icon' }, '◆'),
+    el('div', { class: 'gk-prime-upsell-title' }, 'Você ainda não é Prime'),
+    el('div', { class: 'gk-prime-upsell-sub' },
+      'Assinantes Prime ganham moldura de avatar animada, tag personalizada ao lado do nome, cores de destaque exclusivas e limites maiores de upload de emoji.'),
+    el('button', {
+      class: 'gk-btn gk-btn-primary',
+      onclick: () => toast('A assinatura ainda não está disponível — em breve!'),
+    }, 'Saiba mais'),
+  ]));
+}
+
+// ---------- Visão de quem já é Prime ----------
+function renderPrimeActiveView(content) {
+  const tagInput = el('input', {
+    type: 'text', maxlength: '16', placeholder: 'ex: dev, GM, fundador',
+    value: state.user.tag || '',
+  });
+
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, '◆ Membro Prime'),
+    el('div', { class: 'gk-hint' }, primeSinceLabel(state.user.primeSince)),
+  ]));
+
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Tag personalizada'),
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Aparece ao lado do seu nome no chat'), tagInput]),
+  ]));
+
+  const frameRow = el('div', { class: 'gk-frame-style-row' }, FRAME_STYLES.map((f) =>
+    el('div', {
+      class: 'gk-frame-style-swatch' + (state.user.frameStyle === f.id ? ' gk-active' : ''),
+      'data-frame-preview': f.id,
+      onclick: () => selectFrameStyle(f.id, frameRow),
+    }, [
+      el('div', { class: 'gk-avatar gk-sz-40', 'data-frame': f.id }, [
+        el('img', { src: state.user.avatarUrl || fallbackAvatar(state.user.username) }),
+      ]),
+      el('span', {}, f.label),
+    ])
+  ));
+
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Moldura de avatar'),
+    frameRow,
+  ]));
+
+  const saveBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Salvar alterações');
+  content.appendChild(el('div', { class: 'gk-settings-save-row' }, [saveBtn]));
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Salvando...';
+    try {
+      const updates = { tag: tagInput.value.trim().slice(0, 16) };
+      await updateDoc(userDoc(state.user.uid), updates);
+      Object.assign(state.user, updates);
+      toast('Preferências Prime salvas.');
+      refreshMiniProfile();
+    } catch (err) {
+      toast(err.message || 'Falha ao salvar.', 'danger');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Salvar alterações';
+    }
+  });
+}
+
+function selectFrameStyle(frameId, frameRow) {
+  state.user.frameStyle = frameId; // otimista — a persistência real acontece no updateDoc abaixo
+  frameRow.querySelectorAll('.gk-frame-style-swatch').forEach((n) => n.classList.remove('gk-active'));
+  frameRow.querySelector(`[data-frame-preview="${frameId}"]`).classList.add('gk-active');
+  updateDoc(userDoc(state.user.uid), { frameStyle: frameId })
+    .then(refreshMiniProfile)
+    .catch(() => toast('Não foi possível salvar a moldura.', 'danger'));
+}
+
+function primeSinceLabel(ts) {
+  if (!ts || !ts.toDate) return 'Assinante Prime.';
+  const d = ts.toDate();
+  return `Assinante Prime desde ${d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}.`;
 }
 
 // ============================================================

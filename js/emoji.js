@@ -276,7 +276,8 @@ function triggerUpload() {
       const file = uploadFileInput.files[0];
       uploadFileInput.value = '';
       if (!file) return;
-      if (file.size > 2 * 1024 * 1024) { toast('O emoji precisa ter até 2MB.', 'danger'); return; }
+      const maxMB = state.user?.role === 'prime' ? 8 : 2;
+      if (file.size > maxMB * 1024 * 1024) { toast(`O emoji precisa ter até ${maxMB}MB.`, 'danger'); return; }
       pendingEmojiFile = file;
       renderTab();
     });

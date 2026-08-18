@@ -8,6 +8,8 @@
 // forma síncrona para evitar o "flash" de tema antes do JS carregar.
 // ============================================================
 
+import { state } from './state.js';
+
 const STORAGE_KEY = 'gkio-theme-prefs';
 
 export const ACCENTS = {
@@ -18,6 +20,15 @@ export const ACCENTS = {
   emerald: { name: 'Esmeralda',    accent: '#22916A', strong: '#186F51', soft: 'rgba(34,145,106,0.12)',  glow: 'rgba(34,145,106,0.25)' },
   violet:  { name: 'Violeta',      accent: '#7C4FC2', strong: '#5F3A98', soft: 'rgba(124,79,194,0.12)',  glow: 'rgba(124,79,194,0.25)' },
 };
+
+// Paletas exclusivas de assinantes G.K.IO Prime — mesmas variáveis, só
+// liberadas condicionalmente em setAccent() e na UI de Configurações.
+export const PREMIUM_ACCENTS = {
+  obsidian: { name: 'Obsidiana Prime', accent: '#1C2733', strong: '#0F161D', soft: 'rgba(28,39,51,0.14)',  glow: 'rgba(28,39,51,0.3)' },
+  aurora:   { name: 'Aurora Prime',    accent: '#1FA7C9', strong: '#146E85', soft: 'rgba(31,167,201,0.14)', glow: 'rgba(31,167,201,0.3)' },
+};
+
+const ALL_ACCENTS = { ...ACCENTS, ...PREMIUM_ACCENTS };
 
 const DEFAULTS = { mode: 'light', accent: 'teal' };
 
@@ -42,7 +53,7 @@ export function resolvedMode() {
 
 export function applyTheme() {
   document.documentElement.setAttribute('data-theme', resolvedMode());
-  const a = ACCENTS[prefs.accent] || ACCENTS.teal;
+  const a = ALL_ACCENTS[prefs.accent] || ACCENTS.teal;
   const root = document.documentElement.style;
   root.setProperty('--gk-accent', a.accent);
   root.setProperty('--gk-accent-strong', a.strong);
@@ -57,7 +68,10 @@ export function setThemeMode(mode) {
 }
 
 export function setAccent(key) {
-  if (!ACCENTS[key]) return;
+  if (!ALL_ACCENTS[key]) return;
+  // Proteção extra no client (a regra de verdade é o próprio backend não
+  // ter como validar isso — aqui é só pra não deixar a UI mentir).
+  if (PREMIUM_ACCENTS[key] && (!state.user || state.user.role !== 'prime')) return;
   prefs.accent = key;
   savePrefs();
   applyTheme();

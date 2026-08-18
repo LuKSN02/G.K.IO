@@ -34,9 +34,20 @@ service cloud.firestore {
     }
 
     // ---------- Usuários e perfil ----------
+    // Campos de status Prime (role, primeSince, customBadges) NUNCA podem
+    // ser alterados pelo próprio usuário via client — só mudam manualmente
+    // no console do Firebase, ou futuramente via Cloud Function com Admin
+    // SDK (ex: webhook de um gateway de pagamento), que ignora estas regras.
+    function isValidSelfProfileEdit() {
+      return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
+        || request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['displayName','avatarUrl','bannerUrl','bio','statusPresence','tag','frameStyle']);
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
-      allow write: if isSelf(uid);
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid) && isValidSelfProfileEdit();
 
       match /socialLinks/{linkId} {
         allow read: if signedIn();
