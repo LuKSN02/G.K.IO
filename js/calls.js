@@ -37,6 +37,11 @@ const voicePeers = new Map(); // uid -> RTCPeerConnection (canal de voz, mesh)
 const voiceUnsubs = new Map();
 let dmCameraTrackId = null; // id da track de vídeo "câmera" na chamada de DM atual (para distinguir de telas)
 
+// Detecção de "está falando" (canal de voz) — um AnalyserNode por stream
+// (o próprio usuário usa a chave 'self', os demais usam o uid). Puramente
+// visual/local: não é sincronizado via Firestore.
+const speakingDetectors = new Map(); // key -> { interval, audioCtx }
+
 // Estado da tela cheia de chamada (DM) — cronômetro e se está minimizada
 let callTimerInterval = null;
 let callStartedAt = null;
@@ -62,6 +67,46 @@ async function getLocalStream(withVideo) {
     toast('Não foi possível acessar microfone/câmera.', 'danger');
     throw err;
   }
+}
+
+// ============================================================
+// Detecção de "está falando" via nível de volume (Web Audio API)
+// ============================================================
+
+function attachSpeakingDetector(stream, key, onChange) {
+  detachSpeakingDetector(key);
+  if (!stream || !stream.getAudioTracks().length) return;
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let isSpeaking = false;
+    const interval = setInterval(() => {
+      analyser.getByteFrequencyData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) sum += data[i];
+      const speaking = (sum / data.length) > 12; // limiar simples — suficiente para distinguir fala de silêncio/ruído de fundo
+      if (speaking !== isSpeaking) { isSpeaking = speaking; onChange(speaking); }
+    }, 200);
+    speakingDetectors.set(key, { interval, audioCtx });
+  } catch (e) { /* Web Audio pode falhar em navegadores sem suporte — o indicador de fala fica desativado, sem quebrar a chamada */ }
+}
+
+function detachSpeakingDetector(key) {
+  const d = speakingDetectors.get(key);
+  if (!d) return;
+  clearInterval(d.interval);
+  d.audioCtx.close().catch(() => {});
+  speakingDetectors.delete(key);
+}
+
+function setTileSpeaking(uid, speaking) {
+  document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-speaking', speaking);
+  document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-speaking', speaking);
 }
 
 // ============================================================
@@ -281,11 +326,11 @@ function endCall(closeConnection) {
   }
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
+  detachSpeakingDetector('self');
   dmCameraTrackId = null;
-  const wasDm = !!(state.activeCall && state.activeCall.kind === 'dm');
   state.activeCall = null;
   stopCallTimer();
-  if (wasDm) closeCallScreen();
+  closeCallScreen();
   hideCallBar();
 }
 
@@ -297,14 +342,25 @@ export async function joinVoiceChannel(serverId, channelId, name) {
   if (state.activeCall) await hangupCall();
   localStream = await getLocalStream(false);
   const uid = auth.currentUser.uid;
-  state.activeCall = { kind: 'voiceChannel', id: channelId, serverId, remoteStreams: new Map(), screenSharing: false };
+  state.activeCall = {
+    kind: 'voiceChannel', id: channelId, serverId, channelLabel: name,
+    remoteStreams: new Map(),
+    remoteCameraStreams: new Map(), // uid -> MediaStream da câmera de cada participante
+    presenceData: new Map(),        // uid -> último doc de voicePresence (usado p/ distinguir câmera de tela)
+    lastPresenceDocs: [],
+    screenSharingUids: new Set(),   // uids atualmente compartilhando tela (para o selo "Compartilhando tela")
+    screenSharing: false,
+  };
 
   await setDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', uid), {
     displayName: state.user.displayName || state.user.username,
     avatarUrl: state.user.avatarUrl || '',
     joinedAt: serverTimestamp(),
     muted: false,
+    cameraTrackId: null,
   });
+
+  attachSpeakingDetector(localStream, 'self', (speaking) => setTileSpeaking(uid, speaking));
 
   showCallBar(`Sala de voz: ${name}`);
 
@@ -313,6 +369,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
     const presentUids = new Set();
     snap.forEach((d) => presentUids.add(d.id));
     renderVoiceMembersList(channelId, snap);
+    renderParticipantsGrid(channelId, snap);
 
     // Conecta com novos peers presentes (o uid "menor" inicia a oferta, evitando ofertas duplicadas)
     presentUids.forEach((otherUid) => {
@@ -346,11 +403,20 @@ function connectVoicePeer(serverId, channelId, otherUid, iInitiate) {
         document.body.appendChild(audioEl);
       }
       audioEl.srcObject = e.streams[0];
+      attachSpeakingDetector(e.streams[0], otherUid, (speaking) => setTileSpeaking(otherUid, speaking));
     } else if (e.track.kind === 'video') {
-      // Em canais de voz não há câmera — qualquer track de vídeo é uma tela compartilhada.
-      const memberData = state.serverMembersCache.get(serverId)?.get(otherUid)?.user;
-      renderRemoteScreenTile(otherUid, e.streams[0], memberData);
-      e.track.onended = () => removeRemoteScreenTile(otherUid);
+      // Uma track de vídeo pode ser a câmera da pessoa ou uma tela compartilhada —
+      // distinguimos comparando com o cameraTrackId anunciado no doc de presença.
+      const presence = state.activeCall?.presenceData?.get(otherUid);
+      const isCamera = presence && presence.cameraTrackId === e.track.id;
+      if (isCamera) {
+        updateRemoteCameraTile(otherUid, e.streams[0]);
+        e.track.onended = () => clearRemoteCameraTile(otherUid);
+      } else {
+        const memberData = state.serverMembersCache.get(serverId)?.get(otherUid)?.user;
+        renderRemoteScreenTile(otherUid, e.streams[0], memberData);
+        e.track.onended = () => removeRemoteScreenTile(otherUid);
+      }
     }
   };
 
@@ -405,6 +471,8 @@ function disconnectVoicePeer(otherUid) {
   if (unsub) { unsub(); voiceUnsubs.delete(otherUid); }
   document.getElementById(`gk-voice-audio-${otherUid}`)?.remove();
   removeRemoteScreenTile(otherUid);
+  clearRemoteCameraTile(otherUid);
+  detachSpeakingDetector(otherUid);
 }
 
 function renderVoiceMembersList(channelId, snap) {
@@ -413,11 +481,98 @@ function renderVoiceMembersList(channelId, snap) {
   box.innerHTML = '';
   snap.forEach((d) => {
     const m = d.data();
-    box.appendChild(el('div', { class: 'gk-voice-member', id: `gk-voice-member-${d.id}` }, [
+    box.appendChild(el('div', { class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''), id: `gk-voice-member-${d.id}` }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
       el('span', {}, m.displayName),
+      m.muted ? el('span', { class: 'gk-voice-member-mic-off', title: 'Mutado' }, '🔇') : null,
     ]));
   });
+}
+
+// ---------- Grid de participantes (tela cheia expandida, estilo Discord) ----------
+
+function renderParticipantsGrid(channelId, snap) {
+  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel' || state.activeCall.id !== channelId) return;
+  state.activeCall.presenceData = new Map();
+  snap.forEach((d) => state.activeCall.presenceData.set(d.id, d.data()));
+  state.activeCall.lastPresenceDocs = snap.docs;
+  renderParticipantsGridFromDocs(snap.docs);
+}
+
+function renderParticipantsGridFromDocs(docs) {
+  const grid = document.getElementById('gk-call-participants-grid');
+  if (!grid || !state.activeCall) return;
+  const uid = auth.currentUser.uid;
+
+  grid.innerHTML = '';
+  for (const d of docs) {
+    const otherUid = d.id;
+    const data = d.data ? d.data() : d.data; // aceita tanto QueryDocumentSnapshot quanto objeto puro
+    const isSelf = otherUid === uid;
+    const selfCameraOn = isSelf && localStream && localStream.getVideoTracks()[0]?.enabled;
+    const cameraStream = isSelf
+      ? (selfCameraOn ? localStream : null)
+      : state.activeCall.remoteCameraStreams.get(otherUid);
+
+    const tile = el('div', {
+      class: 'gk-call-tile' + (cameraStream ? ' gk-camera-on' : '') + (data.muted ? ' gk-muted' : ''),
+      id: `gk-calltile-${otherUid}`,
+    }, [
+      el('video', { class: 'gk-call-tile-video', autoplay: 'true', playsinline: 'true', muted: isSelf ? 'true' : null }),
+      el('div', { class: 'gk-call-tile-avatar-wrap' }, [el('img', { src: data.avatarUrl || fallbackAvatar(data.displayName) })]),
+      el('div', { class: 'gk-call-tile-name' }, data.displayName || 'Membro'),
+      el('div', { class: 'gk-call-tile-sharing-badge' }, 'Compartilhando tela'),
+      el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, '🔇'),
+      isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
+    ]);
+    grid.appendChild(tile);
+    if (cameraStream) tile.querySelector('.gk-call-tile-video').srcObject = cameraStream;
+    if (state.activeCall.screenSharingUids?.has(otherUid)) tile.classList.add('gk-sharing');
+  }
+  syncScreenshareSpotlightClass();
+}
+
+function markTileSharing(targetUid, sharing) {
+  if (state.activeCall) {
+    if (!state.activeCall.screenSharingUids) state.activeCall.screenSharingUids = new Set();
+    if (sharing) state.activeCall.screenSharingUids.add(targetUid);
+    else state.activeCall.screenSharingUids.delete(targetUid);
+  }
+  document.getElementById(`gk-calltile-${targetUid}`)?.classList.toggle('gk-sharing', sharing);
+}
+
+function updateSelfTileCamera(on) {
+  const uid = auth.currentUser.uid;
+  const tile = document.getElementById(`gk-calltile-${uid}`);
+  if (!tile) return;
+  tile.classList.toggle('gk-camera-on', on);
+  const video = tile.querySelector('.gk-call-tile-video');
+  if (video) video.srcObject = on ? localStream : null;
+}
+
+function updateRemoteCameraTile(otherUid, stream) {
+  if (state.activeCall) state.activeCall.remoteCameraStreams.set(otherUid, stream);
+  const tile = document.getElementById(`gk-calltile-${otherUid}`);
+  if (!tile) return;
+  tile.classList.add('gk-camera-on');
+  const video = tile.querySelector('.gk-call-tile-video');
+  if (video) video.srcObject = stream;
+}
+
+function clearRemoteCameraTile(otherUid) {
+  if (state.activeCall) state.activeCall.remoteCameraStreams.delete(otherUid);
+  const tile = document.getElementById(`gk-calltile-${otherUid}`);
+  if (!tile) return;
+  tile.classList.remove('gk-camera-on');
+  const video = tile.querySelector('.gk-call-tile-video');
+  if (video) video.srcObject = null;
+}
+
+function updateVoicePresenceField(patch) {
+  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return Promise.resolve();
+  const { serverId, id: channelId } = state.activeCall;
+  return updateDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', auth.currentUser.uid), patch)
+    .catch(() => {});
 }
 
 export async function leaveVoiceChannel() {
@@ -426,6 +581,7 @@ export async function leaveVoiceChannel() {
   const { serverId, id: channelId } = state.activeCall;
   const uid = auth.currentUser.uid;
   voicePeers.forEach((_, otherUid) => disconnectVoicePeer(otherUid));
+  detachSpeakingDetector('self');
 
   // Remove o próprio doc de presença ANTES de desligar o listener, para que
   // o onSnapshot ainda capture essa mudança e re-renderize a lista sem nós.
@@ -435,6 +591,7 @@ export async function leaveVoiceChannel() {
   // Limpa a UI imediatamente também, sem depender do round-trip do Firestore
   // (evita a sala mostrar por alguns instantes/indefinidamente que ainda estamos nela).
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
+  document.getElementById(`gk-calltile-${uid}`)?.remove();
 
   if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
   endCall(false);
@@ -466,6 +623,7 @@ export async function startScreenShare() {
 
   state.activeCall.screenSharing = true;
   renderLocalScreenTile(screenStream);
+  markTileSharing(auth.currentUser.uid, true);
   updateScreenShareButton(true);
   toast('Compartilhamento de tela iniciado.');
 }
@@ -483,6 +641,7 @@ export function stopScreenShare(showToast = true) {
   screenStream = null;
   if (state.activeCall) state.activeCall.screenSharing = false;
   removeLocalScreenTile();
+  markTileSharing(auth.currentUser.uid, false);
   updateScreenShareButton(false);
   if (showToast) toast('Compartilhamento de tela encerrado.');
 }
@@ -499,6 +658,7 @@ function renderLocalScreenTile(stream) {
     grid.appendChild(tile);
   }
   tile.querySelector('video').srcObject = stream;
+  syncScreenshareSpotlightClass();
 }
 function removeLocalScreenTile() {
   document.getElementById('gk-screenshare-local')?.remove();
@@ -516,14 +676,28 @@ function renderRemoteScreenTile(otherUid, stream, userData) {
     grid.appendChild(tile);
   }
   tile.querySelector('video').srcObject = stream;
+  markTileSharing(otherUid, true);
+  syncScreenshareSpotlightClass();
 }
 function removeRemoteScreenTile(otherUid) {
   document.getElementById(`gk-screenshare-${otherUid}`)?.remove();
+  markTileSharing(otherUid, false);
   maybeHideScreenGrid();
 }
 function maybeHideScreenGrid() {
   const grid = document.getElementById('gk-screenshare-grid');
   if (grid && !grid.children.length) grid.classList.remove('gk-open');
+  syncScreenshareSpotlightClass();
+}
+function syncScreenshareSpotlightClass() {
+  const grid = document.getElementById('gk-screenshare-grid');
+  const participantsGrid = document.getElementById('gk-call-participants-grid');
+  if (!grid || !participantsGrid) return;
+  const expanded = document.getElementById('gk-call-screen').classList.contains('gk-open');
+  const isVoiceGrid = state.activeCall && state.activeCall.kind === 'voiceChannel';
+  const inCallScreen = expanded && isVoiceGrid;
+  grid.classList.toggle('gk-in-callscreen', inCallScreen);
+  participantsGrid.classList.toggle('gk-has-spotlight', inCallScreen && grid.children.length > 0);
 }
 function updateScreenShareButton(active) {
   ['gk-call-screenshare-btn', 'gk-call-bar-screenshare-btn'].forEach((id) => {
@@ -607,14 +781,30 @@ function onDmCallConnected() {
 function setCallLayout(mode) {
   const audioView = document.getElementById('gk-call-audio-view');
   const videoGrid = document.getElementById('gk-call-video-grid');
-  if (!audioView || !videoGrid) return;
-  if (mode === 'video') {
-    audioView.style.display = 'none';
-    videoGrid.classList.add('gk-open');
-  } else {
-    audioView.style.display = 'flex';
-    videoGrid.classList.remove('gk-open');
-  }
+  const participantsGrid = document.getElementById('gk-call-participants-grid');
+  if (!audioView || !videoGrid || !participantsGrid) return;
+  audioView.style.display = mode === 'audio' ? 'flex' : 'none';
+  videoGrid.classList.toggle('gk-open', mode === 'video');
+  participantsGrid.classList.toggle('gk-open', mode === 'grid');
+}
+
+// ---------- Tela cheia de chamada de canal de voz (grid de participantes, estilo Discord) ----------
+
+function openVoiceChannelCallScreen(name) {
+  document.getElementById('gk-call-screen-bg').style.backgroundImage = '';
+  setCallStatusText(`Sala de voz: ${name}`);
+  document.getElementById('gk-call-self-pip').style.display = 'none';
+  setCallLayout('grid');
+  renderParticipantsGridFromDocs(state.activeCall?.lastPresenceDocs || []);
+
+  const audioTrack = localStream && localStream.getAudioTracks()[0];
+  updateMuteButtons(!!audioTrack && !audioTrack.enabled);
+  updateCameraButtons(!!(localStream && localStream.getVideoTracks()[0]?.enabled));
+  updateScreenShareButton(isScreenSharing());
+
+  document.getElementById('gk-call-bar').classList.remove('gk-open');
+  document.getElementById('gk-call-screen').classList.add('gk-open');
+  syncScreenshareSpotlightClass();
 }
 
 function setCallStatusText(text) {
@@ -648,15 +838,24 @@ function closeCallScreen() {
 }
 
 function minimizeCallScreen() {
-  if (!state.activeCall || state.activeCall.kind !== 'dm') return;
+  if (!state.activeCall) return;
   document.getElementById('gk-call-screen').classList.remove('gk-open');
-  showCallBar(`Em chamada com ${state.activeCall.peer?.displayName || 'alguém'}`);
+  syncScreenshareSpotlightClass();
+  if (state.activeCall.kind === 'dm') {
+    showCallBar(`Em chamada com ${state.activeCall.peer?.displayName || 'alguém'}`);
+  } else {
+    showCallBar(`Sala de voz: ${state.activeCall.channelLabel || ''}`);
+  }
 }
 
 function expandCallScreen() {
-  if (!state.activeCall || state.activeCall.kind !== 'dm') return;
+  if (!state.activeCall) return;
   document.getElementById('gk-call-bar').classList.remove('gk-open');
-  document.getElementById('gk-call-screen').classList.add('gk-open');
+  if (state.activeCall.kind === 'voiceChannel') {
+    openVoiceChannelCallScreen(state.activeCall.channelLabel || 'Sala de voz');
+  } else {
+    document.getElementById('gk-call-screen').classList.add('gk-open');
+  }
 }
 
 function updateMuteButtons(muted) {
@@ -670,29 +869,35 @@ function updateMuteButtons(muted) {
 function updateCameraButtons(on) {
   const btn = document.getElementById('gk-call-camera-btn');
   if (!btn) return;
-  const isDm = state.activeCall?.kind === 'dm';
-  btn.style.display = isDm ? 'flex' : 'none';
+  btn.style.display = state.activeCall ? 'flex' : 'none';
   btn.textContent = on ? '🎥' : '📷';
   btn.title = on ? 'Desativar câmera' : 'Ativar câmera';
   btn.classList.toggle('gk-active', !!on);
 }
 
 async function toggleCameraInCall() {
-  if (!state.activeCall || state.activeCall.kind !== 'dm' || !localStream) return;
+  if (!state.activeCall || !localStream) return;
+  const isDm = state.activeCall.kind === 'dm';
   let videoTrack = localStream.getVideoTracks()[0];
 
   if (videoTrack) {
     // Já existe uma track de câmera nesta chamada — apenas ativa/desativa.
     videoTrack.enabled = !videoTrack.enabled;
     updateCameraButtons(videoTrack.enabled);
-    document.getElementById('gk-call-self-pip').style.display = videoTrack.enabled ? 'block' : 'none';
-    setCallLayout(videoTrack.enabled ? 'video' : (document.getElementById('gk-remote-video') ? 'video' : 'audio'));
+    if (isDm) {
+      document.getElementById('gk-call-self-pip').style.display = videoTrack.enabled ? 'block' : 'none';
+      setCallLayout(videoTrack.enabled ? 'video' : (document.getElementById('gk-remote-video') ? 'video' : 'audio'));
+    } else {
+      updateSelfTileCamera(videoTrack.enabled);
+      await updateVoicePresenceField({ cameraTrackId: videoTrack.enabled ? videoTrack.id : null });
+    }
     return;
   }
 
   // Chamada começou só de voz — pede a câmera agora e "sobe de nível" para
   // vídeo, adicionando a nova track à conexão já existente (isso dispara
-  // a renegociação automática configurada em attachRenegotiation).
+  // a renegociação automática configurada em attachRenegotiation, tanto
+  // para DM quanto para cada peer do mesh do canal de voz).
   try {
     const prefs = getMediaPrefs();
     const camStream = await navigator.mediaDevices.getUserMedia({
@@ -700,13 +905,22 @@ async function toggleCameraInCall() {
     });
     videoTrack = camStream.getVideoTracks()[0];
     localStream.addTrack(videoTrack);
-    dmCameraTrackId = videoTrack.id;
-    if (state.activeCall.pc) state.activeCall.pc.addTrack(videoTrack, localStream);
-    state.activeCall.withVideo = true;
 
-    document.getElementById('gk-call-self-video').srcObject = localStream;
-    document.getElementById('gk-call-self-pip').style.display = 'block';
-    setCallLayout('video');
+    if (isDm) {
+      dmCameraTrackId = videoTrack.id;
+      if (state.activeCall.pc) state.activeCall.pc.addTrack(videoTrack, localStream);
+      state.activeCall.withVideo = true;
+      document.getElementById('gk-call-self-video').srcObject = localStream;
+      document.getElementById('gk-call-self-pip').style.display = 'block';
+      setCallLayout('video');
+    } else {
+      // Escreve o id da track ANTES de adicioná-la às conexões — assim, quando a
+      // renegociação disparar o ontrack do outro lado, o doc de presença já
+      // identifica essa track como "câmera" (ver connectVoicePeer).
+      await updateVoicePresenceField({ cameraTrackId: videoTrack.id });
+      voicePeers.forEach((pc) => pc.addTrack(videoTrack, localStream));
+      updateSelfTileCamera(true);
+    }
     updateCameraButtons(true);
   } catch (e) {
     toast('Não foi possível acessar a câmera.', 'danger');
@@ -717,9 +931,11 @@ function showCallBar(label) {
   const bar = document.getElementById('gk-call-bar');
   document.getElementById('gk-call-bar-label').textContent = label;
   bar.classList.add('gk-open');
+  // Expandir para tela cheia agora funciona tanto em DM quanto em canal de
+  // voz de servidor — só o conteúdo exibido muda (avatar/vídeo vs. grid).
   const expandBtn = document.getElementById('gk-call-bar-expand-btn');
-  if (expandBtn) expandBtn.style.display = state.activeCall?.kind === 'dm' ? 'inline-flex' : 'none';
-  updateScreenShareButton(false);
+  if (expandBtn) expandBtn.style.display = 'inline-flex';
+  updateScreenShareButton(isScreenSharing());
 }
 function renderCallBar(label) {
   // Mantém o texto da barra minimizada atualizado mesmo enquanto ela está
@@ -731,10 +947,13 @@ function hideCallBar() {
   document.getElementById('gk-call-bar').classList.remove('gk-open');
   document.getElementById('gk-call-video-grid').classList.remove('gk-open');
   document.getElementById('gk-call-video-grid').innerHTML = '';
+  document.getElementById('gk-call-participants-grid').classList.remove('gk-open', 'gk-has-spotlight');
+  document.getElementById('gk-call-participants-grid').innerHTML = '';
   document.getElementById('gk-remote-dm-audio')?.remove();
   document.getElementById('gk-remote-video')?.remove();
-  document.getElementById('gk-screenshare-grid').classList.remove('gk-open');
+  document.getElementById('gk-screenshare-grid').classList.remove('gk-open', 'gk-in-callscreen');
   document.getElementById('gk-screenshare-grid').innerHTML = '';
+  document.getElementById('gk-call-camera-btn').style.display = 'none';
 }
 
 export function wireCallBar() {
@@ -762,6 +981,9 @@ function toggleMute() {
   if (!track) return;
   track.enabled = !track.enabled;
   updateMuteButtons(!track.enabled);
+  if (state.activeCall && state.activeCall.kind === 'voiceChannel') {
+    updateVoicePresenceField({ muted: !track.enabled });
+  }
 }
 function toggleScreenShareBtn() {
   if (isScreenSharing()) stopScreenShare(); else startScreenShare();

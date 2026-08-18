@@ -136,7 +136,9 @@
 
 .gk-voice-members { margin-left: 26px; margin-bottom: 4px; }
 .gk-voice-member { display: flex; align-items: center; gap: 6px; padding: 3px 8px; font-size: 12.5px; color: var(--gk-gray-600); }
-.gk-voice-member img { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; }
+.gk-voice-member img { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; transition: box-shadow 120ms ease; }
+.gk-voice-member.gk-speaking img { box-shadow: 0 0 0 2px var(--gk-accent); }
+.gk-voice-member-mic-off { font-size: 10px; color: var(--gk-danger); margin-left: -2px; }
 
 /* DM list rows */
 .gk-dm-row {
@@ -534,6 +536,71 @@
 }
 .gk-call-self-pip video { width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover; background: #000; transform: scaleX(-1); }
 
+/* ---------- Modo grid: canal de voz de servidor (estilo Discord) ---------- */
+.gk-call-participants-grid {
+  position: relative; z-index: 2; display: none;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px; width: min(1080px, 92vw); max-height: 72vh; overflow-y: auto;
+  padding: 4px;
+}
+.gk-call-participants-grid.gk-open { display: grid; }
+.gk-call-participants-grid.gk-has-spotlight {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  max-width: 640px;
+}
+.gk-call-tile {
+  position: relative; aspect-ratio: 16/10; border-radius: var(--gk-radius-lg);
+  background: #1F2427; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  border: 2px solid transparent; transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.gk-call-tile.gk-speaking {
+  border-color: var(--gk-accent);
+  box-shadow: 0 0 0 3px var(--gk-accent-glow);
+}
+.gk-call-tile-video {
+  width: 100%; height: 100%; object-fit: cover; display: none; background: #000;
+}
+.gk-call-tile.gk-camera-on .gk-call-tile-video { display: block; }
+.gk-call-tile.gk-camera-on .gk-call-tile-avatar-wrap { display: none; }
+.gk-call-tile-avatar-wrap {
+  display: flex; align-items: center; justify-content: center;
+  width: 76px; height: 76px; border-radius: 50%; overflow: hidden;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.06);
+}
+.gk-call-tile.gk-speaking .gk-call-tile-avatar-wrap { box-shadow: 0 0 0 3px var(--gk-accent); }
+.gk-call-tile-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; }
+.gk-call-tile-name {
+  position: absolute; left: 10px; bottom: 8px; z-index: 2;
+  font-size: 12.5px; font-weight: 600; color: #fff;
+  background: rgba(0,0,0,0.5); padding: 3px 9px; border-radius: 999px;
+  max-width: calc(100% - 40px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gk-call-tile-mic-off {
+  position: absolute; right: 8px; bottom: 8px; z-index: 2;
+  width: 22px; height: 22px; border-radius: 50%; background: var(--gk-danger);
+  color: #fff; font-size: 11px; display: none; align-items: center; justify-content: center;
+}
+.gk-call-tile.gk-muted .gk-call-tile-mic-off { display: flex; }
+.gk-call-tile-sharing-badge {
+  position: absolute; left: 8px; top: 8px; z-index: 2;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; color: #fff;
+  background: var(--gk-accent); padding: 3px 8px; border-radius: 6px; display: none;
+}
+.gk-call-tile.gk-sharing .gk-call-tile-sharing-badge { display: block; }
+.gk-call-tile-you-badge {
+  position: absolute; right: 8px; top: 8px; z-index: 2;
+  font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.12); padding: 3px 8px; border-radius: 6px;
+}
+
+/* Quando o compartilhamento de tela é exibido dentro da chamada expandida,
+   vira o "palco principal" (spotlight) no topo, com os participantes em
+   grade menor logo abaixo — igual ao Discord ao ativar uma apresentação. */
+.gk-call-screen.gk-open ~ .gk-screenshare-grid.gk-in-callscreen {
+  position: relative; inset: auto; bottom: auto; left: auto; transform: none;
+  z-index: 2; margin-bottom: 16px; width: min(880px, 92vw); max-width: none;
+}
+.gk-call-screen.gk-open ~ .gk-screenshare-grid.gk-in-callscreen .gk-screenshare-tile { width: 100%; }
 /* ---------- Barra de controles central (pílula flutuante) ---------- */
 .gk-call-controls {
   position: absolute; z-index: 3; bottom: calc(32px + env(safe-area-inset-bottom));
@@ -860,6 +927,10 @@
   .gk-call-avatar-img { width: 118px; height: 118px; border-radius: 28px; }
   .gk-call-peer-name { font-size: 20px; }
   .gk-call-screen .gk-call-video-grid video { width: 92vw; max-height: 46vh; }
+  .gk-call-participants-grid { grid-template-columns: repeat(2, 1fr); width: 94vw; max-height: 58vh; gap: 10px; }
+  .gk-call-participants-grid.gk-has-spotlight { grid-template-columns: repeat(3, 1fr); }
+  .gk-call-tile-avatar-wrap { width: 54px; height: 54px; }
+  .gk-call-screen.gk-open ~ .gk-screenshare-grid.gk-in-callscreen { width: 94vw; }
   .gk-call-self-pip { width: 108px; right: 14px; bottom: calc(104px + env(safe-area-inset-bottom)); }
   .gk-call-controls { gap: 10px; padding: 10px; bottom: calc(20px + env(safe-area-inset-bottom)); }
   .gk-call-ctrl-btn { width: 46px; height: 46px; font-size: 17px; }
