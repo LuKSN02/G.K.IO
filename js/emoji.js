@@ -40,6 +40,10 @@ let uploadFileInput = null;
 
 const customEmojiCache = new Map(); // id -> { id, name, url, uploaderId }
 let unsubCustomEmojis = null;
+// Arquivo selecionado aguardando um nome antes do upload (substitui o antigo
+// fluxo com window.prompt(), que fica bloqueado silenciosamente em vários
+// navegadores/extensões — por isso "nada acontecia" ao escolher a imagem).
+let pendingEmojiFile = null;
 
 // ---------- Listener da biblioteca de emojis personalizados ----------
 export function listenCustomEmojis() {
@@ -98,7 +102,7 @@ export function initEmojiPicker({ textarea, triggerBtn, onSendGif }) {
   });
 }
 
-function closePicker() { panelEl.classList.remove('gk-open'); }
+function closePicker() { pendingEmojiFile = null; panelEl.classList.remove('gk-open'); }
 
 function buildPanel() {
   panelEl = el('div', { class: 'gk-emoji-picker', id: 'gk-emoji-picker' });
@@ -125,6 +129,7 @@ function buildPanel() {
 
 function switchTab(tab) {
   currentTab = tab;
+  pendingEmojiFile = null;
   panelEl.querySelectorAll('.gk-emoji-tab').forEach((b) => b.classList.toggle('gk-active', b.dataset.tab === tab));
   searchInputEl.value = '';
   searchInputEl.style.display = tab === 'emojis' ? 'none' : 'block';
@@ -163,6 +168,7 @@ function renderEmojisTab() {
 }
 
 function renderCustomTab() {
+  if (pendingEmojiFile) { renderEmojiNameForm(); return; }
   const filter = searchInputEl.value.trim().toLowerCase();
   const uploadTile = el('button', {
     class: 'gk-emoji-upload-tile', title: 'Enviar novo emoji', type: 'button', onclick: triggerUpload,
@@ -183,6 +189,83 @@ function renderCustomTab() {
   }
 }
 
+// Formulário exibido depois de escolher a imagem — substitui o antigo
+// window.prompt() por um campo dentro do próprio painel, para funcionar
+// de forma confiável em qualquer navegador.
+function renderEmojiNameForm() {
+  const previewUrl = URL.createObjectURL(pendingEmojiFile);
+  const suggestedName = pendingEmojiFile.name
+    .replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .slice(0, 32);
+
+  const nameInput = el('input', {
+    type: 'text', class: 'gk-emoji-name-input', placeholder: 'ex: pepe_feliz', maxlength: '32',
+    value: suggestedName,
+    oninput: (e) => { e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'); },
+    onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmBtn.click(); } },
+  });
+  const errorBox = el('div', { class: 'gk-error' });
+  const cancelBtn = el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: cancelPendingEmoji }, 'Cancelar');
+  const confirmBtn = el('button', {
+    class: 'gk-btn gk-btn-primary', type: 'button',
+    onclick: () => confirmPendingEmoji(nameInput, errorBox, confirmBtn),
+  }, 'Enviar');
+
+  bodyEl.appendChild(el('div', { class: 'gk-emoji-upload-form' }, [
+    el('img', { class: 'gk-emoji-upload-preview', src: previewUrl }),
+    el('div', { class: 'gk-field', style: 'width:100%;' }, [
+      el('label', {}, 'Nome do emoji'),
+      nameInput,
+      errorBox,
+    ]),
+    el('div', { class: 'gk-emoji-upload-form-actions' }, [cancelBtn, confirmBtn]),
+  ]));
+  nameInput.focus();
+  nameInput.select();
+}
+
+function cancelPendingEmoji() {
+  pendingEmojiFile = null;
+  renderTab();
+}
+
+async function confirmPendingEmoji(nameInput, errorBox, confirmBtn) {
+  errorBox.style.display = 'none';
+  const name = nameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
+  if (name.length < 2) {
+    errorBox.textContent = 'Digite um nome com pelo menos 2 caracteres.';
+    errorBox.style.display = 'block';
+    return;
+  }
+
+  const existingQ = query(customEmojisCol(), where('name', '==', name));
+  const existingSnap = await getDocs(existingQ);
+  if (!existingSnap.empty) {
+    errorBox.textContent = 'Já existe um emoji com esse nome.';
+    errorBox.style.display = 'block';
+    return;
+  }
+
+  const file = pendingEmojiFile;
+  confirmBtn.disabled = true;
+  const originalLabel = confirmBtn.textContent;
+  confirmBtn.textContent = 'Enviando...';
+  try {
+    const { url } = await uploadToCloudinary(file, `emojis/${auth.currentUser.uid}`);
+    await addDoc(customEmojisCol(), { name, url, uploaderId: auth.currentUser.uid, createdAt: serverTimestamp() });
+    toast(`Emoji :${name}: adicionado!`);
+    pendingEmojiFile = null;
+    renderTab();
+  } catch (err) {
+    errorBox.textContent = err.message || 'Falha ao enviar o emoji.';
+    errorBox.style.display = 'block';
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = originalLabel;
+  }
+}
+
 function triggerUpload() {
   if (!uploadFileInput) {
     uploadFileInput = document.createElement('input');
@@ -190,32 +273,16 @@ function triggerUpload() {
     uploadFileInput.accept = 'image/*';
     uploadFileInput.style.display = 'none';
     uploadFileInput.addEventListener('change', () => {
-      if (uploadFileInput.files[0]) uploadCustomEmoji(uploadFileInput.files[0]);
+      const file = uploadFileInput.files[0];
       uploadFileInput.value = '';
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { toast('O emoji precisa ter até 2MB.', 'danger'); return; }
+      pendingEmojiFile = file;
+      renderTab();
     });
     document.body.appendChild(uploadFileInput);
   }
   uploadFileInput.click();
-}
-
-async function uploadCustomEmoji(file) {
-  if (file.size > 2 * 1024 * 1024) { toast('O emoji precisa ter até 2MB.', 'danger'); return; }
-  let name = prompt('Nome do emoji (sem espaços, ex: pepe_feliz):', file.name.replace(/\.[^.]+$/, ''));
-  if (!name) return;
-  name = name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
-  if (name.length < 2) { toast('Nome inválido.', 'danger'); return; }
-
-  const existingQ = query(customEmojisCol(), where('name', '==', name));
-  const existingSnap = await getDocs(existingQ);
-  if (!existingSnap.empty) { toast('Já existe um emoji com esse nome.', 'danger'); return; }
-
-  try {
-    const { url } = await uploadToCloudinary(file, `emojis/${auth.currentUser.uid}`);
-    await addDoc(customEmojisCol(), { name, url, uploaderId: auth.currentUser.uid, createdAt: serverTimestamp() });
-    toast(`Emoji :${name}: adicionado!`);
-  } catch (err) {
-    toast(err.message || 'Falha ao enviar o emoji.', 'danger');
-  }
 }
 
 // ---------- GIFs (via GIPHY) ----------

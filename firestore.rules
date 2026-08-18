@@ -15,6 +15,15 @@ service cloud.firestore {
     function isServerMember(serverId) {
       return request.auth.uid in get(/databases/$(database)/documents/servers/$(serverId)).data.memberIds;
     }
+    function isServerOwner(serverId) {
+      return request.auth.uid == get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId;
+    }
+    // Só o dono do servidor ou um membro com cargo 'admin' pode criar/editar/excluir
+    // categorias e canais. Membros comuns só têm leitura.
+    function canManageChannels(serverId) {
+      return isServerOwner(serverId)
+        || get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
     // Edição de mensagem: só o autor, e só pode alterar 'content' e 'editedAt'
     // (autorId, createdAt e anexos ficam travados).
     function isValidMessageEdit() {
@@ -66,12 +75,12 @@ service cloud.firestore {
 
       match /categories/{catId} {
         allow read: if signedIn() && isServerMember(serverId);
-        allow write: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && canManageChannels(serverId);
       }
 
       match /channels/{channelId} {
         allow read: if signedIn() && isServerMember(serverId);
-        allow write: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && canManageChannels(serverId);
 
         match /messages/{msgId} {
           allow read: if signedIn() && isServerMember(serverId);

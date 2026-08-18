@@ -340,6 +340,20 @@
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .gk-emoji-upload-tile:hover { background: var(--gk-accent-glow); }
+
+/* ---------- Formulário de nome do emoji (dentro do painel, sem prompt() nativo) ---------- */
+.gk-emoji-upload-form { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 4px 8px; }
+.gk-emoji-upload-preview {
+  width: 64px; height: 64px; object-fit: contain; border-radius: var(--gk-radius-md);
+  background: var(--gk-surface-sunken); padding: 6px;
+}
+.gk-emoji-name-input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm);
+  font-size: 13.5px; font-family: var(--gk-font-body); background: var(--gk-bg); color: var(--gk-gray-800);
+}
+.gk-emoji-name-input:focus { outline: none; border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
+.gk-emoji-upload-form-actions { display: flex; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 2px; }
+.gk-emoji-upload-form-actions .gk-btn { padding: 7px 14px; font-size: 13px; }
 .gk-empty-state-sm { margin: 20px auto; font-size: 12.5px; text-align: center; color: var(--gk-gray-500); }
 .gk-gif-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .gk-gif-item {
@@ -359,6 +373,30 @@
 .gk-member-row:hover { background: var(--gk-surface-sunken); }
 .gk-member-row .gk-name { font-size: 13.5px; font-weight: 500; color: var(--gk-gray-800); }
 .gk-member-row .gk-nick { font-size: 11px; color: var(--gk-gray-500); }
+.gk-role-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.gk-role-owner { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+.gk-role-admin { background: var(--gk-gray-100); color: var(--gk-gray-600); }
+.gk-member-role-btn {
+  margin-left: auto; flex-shrink: 0; background: none; border: none; font-size: 15px; color: var(--gk-gray-400);
+  padding: 3px 6px; border-radius: var(--gk-radius-sm); line-height: 1;
+  transition: color var(--gk-transition), background var(--gk-transition);
+}
+.gk-member-role-btn:hover { color: var(--gk-accent); background: var(--gk-surface-sunken); }
+
+/* ---------- Ícone do servidor no modal "Criar servidor" ---------- */
+.gk-server-icon-picker {
+  width: 76px; height: 76px; border-radius: var(--gk-radius-hex);
+  background: var(--gk-surface-sunken); border: 2px dashed var(--gk-gray-300);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden;
+  color: var(--gk-gray-400); font-size: 26px; font-weight: 700;
+  transition: border-color var(--gk-transition), color var(--gk-transition);
+}
+.gk-server-icon-picker:hover { border-color: var(--gk-accent); color: var(--gk-accent); }
+.gk-server-icon-picker img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Modais genéricos ---------- */
 .gk-overlay {
@@ -395,6 +433,62 @@
 .gk-field .gk-hint { font-size: 11.5px; color: var(--gk-gray-400); margin-top: 4px; }
 .gk-field .gk-error { font-size: 12px; color: var(--gk-danger); margin-top: 4px; display: none; }
 
+/* Seta customizada do <select> — substitui a seta nativa do SO (Windows/etc.)
+   por um chevron consistente com o resto do design system, nos dois temas. */
+.gk-select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' stroke='%2377828A' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat; background-position: right 12px center;
+  padding-right: 34px; cursor: pointer;
+}
+.gk-select:focus { outline: none; border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
+
+/* ---------- Cabeçalho de modal com ícone (ex: "Criar canal") ---------- */
+.gk-modal-icon-header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.gk-modal-icon-header h2 { margin: 0; }
+.gk-modal-icon-header .gk-modal-sub { margin: 3px 0 0; }
+.gk-modal-icon {
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: var(--gk-radius-md);
+  background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--gk-font-display); font-size: 19px; font-weight: 700;
+}
+
+/* ---------- Campo de nome de canal, com prefixo # / 🔊 dinâmico ---------- */
+.gk-channel-name-input-wrap {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm);
+  background: var(--gk-bg); padding: 0 12px;
+  transition: border-color var(--gk-transition), box-shadow var(--gk-transition);
+}
+.gk-channel-name-input-wrap:focus-within { border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
+.gk-channel-name-prefix { font-family: var(--gk-font-mono); font-size: 15px; color: var(--gk-gray-400); line-height: 1; }
+.gk-channel-name-input-wrap input {
+  border: none; background: transparent; padding: 10px 0; font-size: 14px;
+  font-family: var(--gk-font-body); color: var(--gk-gray-800); width: 100%;
+}
+.gk-channel-name-input-wrap input:focus { outline: none; }
+
+/* ---------- Seletor de tipo de canal (cards clicáveis, em vez de <select>) ---------- */
+.gk-type-picker { display: flex; flex-direction: column; gap: 8px; }
+.gk-type-option {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-md);
+  background: var(--gk-bg); text-align: left;
+  transition: border-color var(--gk-transition), background var(--gk-transition), box-shadow var(--gk-transition);
+}
+.gk-type-option:hover { border-color: var(--gk-gray-300); }
+.gk-type-option.gk-active { border-color: var(--gk-accent); background: var(--gk-accent-soft); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
+.gk-type-icon {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: var(--gk-radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gk-surface-sunken); font-size: 16px; font-family: var(--gk-font-mono);
+  color: var(--gk-gray-500); transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-type-option.gk-active .gk-type-icon { background: var(--gk-accent); color: #fff; }
+.gk-type-name { font-size: 13.5px; font-weight: 600; color: var(--gk-gray-800); }
+.gk-type-desc { font-size: 11.5px; color: var(--gk-gray-500); margin-top: 1px; }
+
 .gk-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 10px 16px; border-radius: var(--gk-radius-md); border: none;
@@ -416,6 +510,52 @@
 .gk-tab.gk-active { background: var(--gk-surface); color: var(--gk-accent-strong); box-shadow: var(--gk-shadow-sm); }
 .gk-tab-panel { display: none; }
 .gk-tab-panel.gk-active { display: block; }
+
+/* ---------- Splash de inicialização ---------- */
+.gk-splash {
+  position: fixed; inset: 0; z-index: 500;
+  display: none; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: var(--gk-bg);
+  opacity: 0;
+}
+.gk-splash.gk-open { display: flex; opacity: 1; animation: gk-fade-in 320ms ease both; }
+.gk-splash.gk-splash-out { animation: gk-splash-fade-out 480ms ease both; }
+@keyframes gk-splash-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+.gk-splash-rings { position: relative; width: 108px; height: 108px; display: flex; align-items: center; justify-content: center; }
+.gk-splash-ring {
+  position: absolute; inset: 0; border-radius: var(--gk-radius-hex);
+  border: 2px solid var(--gk-accent); opacity: 0;
+  animation: gk-call-ring-pulse 2.2s ease-out infinite;
+}
+.gk-splash-ring.gk-ring-2 { animation-delay: 0.5s; }
+.gk-splash-ring.gk-ring-3 { animation-delay: 1s; }
+.gk-splash-mark {
+  position: relative; width: 60px; height: 60px; border-radius: var(--gk-radius-hex);
+  background: var(--gk-accent); color: #fff; display: flex; align-items: center; justify-content: center;
+  font-family: var(--gk-font-display); font-weight: 700; font-size: 22px;
+  box-shadow: var(--gk-shadow-md);
+  animation: gk-splash-mark-in 560ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes gk-splash-mark-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+
+.gk-splash-wordmark {
+  font-family: var(--gk-font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em;
+  color: var(--gk-gray-900);
+  animation: gk-splash-word-in 560ms cubic-bezier(.2,.8,.2,1) 180ms both;
+}
+.gk-splash-wordmark span { color: var(--gk-accent); }
+@keyframes gk-splash-word-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.gk-splash-bar {
+  width: 120px; height: 3px; border-radius: 3px; background: var(--gk-gray-100); overflow: hidden;
+  animation: gk-splash-word-in 560ms cubic-bezier(.2,.8,.2,1) 260ms both;
+}
+.gk-splash-bar-fill {
+  height: 100%; width: 0%; background: var(--gk-accent); border-radius: 3px;
+  animation: gk-splash-bar-fill 1.3s cubic-bezier(.4,0,.2,1) 260ms both;
+}
+@keyframes gk-splash-bar-fill { from { width: 0%; } to { width: 100%; } }
 
 /* ---------- Auth gate ---------- */
 #gk-auth {

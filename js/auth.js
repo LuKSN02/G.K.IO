@@ -6,8 +6,16 @@ import {
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
 } from './db.js';
 import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
+import { showStartupSplash } from './splash.js';
 
 let onReadyCallback = null;
+
+// Fica `true` só entre o instante em que o formulário de login/cadastro é
+// submetido com sucesso e o próximo disparo do onAuthStateChanged que essa
+// ação causa. Isso permite diferenciar "acabei de logar/cadastrar pelo
+// formulário" (sem splash) de "o Firebase restaurou minha sessão sozinho
+// ao abrir o site" (com splash) — mesmo callback, dois cenários distintos.
+let justAuthenticatedViaForm = false;
 
 export function onAuthReady(cb) { onReadyCallback = cb; }
 
@@ -15,9 +23,13 @@ export function initAuthListener() {
   onAuthStateChanged(auth, async (fbUser) => {
     if (!fbUser) {
       state.user = null;
+      justAuthenticatedViaForm = false;
       showAuthGate();
       return;
     }
+    const cameFromForm = justAuthenticatedViaForm;
+    justAuthenticatedViaForm = false;
+
     const profileSnap = await getDoc(userDoc(fbUser.uid));
     if (!profileSnap.exists()) {
       // Não deveria acontecer no fluxo normal (o registro já cria o doc), mas por segurança:
@@ -27,6 +39,10 @@ export function initAuthListener() {
     const snap = await getDoc(userDoc(fbUser.uid));
     state.user = { uid: fbUser.uid, ...snap.data() };
     hideAuthGate();
+    // Sessão restaurada automaticamente (não veio de um submit do formulário)
+    // = a pessoa já tinha feito cadastro + primeiro login antes -> mostra a
+    // animação de abertura. No cadastro/login manual, pula direto pro app.
+    if (!cameFromForm) showStartupSplash();
     onReadyCallback && onReadyCallback();
 
     window.addEventListener('beforeunload', () => { setPresence('offline'); });
@@ -124,6 +140,7 @@ export function wireAuthForm() {
     const email = document.getElementById('gk-auth-email').value.trim();
     const password = document.getElementById('gk-auth-password').value;
     const username = document.getElementById('gk-auth-username').value.trim();
+    justAuthenticatedViaForm = true;
     try {
       if (mode === 'register') {
         await registerUser(username, email, password);
@@ -132,6 +149,7 @@ export function wireAuthForm() {
         await loginUser(email, password);
       }
     } catch (err) {
+      justAuthenticatedViaForm = false; // a autenticação não mudou de fato — desfaz a marcação
       errorBox.textContent = friendlyAuthError(err);
       errorBox.style.display = 'block';
     } finally {

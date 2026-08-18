@@ -11,23 +11,32 @@ import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode } from
 import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
+import { uploadToCloudinary } from './cloudinary.js';
 
 let unsubServers = null;
 let unsubCategories = null;
 let unsubChannels = null;
 let unsubMembers = null;
+// Guarda o último snapshot de categorias/canais renderizado, para poder
+// re-renderizar a sidebar (mostrar/esconder "Novo canal") quando o cargo
+// do usuário atual mudar, sem esperar um novo snapshot de canais.
+let lastCategories = [];
+let lastChannels = [];
 
 // ---------- Criar / entrar em servidor ----------
-export async function createServer(name) {
+export async function createServer(name, description = '', iconUrl = '') {
   const uid = auth.currentUser.uid;
   const ref = await addDoc(serversCol(), {
     name: name.trim() || 'Novo Servidor',
-    iconUrl: '',
+    description: (description || '').trim(),
+    iconUrl: iconUrl || '',
     ownerId: uid,
     memberIds: [uid],
     createdAt: serverTimestamp(),
   });
-  await setDoc(memberDoc(ref.id, uid), { nickname: null, joinedAt: serverTimestamp() });
+  // Quem cria o servidor nasce com o cargo 'owner' — só ele (ou quem ele
+  // promover a 'admin') pode criar/editar/excluir canais e categorias.
+  await setDoc(memberDoc(ref.id, uid), { nickname: null, role: 'owner', joinedAt: serverTimestamp() });
   // Categoria e canal padrão, para o servidor não nascer vazio
   const catRef = await addDoc(categoriesCol(ref.id), { name: 'Geral', position: 0 });
   await addDoc(channelsCol(ref.id), { name: 'geral', type: 'text', categoryId: catRef.id, position: 0 });
@@ -51,11 +60,31 @@ export async function joinServerByInviteCode(code) {
   const { serverId } = snap.data();
   const uid = auth.currentUser.uid;
   await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
-  await setDoc(memberDoc(serverId, uid), { nickname: null, joinedAt: serverTimestamp() });
+  // Quem entra por convite começa como 'member' comum — sem permissão para
+  // criar canais, a menos que o dono promova depois (ver setMemberRole).
+  await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
   await updateDoc(inviteDoc(code), { uses: (snap.data().uses || 0) + 1 });
   const serverSnap = await getDoc(serverDoc(serverId));
   toast(`Você entrou em "${serverSnap.data().name}".`);
   return serverId;
+}
+
+// ---------- Cargos / permissões ----------
+// Promove ou rebaixa um membro entre 'admin' e 'member'. Só o dono pode
+// chamar isso na prática (a regra do Firestore também garante isso do
+// lado do servidor — ver firestore.rules).
+export async function setMemberRole(serverId, targetUid, role) {
+  await updateDoc(memberDoc(serverId, targetUid), { role });
+  toast(role === 'admin' ? 'Membro promovido a administrador.' : 'Cargo de administrador removido.');
+}
+
+function canManageChannels(serverId) {
+  const server = state.servers.get(serverId);
+  const uid = auth.currentUser?.uid;
+  if (!server || !uid) return false;
+  if (server.ownerId === uid) return true;
+  const member = state.serverMembersCache.get(serverId)?.get(uid);
+  return member?.role === 'admin';
 }
 
 // ---------- Rail de servidores ----------
@@ -115,6 +144,8 @@ function listenCategoriesAndChannels(serverId) {
     unsubChannels = onSnapshot(chQ, (chSnap) => {
       const channels = [];
       chSnap.forEach((d) => channels.push({ id: d.id, ...d.data() }));
+      lastCategories = categories;
+      lastChannels = channels;
       renderServerSidebar(serverId, categories, channels);
       if (!state.currentChannelId) {
         const firstText = channels.find((c) => c.type === 'text');
@@ -158,11 +189,15 @@ function renderServerSidebar(serverId, categories, channels) {
     ]);
     body.appendChild(catNode);
   }
-  const addBtn = el('div', {
-    class: 'gk-channel', style: 'color:var(--gk-accent);font-weight:600;margin-top:6px;',
-    onclick: () => openCreateChannelModal(serverId, categories),
-  }, [el('span', { class: 'gk-channel-icon', html: '&#43;' }), el('span', {}, 'Novo canal')]);
-  body.appendChild(addBtn);
+  // Só quem pode gerenciar canais (dono ou admin) vê o botão de criar.
+  // Membros comuns enxergam a lista normalmente, sem essa opção.
+  if (canManageChannels(serverId)) {
+    const addBtn = el('div', {
+      class: 'gk-channel', style: 'color:var(--gk-accent);font-weight:600;margin-top:6px;',
+      onclick: () => openCreateChannelModal(serverId, categories),
+    }, [el('span', { class: 'gk-channel-icon', html: '&#43;' }), el('span', {}, 'Novo canal')]);
+    body.appendChild(addBtn);
+  }
 }
 
 function listenMembers(serverId) {
@@ -174,26 +209,52 @@ function listenMembers(serverId) {
       if (userSnap.exists()) cache.set(d.id, { uid: d.id, ...d.data(), user: userSnap.data() });
     }
     state.serverMembersCache.set(serverId, cache);
-    renderMembersPanel(cache);
+    renderMembersPanel(cache, serverId);
+    // Um cargo pode ter mudado (ex: alguém virou admin) — re-renderiza a
+    // sidebar de canais para atualizar a visibilidade do "Novo canal".
+    if (state.currentServerId === serverId) renderServerSidebar(serverId, lastCategories, lastChannels);
   });
   state.unsubscribers.members = () => unsubMembers && unsubMembers();
 }
 
-function renderMembersPanel(cache) {
+function renderMembersPanel(cache, serverId) {
   const panel = document.getElementById('gk-members');
   panel.innerHTML = '';
   panel.appendChild(el('div', { class: 'gk-members-label' }, `Membros — ${cache.size}`));
+  const isOwner = canIManageMembers(serverId);
   for (const m of cache.values()) {
-    const row = el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, [
+    const role = m.role || 'member';
+    const roleLabel = role === 'owner' ? 'Dono' : role === 'admin' ? 'Admin' : null;
+
+    const nameLine = el('div', { class: 'gk-name' }, [
+      document.createTextNode(m.nickname || m.user.displayName || m.user.username),
+    ]);
+    if (roleLabel) nameLine.appendChild(el('span', { class: `gk-role-badge gk-role-${role}` }, roleLabel));
+
+    const rowChildren = [
       el('div', { class: 'gk-avatar gk-sz-32', 'data-status': m.user.statusPresence || 'offline' }, [
         el('img', { src: m.user.avatarUrl || fallbackAvatar(m.user.username) }),
       ]),
-      el('div', {}, [
-        el('div', { class: 'gk-name' }, m.nickname || m.user.displayName || m.user.username),
-      ]),
-    ]);
+      el('div', {}, [nameLine]),
+    ];
+
+    // Só o dono vê o botão de promover/rebaixar, e nunca para si mesmo ou para outro dono.
+    if (isOwner && role !== 'owner' && m.uid !== auth.currentUser?.uid) {
+      rowChildren.push(el('button', {
+        class: 'gk-member-role-btn',
+        title: role === 'admin' ? 'Remover cargo de administrador' : 'Tornar administrador (pode criar canais)',
+        onclick: (e) => { e.stopPropagation(); setMemberRole(serverId, m.uid, role === 'admin' ? 'member' : 'admin'); },
+      }, role === 'admin' ? '★' : '☆'));
+    }
+
+    const row = el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, rowChildren);
     panel.appendChild(row);
   }
+}
+
+function canIManageMembers(serverId) {
+  const server = state.servers.get(serverId);
+  return !!server && server.ownerId === auth.currentUser?.uid;
 }
 
 // ---------- Criação de categoria / canal ----------
@@ -201,17 +262,50 @@ function openCreateChannelModal(serverId, categories) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
-  const nameInput = el('input', { type: 'text', placeholder: 'ex: anúncios' });
-  const typeSelect = el('select', { class: 'gk-select' }, [
-    el('option', { value: 'text' }, 'Canal de texto'),
-    el('option', { value: 'voice' }, 'Canal de voz'),
+
+  let selectedType = 'text';
+
+  // Campo de nome, com prefixo # (texto) ou 🔊 (voz) que acompanha o tipo escolhido.
+  const nameInput = el('input', { type: 'text', placeholder: 'novo-canal', maxlength: '80' });
+  const prefixEl = el('span', { class: 'gk-channel-name-prefix' }, '#');
+  const nameWrap = el('div', { class: 'gk-channel-name-input-wrap' }, [prefixEl, nameInput]);
+
+  // Normaliza o nome enquanto digita (minúsculas, sem espaço), como no Discord.
+  nameInput.addEventListener('input', () => {
+    const cursor = nameInput.selectionStart;
+    const before = nameInput.value.length;
+    nameInput.value = nameInput.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '');
+    nameInput.selectionStart = nameInput.selectionEnd = Math.max(0, cursor + (nameInput.value.length - before));
+  });
+
+  const textOption = el('button', { type: 'button', class: 'gk-type-option gk-active', onclick: () => selectType('text') }, [
+    el('span', { class: 'gk-type-icon' }, '#'),
+    el('div', {}, [el('div', { class: 'gk-type-name' }, 'Texto'), el('div', { class: 'gk-type-desc' }, 'Mensagens, imagens e GIFs')]),
   ]);
+  const voiceOption = el('button', { type: 'button', class: 'gk-type-option', onclick: () => selectType('voice') }, [
+    el('span', { class: 'gk-type-icon', html: '&#128266;' }),
+    el('div', {}, [el('div', { class: 'gk-type-name' }, 'Voz'), el('div', { class: 'gk-type-desc' }, 'Conversa por áudio e vídeo')]),
+  ]);
+
+  function selectType(type) {
+    selectedType = type;
+    textOption.classList.toggle('gk-active', type === 'text');
+    voiceOption.classList.toggle('gk-active', type === 'voice');
+    prefixEl.innerHTML = type === 'text' ? '#' : '&#128266;';
+  }
+
   const catSelect = el('select', { class: 'gk-select' },
     categories.map((c) => el('option', { value: c.id }, c.name)));
 
-  modal.appendChild(el('h2', {}, 'Criar canal'));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do canal'), nameInput]));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Tipo'), typeSelect]));
+  modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+    el('div', { class: 'gk-modal-icon' }, '#'),
+    el('div', {}, [
+      el('h2', {}, 'Criar canal'),
+      el('p', { class: 'gk-modal-sub' }, 'Canais organizam as conversas do seu servidor.'),
+    ]),
+  ]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do canal'), nameWrap]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Tipo'), el('div', { class: 'gk-type-picker' }, [textOption, voiceOption])]));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Categoria'), catSelect]));
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
     el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
@@ -223,15 +317,16 @@ function openCreateChannelModal(serverId, categories) {
         const existing = await getDocs(chQ);
         await addDoc(channelsCol(serverId), {
           name: nameInput.value.trim(),
-          type: typeSelect.value,
+          type: selectedType,
           categoryId: catSelect.value,
           position: existing.size,
         });
         closeGenericModal();
       },
-    }, 'Criar'),
+    }, 'Criar canal'),
   ]));
   overlay.classList.add('gk-open');
+  nameInput.focus();
 }
 
 function closeGenericModal() {
@@ -242,23 +337,72 @@ export function openCreateServerModal() {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
-  const nameInput = el('input', { type: 'text', placeholder: 'Nome do servidor' });
-  modal.appendChild(el('h2', {}, 'Criar servidor'));
-  modal.appendChild(el('p', { class: 'gk-modal-sub' }, 'Um espaço para sua comunidade, com canais de texto e voz.'));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome'), nameInput]));
+
+  let iconFile = null;
+
+  // Ícone do servidor (opcional) — clique abre o seletor de arquivo,
+  // preview local imediato via object URL, upload real só ao criar.
+  const iconImg = el('img', { style: 'display:none;' });
+  const iconPlaceholder = el('span', {}, '+');
+  const iconInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
+  const iconPicker = el('div', {
+    class: 'gk-server-icon-picker', title: 'Ícone do servidor (opcional)',
+    onclick: () => iconInput.click(),
+  }, [iconImg, iconPlaceholder]);
+  iconInput.addEventListener('change', () => {
+    const file = iconInput.files[0];
+    if (!file) return;
+    iconFile = file;
+    iconImg.src = URL.createObjectURL(file);
+    iconImg.style.display = 'block';
+    iconPlaceholder.style.display = 'none';
+  });
+
+  const nameInput = el('input', { type: 'text', placeholder: 'ex: Clã Fênix', maxlength: '60' });
+  const descInput = el('textarea', { rows: '2', placeholder: 'Do que se trata o servidor? (opcional)', maxlength: '200' });
+
+  modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+    el('div', { class: 'gk-modal-icon' }, 'SV'),
+    el('div', {}, [
+      el('h2', {}, 'Criar servidor'),
+      el('p', { class: 'gk-modal-sub' }, 'Um espaço para sua comunidade, com canais de texto e voz.'),
+    ]),
+  ]));
+  modal.appendChild(el('div', { class: 'gk-field', style: 'display:flex;justify-content:center;margin-bottom:18px;' }, [iconPicker, iconInput]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [
+    el('label', {}, 'Descrição'), descInput,
+    el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel 👥 Membros.'),
+  ]));
+
+  const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
+  createBtn.addEventListener('click', async () => {
+    if (!nameInput.value.trim()) return;
+    createBtn.disabled = true;
+    const originalLabel = createBtn.textContent;
+    try {
+      let iconUrl = '';
+      if (iconFile) {
+        createBtn.textContent = 'Enviando ícone...';
+        const uploaded = await uploadToCloudinary(iconFile, `server-icons/${auth.currentUser.uid}`);
+        iconUrl = uploaded.url;
+      }
+      const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl);
+      closeGenericModal();
+      selectServer(id);
+    } catch (err) {
+      toast(err.message || 'Não foi possível criar o servidor.', 'danger');
+      createBtn.disabled = false;
+      createBtn.textContent = originalLabel;
+    }
+  });
+
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
     el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
-    el('button', {
-      class: 'gk-btn gk-btn-primary',
-      onclick: async () => {
-        if (!nameInput.value.trim()) return;
-        const id = await createServer(nameInput.value.trim());
-        closeGenericModal();
-        selectServer(id);
-      },
-    }, 'Criar servidor'),
+    createBtn,
   ]));
   overlay.classList.add('gk-open');
+  nameInput.focus();
 }
 
 export function openJoinServerModal() {
