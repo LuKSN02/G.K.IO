@@ -3,7 +3,7 @@
 // ============================================================
 import {
   db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc,
-  membersCol, memberDoc, invitesCol, inviteDoc, userDoc, rolesCol, roleDoc,
+  membersCol, memberDoc, invitesCol, inviteDoc, userDoc,
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from './db.js';
@@ -17,57 +17,19 @@ let unsubServers = null;
 let unsubCategories = null;
 let unsubChannels = null;
 let unsubMembers = null;
-let unsubRoles = null;
 // Guarda o último snapshot de categorias/canais renderizado, para poder
 // re-renderizar a sidebar (mostrar/esconder "Novo canal") quando o cargo
 // do usuário atual mudar, sem esperar um novo snapshot de canais.
 let lastCategories = [];
 let lastChannels = [];
-// Último snapshot de cargos personalizados do servidor atualmente aberto,
-// indexado por id — reaproveitado pelo painel de Configurações (aba
-// "Cargos") e pelo cálculo de permissões efetivas de cada membro.
-let lastRoles = new Map();
-
-// ---------- Catálogo de permissões dos cargos personalizados ----------
-// Cada permissão soma poderes ao que o membro já teria como "membro comum".
-// 'owner' e o campo legado member.role === 'admin' continuam concedendo
-// tudo, por compatibilidade com servidores criados antes deste recurso.
-export const PERMISSION_CATALOG = [
-  { key: 'manageChannels', label: 'Gerenciar canais', desc: 'Criar, renomear e excluir categorias e canais.' },
-  { key: 'manageServer', label: 'Gerenciar servidor', desc: 'Editar nome, descrição, ícone e banner do servidor.' },
-  { key: 'manageMembers', label: 'Expulsar membros', desc: 'Remover membros do servidor.' },
-];
-
-export const ROLE_COLOR_SWATCHES = [
-  '#1F6F78', '#4C5FD5', '#C24868', '#B9812E', '#22916A', '#7C4FC2',
-  '#D64545', '#565F66', '#1C2733', '#1FA7C9',
-];
-
-function emptyPermissions() {
-  return { manageChannels: false, manageServer: false, manageMembers: false };
-}
-
-// Combina (OR) as permissões de todos os cargos atribuídos a um membro.
-function computePermissions(roleIds = [], rolesMap = lastRoles) {
-  const perms = emptyPermissions();
-  for (const rid of roleIds) {
-    const role = rolesMap.get(rid);
-    if (!role) continue;
-    for (const key of Object.keys(perms)) {
-      if (role.permissions?.[key]) perms[key] = true;
-    }
-  }
-  return perms;
-}
 
 // ---------- Criar / entrar em servidor ----------
-export async function createServer(name, description = '', iconUrl = '', bannerUrl = '') {
+export async function createServer(name, description = '', iconUrl = '') {
   const uid = auth.currentUser.uid;
   const ref = await addDoc(serversCol(), {
     name: name.trim() || 'Novo Servidor',
     description: (description || '').trim(),
     iconUrl: iconUrl || '',
-    bannerUrl: bannerUrl || '',
     ownerId: uid,
     memberIds: [uid],
     createdAt: serverTimestamp(),
@@ -116,184 +78,13 @@ export async function setMemberRole(serverId, targetUid, role) {
   toast(role === 'admin' ? 'Membro promovido a administrador.' : 'Cargo de administrador removido.');
 }
 
-// ---------- Cargos personalizados (roles) ----------
-export function listenRoles(serverId) {
-  cleanupListener('roles');
-  const q = query(rolesCol(serverId), orderBy('position'));
-  unsubRoles = onSnapshot(q, (snap) => {
-    lastRoles = new Map();
-    snap.forEach((d) => lastRoles.set(d.id, { id: d.id, ...d.data() }));
-    if (state.currentServerId === serverId) {
-      // Cargos e permissões afetam o rótulo dos membros — re-renderiza.
-      const cache = state.serverMembersCache.get(serverId);
-      if (cache) renderMembersPanel(cache, serverId);
-    }
-  });
-  state.unsubscribers.roles = () => unsubRoles && unsubRoles();
-}
-
-export function getRoles() {
-  return [...lastRoles.values()].sort((a, b) => (a.position || 0) - (b.position || 0));
-}
-
-export async function createRole(serverId, { name, color }) {
-  const existing = await getDocs(query(rolesCol(serverId)));
-  await addDoc(rolesCol(serverId), {
-    name: (name || '').trim() || 'Novo cargo',
-    color: color || ROLE_COLOR_SWATCHES[0],
-    permissions: emptyPermissions(),
-    position: existing.size,
-    createdAt: serverTimestamp(),
-  });
-  toast('Cargo criado.');
-}
-
-export async function updateRole(serverId, roleId, patch) {
-  const clean = {};
-  if (patch.name !== undefined) clean.name = patch.name.trim() || 'Cargo';
-  if (patch.color !== undefined) clean.color = patch.color;
-  if (patch.permissions !== undefined) clean.permissions = { ...emptyPermissions(), ...patch.permissions };
-  await updateDoc(roleDoc(serverId, roleId), clean);
-  // As permissões desse cargo podem ter mudado — recalcula e regrava a
-  // permissão efetiva (denormalizada) de todo membro que tem esse cargo,
-  // já que as regras do Firestore leem esse campo direto do membro em vez
-  // de "percorrer" a lista de cargos (o Firestore Rules não permite isso).
-  if (patch.permissions !== undefined) await resyncMembersWithRole(serverId, roleId);
-  toast('Cargo atualizado.');
-}
-
-export async function deleteRole(serverId, roleId) {
-  const cache = state.serverMembersCache.get(serverId) || new Map();
-  for (const m of cache.values()) {
-    if (!(m.roleIds || []).includes(roleId)) continue;
-    const newRoleIds = m.roleIds.filter((r) => r !== roleId);
-    await writeMemberRoles(serverId, m.uid, newRoleIds);
-  }
-  await deleteDoc(roleDoc(serverId, roleId));
-  toast('Cargo excluído.');
-}
-
-export async function assignRoleToMember(serverId, targetUid, roleId, assign) {
-  const cache = state.serverMembersCache.get(serverId) || new Map();
-  const member = cache.get(targetUid);
-  const current = member?.roleIds || [];
-  const newRoleIds = assign ? [...new Set([...current, roleId])] : current.filter((r) => r !== roleId);
-  await writeMemberRoles(serverId, targetUid, newRoleIds);
-}
-
-async function resyncMembersWithRole(serverId, roleId) {
-  const cache = state.serverMembersCache.get(serverId) || new Map();
-  for (const m of cache.values()) {
-    if ((m.roleIds || []).includes(roleId)) await writeMemberRoles(serverId, m.uid, m.roleIds);
-  }
-}
-
-async function writeMemberRoles(serverId, targetUid, roleIds) {
-  await updateDoc(memberDoc(serverId, targetUid), {
-    roleIds,
-    permissions: computePermissions(roleIds),
-  });
-}
-
-export function canManageChannels(serverId) {
-  return hasServerPermission(serverId, 'manageChannels');
-}
-
-// Editar nome/descrição/ícone/banner do servidor — antes ficava amarrado a
-// canManageChannels (admin genérico); agora tem sua própria permissão, para
-// dar pra criar um cargo "Editor de canais" que não mexe na identidade do
-// servidor, ou um cargo "Curador visual" que só troca o ícone/banner.
-export function canManageServerInfo(serverId) {
-  return hasServerPermission(serverId, 'manageServer');
-}
-
-// Expulsar membros do servidor.
-export function canKickMembers(serverId) {
-  return hasServerPermission(serverId, 'manageMembers');
-}
-
-// Só o dono gerencia os cargos em si (criar/editar/excluir/atribuir) — a
-// mesma trava que já existia para promover/rebaixar admin. É intencional:
-// delegar "quem pode dar poder a quem" é um risco à parte, fora do escopo
-// deste MVP (ver firestore.rules).
-export function canManageRoles(serverId) {
-  return isServerOwner(serverId);
-}
-
-function hasServerPermission(serverId, key) {
+function canManageChannels(serverId) {
   const server = state.servers.get(serverId);
   const uid = auth.currentUser?.uid;
   if (!server || !uid) return false;
   if (server.ownerId === uid) return true;
   const member = state.serverMembersCache.get(serverId)?.get(uid);
-  if (!member) return false;
-  if (member.role === 'admin') return true; // cargo legado — mantém tudo, como antes
-  return !!member.permissions?.[key];
-}
-
-export function isServerOwner(serverId) {
-  const server = state.servers.get(serverId);
-  return !!server && server.ownerId === auth.currentUser?.uid;
-}
-
-// ---------- Configurações de servidor: visão geral ----------
-export async function updateServerInfo(serverId, { name, description, iconUrl, bannerUrl }) {
-  const patch = {};
-  if (name !== undefined) patch.name = name.trim() || 'Servidor sem nome';
-  if (description !== undefined) patch.description = (description || '').trim();
-  if (iconUrl !== undefined) patch.iconUrl = iconUrl || '';
-  if (bannerUrl !== undefined) patch.bannerUrl = bannerUrl || '';
-  await updateDoc(serverDoc(serverId), patch);
-  toast('Servidor atualizado.');
-}
-
-export async function deleteServerPermanently(serverId) {
-  // Exclui o documento do servidor — categorias, canais e mensagens ficam
-  // órfãos (o Firestore não faz cascade), mas ficam inacessíveis, já que
-  // as regras exigem checar memberIds no doc do servidor pra liberar
-  // leitura/escrita das subcoleções. Consistente com o restante do MVP.
-  await deleteDoc(serverDoc(serverId));
-  toast('Servidor excluído.');
-}
-
-export async function leaveServer(serverId) {
-  const uid = auth.currentUser.uid;
-  await deleteDoc(memberDoc(serverId, uid)).catch(() => {});
-  await updateDoc(serverDoc(serverId), { memberIds: state.servers.get(serverId).memberIds.filter((id) => id !== uid) });
-  toast('Você saiu do servidor.');
-}
-
-export async function kickMember(serverId, targetUid) {
-  const server = state.servers.get(serverId);
-  await updateDoc(serverDoc(serverId), { memberIds: (server.memberIds || []).filter((id) => id !== targetUid) });
-  await deleteDoc(memberDoc(serverId, targetUid)).catch(() => {});
-  toast('Membro removido do servidor.');
-}
-
-// ---------- Configurações de servidor: categorias e canais ----------
-export async function createCategory(serverId, name) {
-  const existing = await getDocs(query(categoriesCol(serverId)));
-  await addDoc(categoriesCol(serverId), { name: name.trim() || 'Nova categoria', position: existing.size });
-}
-
-export async function renameCategory(serverId, catId, name) {
-  await updateDoc(doc(db, 'servers', serverId, 'categories', catId), { name: name.trim() || 'Categoria' });
-}
-
-export async function deleteCategory(serverId, catId) {
-  const hasChannels = lastChannels.some((c) => c.categoryId === catId);
-  if (hasChannels) throw new Error('Mova ou exclua os canais desta categoria antes de excluí-la.');
-  await deleteDoc(doc(db, 'servers', serverId, 'categories', catId));
-}
-
-export async function renameChannel(serverId, channelId, name) {
-  await updateDoc(channelDoc(serverId, channelId), { name: name.trim().toLowerCase().replace(/\s+/g, '-') || 'canal' });
-}
-
-export async function deleteChannel(serverId, channelId) {
-  await deleteDoc(channelDoc(serverId, channelId));
-  if (state.currentChannelId === channelId) state.currentChannelId = null;
-  toast('Canal excluído.');
+  return member?.role === 'admin';
 }
 
 // ---------- Rail de servidores ----------
@@ -336,7 +127,6 @@ export function selectServer(serverId) {
   renderRail();
   listenCategoriesAndChannels(serverId);
   listenMembers(serverId);
-  listenRoles(serverId);
   document.getElementById('gk-sidebar-header-title').textContent = state.servers.get(serverId)?.name || 'Servidor';
   document.getElementById('gk-members').style.display = 'block';
   document.getElementById('gk-server-settings-btn').style.display = 'inline-flex';
@@ -440,14 +230,6 @@ function renderMembersPanel(cache, serverId) {
       document.createTextNode(m.nickname || m.user.displayName || m.user.username),
     ]);
     if (roleLabel) nameLine.appendChild(el('span', { class: `gk-role-badge gk-role-${role}` }, roleLabel));
-    for (const rid of m.roleIds || []) {
-      const customRole = lastRoles.get(rid);
-      if (!customRole) continue;
-      nameLine.appendChild(el('span', {
-        class: 'gk-role-chip', title: customRole.name,
-        style: `background:${customRole.color}22;color:${customRole.color};border-color:${customRole.color}55;`,
-      }, customRole.name));
-    }
 
     const rowChildren = [
       el('div', { class: 'gk-avatar gk-sz-32', 'data-status': m.user.statusPresence || 'offline' }, [
@@ -470,15 +252,13 @@ function renderMembersPanel(cache, serverId) {
   }
 }
 
-// Promover/rebaixar o cargo legado 'admin' continua exclusivo do dono
-// (mesma lógica de canManageRoles) — é diferente de canKickMembers, que
-// agora também pode ser delegado via um cargo personalizado.
-export function canIManageMembers(serverId) {
-  return isServerOwner(serverId);
+function canIManageMembers(serverId) {
+  const server = state.servers.get(serverId);
+  return !!server && server.ownerId === auth.currentUser?.uid;
 }
 
 // ---------- Criação de categoria / canal ----------
-export function openCreateChannelModal(serverId, categories) {
+function openCreateChannelModal(serverId, categories) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
@@ -547,12 +327,6 @@ export function openCreateChannelModal(serverId, categories) {
   ]));
   overlay.classList.add('gk-open');
   nameInput.focus();
-}
-
-// Getter para o módulo de configurações de servidor reaproveitar o
-// último snapshot de categorias/canais sem precisar de um listener próprio.
-export function getCategoriesAndChannels() {
-  return { categories: lastCategories, channels: lastChannels };
 }
 
 function closeGenericModal() {

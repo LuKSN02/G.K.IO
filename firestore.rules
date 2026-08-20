@@ -18,25 +18,11 @@ service cloud.firestore {
     function isServerOwner(serverId) {
       return request.auth.uid == get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId;
     }
-    function myMemberDoc(serverId) {
-      return get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data;
-    }
-    // Cargos personalizados (ver servers/{id}/roles): a app calcula a união
-    // das permissões dos cargos atribuídos e grava uma cópia "achatada" no
-    // próprio doc do membro (campo `permissions`), porque as Rules não
-    // conseguem percorrer um array de ids e consultar cada cargo dentro de
-    // uma mesma regra. Só o dono grava esse campo (ver match /members
-    // abaixo), então essa cópia é confiável.
-    function hasPermission(serverId, key) {
-      return myMemberDoc(serverId).get('permissions', {}).get(key, false) == true;
-    }
-    // Só o dono do servidor, um membro com cargo legado 'admin', ou um
-    // membro com a permissão granular correspondente pode gerenciar
-    // canais/categorias. Membros comuns só têm leitura.
+    // Só o dono do servidor ou um membro com cargo 'admin' pode criar/editar/excluir
+    // categorias e canais. Membros comuns só têm leitura.
     function canManageChannels(serverId) {
       return isServerOwner(serverId)
-        || myMemberDoc(serverId).role == 'admin'
-        || hasPermission(serverId, 'manageChannels');
+        || get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data.role == 'admin';
     }
     // Edição de mensagem: só o autor, e só pode alterar 'content' e 'editedAt'
     // (autorId, createdAt e anexos ficam travados).
@@ -106,79 +92,15 @@ service cloud.firestore {
     }
 
     // ---------- Servidores ----------
-    // Duas formas de editar o doc do servidor, mutuamente exclusivas:
-    // (1) qualquer membro pode mexer SÓ em memberIds (entrar/sair/ser expulso);
-    // (2) dono ou admin pode editar nome/descrição/ícone/banner, mas nunca
-    //     ownerId ou memberIds por essa via (isso evitaria um admin se
-    //     autopromover a dono, ou "roubar" o servidor).
-    function isServerAdminOrOwner(serverId) {
-      return isServerOwner(serverId)
-        || myMemberDoc(serverId).role == 'admin';
-    }
-    // Editar nome/descrição/ícone/banner: dono, admin legado, ou membro com
-    // a permissão granular 'manageServer' (cargo personalizado).
-    function isValidServerInfoEdit(serverId) {
-      return (isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageServer'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl']);
-    }
-    // Quem pode remover QUALQUER outro membro de memberIds (expulsar):
-    // dono, admin legado, ou permissão granular 'manageMembers'.
-    function canKickMembers(serverId) {
-      return isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageMembers');
-    }
-    // Uma pessoa sempre pode remover A SI MESMA de memberIds (sair do
-    // servidor, ou ser removida por quem tem permissão — ver
-    // canKickMembers) — sem alterar mais ninguém na lista.
-    function isSelfLeavingOnly(serverId) {
-      return request.resource.data.memberIds == resource.data.memberIds.removeAll([request.auth.uid])
-        && !(request.auth.uid in request.resource.data.memberIds);
-    }
-    // Entrar no servidor: só é permitido ADICIONAR o próprio uid ao final
-    // da lista (nunca remover terceiros nem adicionar outra pessoa em seu
-    // lugar) — reflete exatamente como o client chama arrayUnion() ao
-    // entrar por convite (ver joinServerByInviteCode em servers.js).
-    function isSelfJoiningOnly(serverId) {
-      return !(request.auth.uid in resource.data.memberIds)
-        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
-    }
-    function isValidMemberIdsChange(serverId) {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
-        && (isSelfLeavingOnly(serverId) || isSelfJoiningOnly(serverId) || canKickMembers(serverId));
-    }
-    // Antes, qualquer membro podia reescrever QUALQUER campo do próprio doc
-    // de membro — inclusive `role`, o que permitiria se autopromover a
-    // admin. Agora: ao entrar, só pode nascer nos dois formatos abaixo;
-    // depois disso, só pode tocar em `nickname`. Tudo que dá poder (role,
-    // roleIds, permissions) só o dono grava.
-    function isValidSelfMemberJoin(serverId) {
-      return (request.resource.data.role == 'owner' && isServerOwner(serverId)
-              || request.resource.data.role == 'member')
-        && request.resource.data.get('roleIds', []) == []
-        && request.resource.data.get('permissions', {}) == {};
-    }
-    function isValidSelfMemberEdit() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']);
-    }
-
     match /servers/{serverId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == request.resource.data.ownerId;
-      allow update: if signedIn() && (isValidMemberIdsChange(serverId) || isValidServerInfoEdit(serverId));
+      allow update: if signedIn() && (request.auth.uid in resource.data.memberIds || request.auth.uid in request.resource.data.memberIds);
       allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
 
       match /categories/{catId} {
         allow read: if signedIn() && isServerMember(serverId);
         allow write: if signedIn() && canManageChannels(serverId);
-      }
-
-      // Cargos personalizados — leitura para qualquer membro (para mostrar
-      // nome/cor nas listas), escrita só pelo dono (criar/editar/excluir
-      // cargos e decidir quem tem qual permissão é um ato de confiança
-      // maior, deixado fora do próprio sistema de permissões — mesma lógica
-      // já usada para promover/rebaixar o cargo legado 'admin').
-      match /roles/{roleId} {
-        allow read: if signedIn() && isServerMember(serverId);
-        allow write: if signedIn() && isServerOwner(serverId);
       }
 
       match /channels/{channelId} {
@@ -207,9 +129,7 @@ service cloud.firestore {
 
       match /members/{uid} {
         allow read: if signedIn() && isServerMember(serverId);
-        allow create: if signedIn() && isSelf(uid) && isValidSelfMemberJoin(serverId);
-        allow update: if signedIn() && ((isSelf(uid) && isValidSelfMemberEdit()) || isServerOwner(serverId));
-        allow delete: if signedIn() && (isSelf(uid) || isServerOwner(serverId) || canKickMembers(serverId));
+        allow write: if signedIn() && (isSelf(uid) || request.auth.uid == get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId);
       }
     }
 

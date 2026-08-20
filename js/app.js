@@ -3,8 +3,7 @@
 // ============================================================
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
 import { state, fallbackAvatar } from './state.js';
-import { listenUserServers, openCreateServerModal, openJoinServerModal } from './servers.js';
-import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
+import { listenUserServers, openCreateServerModal, openJoinServerModal, openServerInviteModal } from './servers.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal } from './dms.js';
 import { wireComposer, sendAttachmentMessage } from './chat.js';
 import { refreshMiniProfile } from './profile.js';
@@ -17,7 +16,6 @@ wireAuthForm();
 wireComposer();
 wireCallBar();
 wireSettingsModal();
-wireServerSettingsModal();
 wireStaticUI();
 wireMobileNav();
 initEmojiPicker({
@@ -64,7 +62,7 @@ function wireStaticUI() {
   document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal('perfil'); });
   document.getElementById('gk-logout-btn').addEventListener('click', (e) => { e.stopPropagation(); logoutUser(); });
   document.getElementById('gk-server-settings-btn').addEventListener('click', () => {
-    if (state.currentServerId) openServerSettingsModal(state.currentServerId);
+    if (state.currentServerId) openServerInviteModal(state.currentServerId);
   });
 
   document.getElementById('gk-status-online').addEventListener('click', (e) => { e.stopPropagation(); setStatusAndClose('online'); });

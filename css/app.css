@@ -2,6 +2,30 @@
    G.K.IO — App layout & components
    ============================================================ */
 
+/* Aurora ambiente — assinatura visual do G.K.IO: luz lenta e fria
+   passando atrás dos painéis foscos (glass), reforçando a identidade
+   "gelo" da marca em vez de um fundo chapado. Fixa, atrás de tudo,
+   nunca captura clique. Pausa com prefers-reduced-motion. */
+body::before {
+  content: '';
+  position: fixed; inset: -10%; z-index: -1;
+  background:
+    radial-gradient(640px circle at 12% 18%, var(--gk-aurora-1), transparent 60%),
+    radial-gradient(560px circle at 88% 12%, var(--gk-aurora-2), transparent 58%),
+    radial-gradient(720px circle at 45% 95%, var(--gk-aurora-3), transparent 62%);
+  filter: blur(60px);
+  animation: gk-aurora-drift 30s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes gk-aurora-drift {
+  0%   { transform: translate(0%, 0%) scale(1); }
+  50%  { transform: translate(-3%, 2%) scale(1.06); }
+  100% { transform: translate(2%, -3%) scale(1.03); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+}
+
 #gk-app { display: none; height: 100vh; height: 100dvh; }
 #gk-app.gk-ready { display: flex; }
 
@@ -23,9 +47,10 @@
 .gk-rail {
   width: var(--gk-rail-w);
   flex-shrink: 0;
-  background-color: var(--gk-rail);
-  background-image: var(--gk-frost-pattern);
-  border-right: 1px solid var(--gk-gray-100);
+  background: var(--gk-glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-right: 1px solid var(--gk-glass-border);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -45,43 +70,32 @@
   font-weight: 600;
   font-size: 15px;
   color: var(--gk-gray-600);
-  transition: border-radius var(--gk-transition), box-shadow var(--gk-transition), color var(--gk-transition);
+  transition: border-radius var(--gk-transition), clip-path var(--gk-transition-slow), box-shadow var(--gk-transition), color var(--gk-transition);
   overflow: hidden;
   flex-shrink: 0;
 }
 .gk-rail-item img { width: 100%; height: 100%; object-fit: cover; }
 .gk-rail-item:hover, .gk-rail-item.gk-active {
+  /* corte facetado nos dois cantos opostos — a "lasca de gelo",
+     assinatura visual do rail; substitui o cantinho arredondado padrão */
   border-radius: var(--gk-radius-md);
+  clip-path: polygon(14% 0%, 100% 0%, 100% 86%, 86% 100%, 0% 100%, 0% 14%);
   box-shadow: var(--gk-shadow-sm);
   color: var(--gk-accent-strong);
 }
-.gk-rail-item.gk-active {
-  box-shadow: 0 0 0 2px var(--gk-accent) inset, 0 0 14px -3px var(--gk-accent-glow);
-}
+.gk-rail-item.gk-active { box-shadow: 0 0 0 2px var(--gk-accent) inset, 0 0 14px var(--gk-accent-glow); }
 .gk-rail-pill {
   position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
-  width: 4px; height: 0; border-radius: 4px;
-  background: linear-gradient(180deg, var(--gk-accent), var(--gk-accent-strong), var(--gk-accent));
-  background-size: 100% 220%;
-  box-shadow: 0 0 8px var(--gk-accent-glow);
+  width: 4px; height: 0; border-radius: 4px; background: var(--gk-accent);
   transition: height var(--gk-transition);
 }
 .gk-rail-item:hover .gk-rail-pill { height: 18px; }
-.gk-rail-item.gk-active .gk-rail-pill { height: 26px; animation: gk-crack-glow 2.6s ease-in-out infinite; }
+.gk-rail-item.gk-active .gk-rail-pill { height: 26px; }
 
 .gk-rail-divider { width: 32px; height: 1px; background: var(--gk-gray-200); margin: 2px 0; }
 
-/* Botão "+" — corte facetado (gema lapidada), a assinatura visual do
-   app: um cristal fechado em repouso que "relaxa" ao passar o mouse,
-   ecoando o nome G.K.IO / paleta "glacial". */
-.gk-rail-item.gk-add {
-  color: var(--gk-accent); font-size: 20px; border-style: dashed;
-  border-radius: 0; clip-path: var(--gk-clip-facet);
-  transition: clip-path var(--gk-transition-slow), background var(--gk-transition), color var(--gk-transition);
-}
-.gk-rail-item.gk-add:hover { background: var(--gk-accent-soft); clip-path: var(--gk-clip-facet-soft); }
-
-@keyframes gk-crack-glow { 0%, 100% { background-position: 0 0%; } 50% { background-position: 0 100%; } }
+.gk-rail-item.gk-add { color: var(--gk-accent); font-size: 22px; border-style: dashed; }
+.gk-rail-item.gk-add:hover { background: var(--gk-accent-soft); }
 
 .gk-server-menu-wrap { position: relative; }
 .gk-server-menu {
@@ -100,8 +114,10 @@
 .gk-sidebar {
   width: var(--gk-sidebar-w);
   flex-shrink: 0;
-  background: var(--gk-surface);
-  border-right: 1px solid var(--gk-gray-100);
+  background: var(--gk-glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-right: 1px solid var(--gk-glass-border);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -138,27 +154,17 @@
 .gk-category.gk-collapsed .gk-channel-list { display: none; }
 
 .gk-channel {
-  position: relative;
   display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px 7px 13px; margin: 1px 0;
+  padding: 7px 10px 7px 8px; margin: 1px 0;
   border-radius: var(--gk-radius-sm);
+  border-left: 2px solid transparent;
   color: var(--gk-gray-600); font-size: 14px; font-weight: 500;
-  cursor: pointer; transition: background var(--gk-transition), color var(--gk-transition);
+  cursor: pointer; transition: background var(--gk-transition), color var(--gk-transition), border-color var(--gk-transition);
 }
 .gk-channel .gk-channel-icon { color: var(--gk-gray-400); font-size: 13px; flex-shrink: 0; }
 .gk-channel:hover { background: var(--gk-surface-sunken); color: var(--gk-gray-800); }
-.gk-channel.gk-active { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+.gk-channel.gk-active { background: var(--gk-accent-soft); color: var(--gk-accent-strong); border-left-color: var(--gk-accent); }
 .gk-channel.gk-active .gk-channel-icon { color: var(--gk-accent-strong); }
-/* "Rachadura de luz" — o mesmo aceno visual do rail (linha viva,
-   feita de luz cruzando o gelo) marcando o item selecionado. */
-.gk-channel.gk-active::before, .gk-dm-row.gk-active::before {
-  content: ''; position: absolute; left: 3px; top: 18%; bottom: 18%; width: 2.5px;
-  border-radius: 3px;
-  background: linear-gradient(180deg, var(--gk-accent), var(--gk-accent-strong), var(--gk-accent));
-  background-size: 100% 220%;
-  box-shadow: 0 0 6px var(--gk-accent-glow);
-  animation: gk-crack-glow 2.6s ease-in-out infinite;
-}
 
 .gk-voice-members { margin-left: 26px; margin-bottom: 4px; }
 .gk-voice-member { display: flex; align-items: center; gap: 6px; padding: 3px 8px; font-size: 12.5px; color: var(--gk-gray-600); }
@@ -169,21 +175,22 @@
 
 /* DM list rows */
 .gk-dm-row {
-  position: relative;
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px 8px 13px; margin: 1px 0; border-radius: var(--gk-radius-sm);
+  padding: 8px 10px 8px 8px; margin: 1px 0; border-radius: var(--gk-radius-sm);
+  border-left: 2px solid transparent;
   cursor: pointer; color: var(--gk-gray-700);
+  transition: background var(--gk-transition), border-color var(--gk-transition);
 }
 .gk-dm-row:hover { background: var(--gk-surface-sunken); }
-.gk-dm-row.gk-active { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+.gk-dm-row.gk-active { background: var(--gk-accent-soft); color: var(--gk-accent-strong); border-left-color: var(--gk-accent); }
 .gk-dm-row .gk-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Mini perfil no rodapé da sidebar */
 .gk-mini-profile {
   flex-shrink: 0; height: 58px;
   display: flex; align-items: center; gap: 10px;
-  padding: 0 10px; border-top: 1px solid var(--gk-gray-100);
-  background: var(--gk-surface-sunken);
+  padding: 0 10px; border-top: 1px solid var(--gk-glass-border);
+  background: transparent;
   cursor: pointer;
 }
 .gk-mini-profile .gk-name { font-size: 13.5px; font-weight: 600; color: var(--gk-gray-800); }
@@ -226,13 +233,17 @@
 .gk-avatar.gk-sz-96 img { width: 96px; height: 96px; border-radius: 20px; }
 
 /* ---------- Área central (chat) ---------- */
-.gk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--gk-bg); }
+.gk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: transparent; }
 
 .gk-topbar {
   height: 56px; flex-shrink: 0;
   display: flex; align-items: center; gap: 10px;
-  padding: 0 18px; background: var(--gk-surface);
-  border-bottom: 1px solid var(--gk-gray-100);
+  padding: 0 18px;
+  background: var(--gk-glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-bottom: 1px solid var(--gk-glass-border);
+  position: relative; z-index: 2;
 }
 .gk-topbar .gk-title { font-family: var(--gk-font-display); font-weight: 600; font-size: 15px; color: var(--gk-gray-900); }
 .gk-topbar .gk-subtitle { font-size: 12.5px; color: var(--gk-gray-500); }
@@ -309,8 +320,12 @@
 .gk-composer { flex-shrink: 0; padding: 14px 22px 20px; }
 .gk-composer-box {
   display: flex; align-items: flex-end; gap: 8px;
-  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-200);
+  background: var(--gk-glass);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border: 1px solid var(--gk-glass-border);
   border-radius: var(--gk-radius-lg); padding: 8px 10px;
+  transition: border-color var(--gk-transition), box-shadow var(--gk-transition);
 }
 .gk-composer-box:focus-within { border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
 .gk-composer-box textarea {
@@ -342,7 +357,7 @@
   color: var(--gk-gray-500); border-bottom: 2px solid transparent; cursor: pointer;
 }
 .gk-emoji-tab:hover { color: var(--gk-accent-strong); }
-.gk-emoji-tab.gk-active { color: var(--gk-accent-strong); border-bottom-color: var(--gk-accent); font-weight: 600; box-shadow: 0 1px 8px -2px var(--gk-accent-glow); }
+.gk-emoji-tab.gk-active { color: var(--gk-accent-strong); border-bottom-color: var(--gk-accent); font-weight: 600; }
 .gk-emoji-picker-search { padding: 8px 10px; flex-shrink: 0; }
 .gk-emoji-search {
   width: 100%; border: 1px solid var(--gk-gray-200); background: var(--gk-surface-sunken);
@@ -393,8 +408,11 @@
 
 /* ---------- Painel de membros (opcional, servidor) ---------- */
 .gk-members {
-  width: var(--gk-members-w); flex-shrink: 0; background: var(--gk-surface);
-  border-left: 1px solid var(--gk-gray-100); overflow-y: auto; padding: 16px 12px;
+  width: var(--gk-members-w); flex-shrink: 0;
+  background: var(--gk-glass);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-left: 1px solid var(--gk-glass-border); overflow-y: auto; padding: 16px 12px;
 }
 .gk-members-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gk-gray-500); padding: 4px 8px 8px; }
 .gk-member-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--gk-radius-sm); cursor: pointer; }
@@ -415,52 +433,22 @@
 }
 .gk-member-role-btn:hover { color: var(--gk-accent); background: var(--gk-surface-sunken); }
 
-/* ---------- Cargos personalizados (chips coloridos + cartão de edição) ---------- */
-.gk-role-chip {
-  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
-  font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle;
-  border: 1px solid; line-height: 1.6;
-}
-.gk-role-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-.gk-role-card { border-left: 3px solid var(--gk-gray-200); }
-.gk-role-swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.gk-role-swatch {
-  width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
-  transition: transform var(--gk-transition), border-color var(--gk-transition);
-}
-.gk-role-swatch:hover { transform: scale(1.08); }
-.gk-role-swatch.gk-active { border-color: var(--gk-gray-700); }
-.gk-role-perms { display: flex; flex-direction: column; gap: 4px; }
-.gk-role-perm-row {
-  display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--gk-radius-sm);
-  cursor: pointer; transition: background var(--gk-transition);
-}
-.gk-role-perm-row:hover { background: var(--gk-surface-sunken); }
-.gk-role-perm-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
-.gk-role-perm-label { font-size: 13px; font-weight: 600; color: var(--gk-gray-800); }
-.gk-role-assign-list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 4px; max-height: 260px; overflow-y: auto; }
-.gk-role-assign-row {
-  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--gk-radius-sm);
-  cursor: pointer; font-size: 13.5px; color: var(--gk-gray-800); transition: background var(--gk-transition);
-}
-.gk-role-assign-row:hover { background: var(--gk-surface-sunken); }
-
 /* ---------- Ícone do servidor no modal "Criar servidor" ---------- */
 .gk-server-icon-picker {
-  width: 76px; height: 76px; border-radius: 0; clip-path: var(--gk-clip-facet);
+  width: 76px; height: 76px; border-radius: var(--gk-radius-hex);
   background: var(--gk-surface-sunken); border: 2px dashed var(--gk-gray-300);
   display: flex; align-items: center; justify-content: center; cursor: pointer; overflow: hidden;
   color: var(--gk-gray-400); font-size: 26px; font-weight: 700;
-  transition: border-color var(--gk-transition), color var(--gk-transition), clip-path var(--gk-transition-slow);
+  transition: border-color var(--gk-transition), color var(--gk-transition);
 }
-.gk-server-icon-picker:hover { border-color: var(--gk-accent); color: var(--gk-accent); clip-path: var(--gk-clip-facet-soft); }
+.gk-server-icon-picker:hover { border-color: var(--gk-accent); color: var(--gk-accent); }
 .gk-server-icon-picker img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Modais genéricos ---------- */
 .gk-overlay {
-  position: fixed; inset: 0; background: rgba(15, 18, 20, 0.5);
+  position: fixed; inset: 0; background: rgba(15, 18, 20, 0.48);
   display: none; align-items: center; justify-content: center; z-index: 200;
-  backdrop-filter: blur(4px) saturate(1.1);
+  backdrop-filter: blur(3px);
   animation: gk-fade-in var(--gk-transition-slow) both;
 }
 .gk-overlay.gk-open { display: flex; }
@@ -506,8 +494,7 @@
 .gk-modal-icon-header h2 { margin: 0; }
 .gk-modal-icon-header .gk-modal-sub { margin: 3px 0 0; }
 .gk-modal-icon {
-  flex-shrink: 0; width: 44px; height: 44px; border-radius: 0;
-  clip-path: var(--gk-clip-facet-soft);
+  flex-shrink: 0; width: 44px; height: 44px; border-radius: var(--gk-radius-md);
   background: var(--gk-accent-soft); color: var(--gk-accent-strong);
   display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-size: 19px; font-weight: 700;
@@ -556,23 +543,11 @@
 }
 .gk-btn:active { transform: translateY(1px) scale(0.98); }
 .gk-btn-primary {
-  position: relative; overflow: hidden;
-  background: var(--gk-accent); color: #fff; box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+  background: linear-gradient(135deg, var(--gk-accent), var(--gk-accent-strong));
+  color: #fff; box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
-.gk-btn-primary:hover { background: var(--gk-accent-strong); transform: translateY(-1px); box-shadow: var(--gk-shadow-sm); }
+.gk-btn-primary:hover { box-shadow: var(--gk-shadow-sm), 0 0 16px var(--gk-accent-glow); transform: translateY(-1px); }
 .gk-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
-/* Luz cruzando o gelo — um brilho diagonal que atravessa o botão ao
-   passar o mouse, o mesmo princípio da rachadura de luz usada no
-   resto do app, aqui em forma de reflexo. */
-.gk-btn-primary::after {
-  content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
-  background: linear-gradient(115deg, transparent, rgba(255,255,255,0.4), transparent);
-  transform: skewX(-18deg); transition: left 520ms cubic-bezier(.2,.8,.2,1);
-}
-.gk-btn-primary:hover::after { left: 140%; }
-@media (prefers-reduced-motion: reduce) {
-  .gk-btn-primary::after { display: none; }
-}
 .gk-btn-ghost { background: var(--gk-surface-sunken); color: var(--gk-gray-700); }
 .gk-btn-ghost:hover { background: var(--gk-gray-100); transform: translateY(-1px); }
 .gk-btn-danger { background: var(--gk-danger-soft); color: var(--gk-danger); }
@@ -589,8 +564,7 @@
 .gk-splash {
   position: fixed; inset: 0; z-index: 500;
   display: none; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
-  background-color: var(--gk-bg);
-  background-image: var(--gk-frost-pattern);
+  background: var(--gk-bg);
   opacity: 0;
 }
 .gk-splash.gk-open { display: flex; opacity: 1; animation: gk-fade-in 320ms ease both; }
@@ -599,26 +573,22 @@
 
 .gk-splash-rings { position: relative; width: 108px; height: 108px; display: flex; align-items: center; justify-content: center; }
 .gk-splash-ring {
-  position: absolute; inset: 0; border-radius: 0;
-  clip-path: var(--gk-clip-facet-soft);
+  position: absolute; inset: 0; border-radius: var(--gk-radius-hex);
   border: 2px solid var(--gk-accent); opacity: 0;
   animation: gk-call-ring-pulse 2.2s ease-out infinite;
 }
 .gk-splash-ring.gk-ring-2 { animation-delay: 0.5s; }
 .gk-splash-ring.gk-ring-3 { animation-delay: 1s; }
 .gk-splash-mark {
-  position: relative; width: 60px; height: 60px; border-radius: 0;
-  clip-path: var(--gk-clip-facet);
-  background: linear-gradient(145deg, var(--gk-accent), var(--gk-accent-strong));
+  position: relative; width: 60px; height: 60px; border-radius: var(--gk-radius-hex);
+  background: linear-gradient(135deg, var(--gk-accent), var(--gk-accent-strong));
+  clip-path: polygon(16% 0%, 100% 0%, 100% 84%, 84% 100%, 0% 100%, 0% 16%);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-weight: 700; font-size: 22px;
-  box-shadow: var(--gk-shadow-md);
-  animation: gk-splash-mark-in 620ms cubic-bezier(.2,.8,.2,1) both;
+  box-shadow: var(--gk-shadow-md), 0 0 24px var(--gk-accent-glow);
+  animation: gk-splash-mark-in 560ms cubic-bezier(.2,.8,.2,1) both;
 }
-@keyframes gk-splash-mark-in {
-  from { opacity: 0; transform: scale(0.6); clip-path: var(--gk-clip-facet-soft); }
-  to { opacity: 1; transform: scale(1); clip-path: var(--gk-clip-facet); }
-}
+@keyframes gk-splash-mark-in { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 
 .gk-splash-wordmark {
   font-family: var(--gk-font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em;
@@ -641,32 +611,27 @@
 /* ---------- Auth gate ---------- */
 #gk-auth {
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  background-color: var(--gk-bg);
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(31,111,120,0.10), transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(31,111,120,0.08), transparent 45%),
-    var(--gk-frost-pattern);
+  background: transparent; /* a aurora ambiente de body::before já cobre isso */
   z-index: 300;
 }
 .gk-auth-card {
-  position: relative; width: 380px; max-width: 90vw;
-  background: var(--gk-surface); border-radius: var(--gk-radius-lg);
-  box-shadow: var(--gk-shadow-lg); padding: 32px 28px;
-  overflow: hidden;
+  width: 380px; max-width: 90vw;
+  background: var(--gk-glass);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid var(--gk-glass-border);
+  border-radius: var(--gk-radius-lg);
+  box-shadow: var(--gk-shadow-lg);
+  padding: 32px 28px;
 }
-/* Aresta lascada no canto — um detalhe físico, como um fragmento de
-   gelo cortado, ancorando o cartão de autenticação à identidade visual. */
-.gk-auth-card::before {
-  content: ''; position: absolute; top: 0; right: 0; width: 64px; height: 64px;
-  background: linear-gradient(135deg, var(--gk-accent-soft) 50%, transparent 52%);
-  pointer-events: none;
-}
-.gk-auth-logo { position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+.gk-auth-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
 .gk-auth-logo .gk-mark {
-  width: 38px; height: 38px; border-radius: 0; clip-path: var(--gk-clip-facet);
-  background: linear-gradient(145deg, var(--gk-accent), var(--gk-accent-strong));
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, var(--gk-accent), var(--gk-accent-strong));
+  clip-path: polygon(16% 0%, 100% 0%, 100% 84%, 84% 100%, 0% 100%, 0% 16%);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-weight: 700;
+  box-shadow: 0 0 20px var(--gk-accent-glow);
 }
 .gk-auth-logo .gk-wordmark { font-family: var(--gk-font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
 .gk-auth-logo .gk-wordmark span { color: var(--gk-accent); }
@@ -708,25 +673,11 @@
 /* Blend suave do banner pro corpo do card — sem borda dura entre os dois */
 .gk-profile-banner::after {
   content: '';
-  position: absolute; inset: 0; z-index: 1;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 42%, var(--gk-surface) 94%);
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0) 38%, var(--gk-surface) 100%);
   pointer-events: none;
 }
-/* Borda "quebrada", como uma placa de gelo se partindo contra o corpo
-   do cartão — o mesmo motivo facetado do restante do app, aqui como
-   linha de fronteira em vez de forma fechada. */
-.gk-profile-banner::before {
-  content: '';
-  position: absolute; left: 0; right: 0; bottom: -1px; height: 13px; z-index: 2;
-  background: var(--gk-surface);
-  clip-path: polygon(
-    0% 100%, 5% 35%, 11% 100%, 16% 45%, 22% 100%, 27% 30%, 33% 100%,
-    38% 50%, 44% 100%, 49% 35%, 55% 100%, 60% 45%, 66% 100%, 71% 30%,
-    77% 100%, 82% 50%, 88% 100%, 93% 35%, 100% 100%, 100% 100%, 0% 100%
-  );
-  pointer-events: none;
-}
-.gk-profile-avatar-wrap { position: absolute; left: 22px; bottom: -42px; z-index: 3; }
+.gk-profile-avatar-wrap { position: absolute; left: 22px; bottom: -42px; z-index: 1; }
 .gk-profile-avatar-wrap img {
   display: block; width: 96px; height: 96px; border-radius: 24px;
   border: 4px solid var(--gk-surface); object-fit: cover; background: var(--gk-gray-100);
@@ -1430,24 +1381,6 @@
 
 .gk-admin-user-head { display: flex; align-items: center; gap: 10px; }
 .gk-admin-user-avatar { width: 40px; height: 40px; border-radius: var(--gk-radius-md); object-fit: cover; }
-
-/* ============================================================
-   Configurações de servidor — variantes pequenas de componentes
-   já existentes (ícone, linhas de canal, zona de risco).
-   ============================================================ */
-.gk-server-icon-picker-sm {
-  width: 68px; height: 68px; font-size: 20px; flex-shrink: 0;
-}
-.gk-channel-manage-row {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-}
-.gk-channel-manage-row .gk-channel-icon { flex-shrink: 0; color: var(--gk-gray-400); font-size: 13px; }
-.gk-channel-manage-row input { flex: 1; }
-.gk-danger-zone {
-  border-color: var(--gk-danger-soft) !important;
-  background: var(--gk-danger-soft) !important;
-}
-.gk-danger-zone .gk-settings-card-title { color: var(--gk-danger); }
 
 .gk-admin-badges-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 .gk-admin-badge-check {

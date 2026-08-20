@@ -58,11 +58,6 @@ export const channelMessageDoc = (serverId, channelId, msgId) =>
   doc(db, 'servers', serverId, 'channels', channelId, 'messages', msgId);
 export const membersCol = (serverId) => collection(db, 'servers', serverId, 'members');
 export const memberDoc = (serverId, uid) => doc(db, 'servers', serverId, 'members', uid);
-// Cargos personalizados (roles): nome, cor e um conjunto de permissões
-// granulares. Ficam guardados em servers/{serverId}/roles/{roleId} e são
-// atribuídos a membros via members/{uid}.roleIds (array de ids de cargo).
-export const rolesCol = (serverId) => collection(db, 'servers', serverId, 'roles');
-export const roleDoc = (serverId, roleId) => doc(db, 'servers', serverId, 'roles', roleId);
 
 export const invitesCol = () => collection(db, 'invites');
 export const inviteDoc = (code) => doc(db, 'invites', code);
