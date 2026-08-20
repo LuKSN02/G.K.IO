@@ -63,6 +63,14 @@
   --gk-transition: 160ms cubic-bezier(.2,.8,.2,1);
   --gk-transition-slow: 240ms cubic-bezier(.2,.8,.2,1);
 
+  /* --- Assinatura visual: "Facet & Frost" ---
+     Cortes facetados (estilo gelo lapidado) para marcas do app, e um
+     padrão de rachaduras finíssimo para dar textura de "vidro gelado"
+     às superfícies de chrome (rail, tela de auth, splash, overlays). */
+  --gk-clip-facet:      polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%);
+  --gk-clip-facet-soft: polygon(14% 0%, 86% 0%, 100% 14%, 100% 86%, 86% 100%, 14% 100%, 0% 86%, 0% 14%);
+  --gk-frost-pattern: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='130'><g fill='none' stroke='%239AA5AB' stroke-width='1' opacity='0.16'><path d='M0 46 L46 0 M0 98 L98 0 M32 130 L130 32 M84 130 L130 84 M-10 20 L20 -10'/></g></svg>");
+
   color-scheme: light;
 }
 
@@ -93,6 +101,8 @@
   --gk-accent-glow: rgba(31, 111, 120, 0.38);
 
   --gk-danger-soft: rgba(214, 69, 69, 0.16);
+
+  --gk-frost-pattern: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='130'><g fill='none' stroke='%23FFFFFF' stroke-width='1' opacity='0.05'><path d='M0 46 L46 0 M0 98 L98 0 M32 130 L130 32 M84 130 L130 84 M-10 20 L20 -10'/></g></svg>");
 
   --gk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --gk-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);

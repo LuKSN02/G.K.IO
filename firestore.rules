@@ -92,10 +92,28 @@ service cloud.firestore {
     }
 
     // ---------- Servidores ----------
+    // Duas formas de editar o doc do servidor, mutuamente exclusivas:
+    // (1) qualquer membro pode mexer SÓ em memberIds (entrar/sair/ser expulso);
+    // (2) dono ou admin pode editar nome/descrição/ícone/banner, mas nunca
+    //     ownerId ou memberIds por essa via (isso evitaria um admin se
+    //     autopromover a dono, ou "roubar" o servidor).
+    function isServerAdminOrOwner(serverId) {
+      return isServerOwner(serverId)
+        || get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isMemberIdsOnlyChange(serverId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+        && (request.auth.uid in resource.data.memberIds || request.auth.uid in request.resource.data.memberIds);
+    }
+    function isValidServerInfoEdit(serverId) {
+      return isServerAdminOrOwner(serverId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl']);
+    }
+
     match /servers/{serverId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == request.resource.data.ownerId;
-      allow update: if signedIn() && (request.auth.uid in resource.data.memberIds || request.auth.uid in request.resource.data.memberIds);
+      allow update: if signedIn() && (isMemberIdsOnlyChange(serverId) || isValidServerInfoEdit(serverId));
       allow delete: if signedIn() && request.auth.uid == resource.data.ownerId;
 
       match /categories/{catId} {
