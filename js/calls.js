@@ -355,6 +355,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
   await setDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', uid), {
     displayName: state.user.displayName || state.user.username,
     avatarUrl: state.user.avatarUrl || '',
+    role: state.user.role || 'free',
     joinedAt: serverTimestamp(),
     muted: false,
     cameraTrackId: null,
@@ -481,7 +482,11 @@ function renderVoiceMembersList(channelId, snap) {
   box.innerHTML = '';
   snap.forEach((d) => {
     const m = d.data();
-    box.appendChild(el('div', { class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''), id: `gk-voice-member-${d.id}` }, [
+    box.appendChild(el('div', {
+      class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''),
+      id: `gk-voice-member-${d.id}`,
+      'data-role': m.role || 'free',
+    }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
       el('span', {}, m.displayName),
       m.muted ? el('span', { class: 'gk-voice-member-mic-off', title: 'Mutado' }, '🔇') : null,

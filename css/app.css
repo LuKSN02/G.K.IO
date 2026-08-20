@@ -137,6 +137,7 @@
 .gk-voice-members { margin-left: 26px; margin-bottom: 4px; }
 .gk-voice-member { display: flex; align-items: center; gap: 6px; padding: 3px 8px; font-size: 12.5px; color: var(--gk-gray-600); }
 .gk-voice-member img { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; transition: box-shadow 120ms ease; }
+.gk-voice-member[data-role="prime"] img { box-shadow: 0 0 0 1.5px var(--gk-accent); }
 .gk-voice-member.gk-speaking img { box-shadow: 0 0 0 2px var(--gk-accent); }
 .gk-voice-member-mic-off { font-size: 10px; color: var(--gk-danger); margin-left: -2px; }
 
@@ -1183,3 +1184,62 @@
   font-size: 11px; font-weight: 500; color: var(--gk-gray-500);
   text-transform: none; letter-spacing: 0;
 }
+
+/* ============================================================
+   G.K.IO Prime — rodada 2: banner em vídeo, catálogo de insígnias,
+   contador de assinatura e efeito de texto shimmer
+   ============================================================ */
+
+/* ---------- Banner em vídeo (cartão de perfil e Configurações) ---------- */
+.gk-profile-banner-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover;
+}
+.gk-settings-banner-video {
+  width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
+}
+
+/* ---------- Insígnias do catálogo ---------- */
+.gk-profile-badges-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gk-profile-badge-chip {
+  font-size: 11.5px; font-weight: 600; color: var(--gk-gray-700);
+  background: var(--gk-surface-sunken);
+  border-radius: 999px; padding: 3px 10px;
+  display: inline-flex; align-items: center;
+}
+
+/* ---------- Contador "assinante Prime há..." ---------- */
+.gk-prime-duration { font-size: 11.5px; color: var(--gk-gray-500); margin: 2px 0 6px; }
+
+/* ---------- Efeito de texto shimmer (mensagens de assinantes Prime) ---------- */
+.gk-msg-line-prime {
+  display: inline-block;
+  background-image: linear-gradient(90deg, var(--gk-gray-800) 0%, var(--gk-accent) 45%, var(--gk-gray-800) 90%);
+  background-size: 220% auto;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: gk-text-shimmer 3.2s linear infinite;
+}
+.gk-msg-line-prime .gk-msg-edited-tag {
+  -webkit-text-fill-color: var(--gk-gray-400); color: var(--gk-gray-400);
+}
+@keyframes gk-text-shimmer { to { background-position: -220% center; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gk-msg-line-prime { animation: none; background-position: 50% center; }
+}
+
+/* ============================================================
+   G.K.IO Prime — seção de Administração (só visível com isAdmin: true)
+   ============================================================ */
+.gk-field-row { display: flex; gap: 8px; }
+.gk-field-row input { flex: 1; }
+
+.gk-admin-user-head { display: flex; align-items: center; gap: 10px; }
+.gk-admin-user-avatar { width: 40px; height: 40px; border-radius: var(--gk-radius-md); object-fit: cover; }
+
+.gk-admin-badges-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.gk-admin-badge-check {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--gk-gray-700); cursor: pointer;
+}
+.gk-admin-badge-check input { cursor: pointer; }

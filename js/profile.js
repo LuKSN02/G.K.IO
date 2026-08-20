@@ -13,6 +13,27 @@ export const SOCIAL_ICONS = {
   twitch: '🎮', discord: '🗨️', tiktok: '🎵', linkedin: '💼', website: '🔗',
 };
 
+// Catálogo de insígnias — customBadges guarda só os ids (ex: ['og','beta']),
+// atribuídos manualmente pelo console do Firebase (ver firestore.rules:
+// nenhum desses campos é editável pelo próprio usuário).
+export const BADGE_CATALOG = {
+  og: { icon: '🏆', label: 'Veterano' },
+  booster: { icon: '⚡', label: 'Booster' },
+  beta: { icon: '🧪', label: 'Beta Tester' },
+  founder: { icon: '👑', label: 'Fundador' },
+};
+
+function primeDurationLabel(ts) {
+  if (!ts || !ts.toDate) return 'Assinante Prime.';
+  const days = Math.max(0, Math.floor((Date.now() - ts.toDate().getTime()) / 86400000));
+  if (days < 1) return 'Assinante Prime há menos de um dia.';
+  if (days < 30) return `Assinante Prime há ${days} ${days === 1 ? 'dia' : 'dias'}.`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `Assinante Prime há ${months} ${months === 1 ? 'mês' : 'meses'}.`;
+  const years = Math.floor(months / 12);
+  return `Assinante Prime há ${years} ${years === 1 ? 'ano' : 'anos'}.`;
+}
+
 // A edição de perfil (avatar, banner, bio, links) agora mora dentro da
 // aba de Configurações (ver settings.js, seção "Perfil"), para reunir
 // tudo num único lugar organizado por seções.
@@ -42,14 +63,21 @@ export async function openProfileCard(uid) {
   modal.className = 'gk-modal gk-profile-modal';
   modal.innerHTML = '';
 
-  modal.appendChild(el('div', {
+  const bannerEl = el('div', {
     class: 'gk-profile-banner',
-    style: user.bannerUrl ? `background-image:url(${user.bannerUrl})` : '',
+    style: (user.bannerUrl && user.bannerType !== 'video') ? `background-image:url(${user.bannerUrl})` : '',
   }, [
     el('div', { class: 'gk-profile-avatar-wrap', 'data-frame': user.frameStyle || 'none' }, [
       el('img', { src: user.avatarUrl || fallbackAvatar(user.username) }),
     ]),
-  ]));
+  ]);
+  if (user.bannerUrl && user.bannerType === 'video') {
+    bannerEl.prepend(el('video', {
+      src: user.bannerUrl, class: 'gk-profile-banner-video',
+      autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
+    }));
+  }
+  modal.appendChild(bannerEl);
 
   const body = el('div', { class: 'gk-profile-body' }, [
     el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
@@ -61,8 +89,19 @@ export async function openProfileCard(uid) {
       el('span', { class: 'gk-badge-prime' }, '◆'),
       el('span', {}, 'G.K.IO Prime'),
     ]));
+    body.appendChild(el('div', { class: 'gk-prime-duration' }, primeDurationLabel(user.primeSince)));
   }
   if (user.tag) body.appendChild(el('span', { class: 'gk-author-tag' }, user.tag));
+
+  if (user.customBadges && user.customBadges.length) {
+    const badgesRow = el('div', { class: 'gk-profile-badges-row' });
+    for (const key of user.customBadges) {
+      const b = BADGE_CATALOG[key];
+      if (!b) continue;
+      badgesRow.appendChild(el('span', { class: 'gk-profile-badge-chip', title: b.label }, `${b.icon} ${b.label}`));
+    }
+    if (badgesRow.children.length) body.appendChild(badgesRow);
+  }
 
   if (user.bio) body.appendChild(el('div', { class: 'gk-profile-bio' }, user.bio));
 

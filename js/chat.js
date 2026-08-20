@@ -128,7 +128,7 @@ function renderMessages(messages) {
       row.appendChild(buildEditBox(msg));
     } else {
       if (msg.content) {
-        const line = el('div', { class: 'gk-msg-line' }, renderMessageContent(msg.content));
+        const line = el('div', { class: 'gk-msg-line' + (msg.authorRole === 'prime' ? ' gk-msg-line-prime' : '') }, renderMessageContent(msg.content));
         if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag' }, '(editado)'));
         row.appendChild(line);
       }

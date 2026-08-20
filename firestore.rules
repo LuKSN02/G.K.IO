@@ -41,13 +41,27 @@ service cloud.firestore {
     function isValidSelfProfileEdit() {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName','avatarUrl','bannerUrl','bio','statusPresence','tag','frameStyle']);
+             .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','tag','frameStyle']);
+    }
+    // Um "admin" é definido pelo próprio campo isAdmin no doc do usuário
+    // logado — campo que, por sua vez, NENHUMA regra permite o próprio
+    // usuário setar (não está em isValidSelfProfileEdit acima), então só
+    // vira true manualmente no console do Firebase.
+    function isAdminUser() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin', false) == true;
+    }
+    // Admin só pode tocar em role/primeSince/customBadges de QUALQUER
+    // usuário — nada além disso (não pode mudar avatar, bio etc. de outros).
+    function isValidAdminBadgeEdit() {
+      return isAdminUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role','primeSince','customBadges']);
     }
 
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isSelf(uid);
-      allow update: if isSelf(uid) && isValidSelfProfileEdit();
+      allow update: if (isSelf(uid) && isValidSelfProfileEdit()) || isValidAdminBadgeEdit();
 
       match /socialLinks/{linkId} {
         allow read: if signedIn();

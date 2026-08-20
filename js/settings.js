@@ -3,9 +3,9 @@
 // Menu lateral (Perfil / Áudio & Vídeo / Aparência / Notificações)
 // com painel de conteúdo à direita, trocando de seção sem recarregar.
 // ============================================================
-import { db, doc, userDoc, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc } from './db.js';
+import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc, query, where, serverTimestamp } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
-import { SOCIAL_ICONS, refreshMiniProfile, uploadProfileImage } from './profile.js';
+import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 
@@ -16,6 +16,12 @@ const SECTIONS = [
   { id: 'notificacoes', label: 'Notificações', icon: '🔔' },
   { id: 'prime', label: 'G.K.IO Prime', icon: '◆' },
 ];
+// Só aparece pra quem tem isAdmin: true no próprio doc (setado manualmente
+// no console do Firebase — ver firestore.rules, isAdminUser()).
+const ADMIN_SECTION = { id: 'admin', label: 'Administração', icon: '🛠️' };
+function visibleSections() {
+  return state.user?.isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
+}
 
 const FRAME_STYLES = [
   { id: 'none', label: 'Nenhuma' },
@@ -29,7 +35,7 @@ let micTestRAF = null;
 let camTestStream = null;
 
 export function openSettingsModal(section = 'perfil') {
-  activeSection = SECTIONS.some((s) => s.id === section) ? section : 'perfil';
+  activeSection = visibleSections().some((s) => s.id === section) ? section : 'perfil';
   const overlay = document.getElementById('gk-settings-overlay');
   renderNav();
   renderSection();
@@ -53,7 +59,7 @@ function renderNav() {
   const nav = document.getElementById('gk-settings-nav');
   nav.innerHTML = '';
   nav.appendChild(el('div', { class: 'gk-settings-nav-title' }, 'Configurações'));
-  for (const s of SECTIONS) {
+  for (const s of visibleSections()) {
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
       onclick: () => { stopMicTest(); stopCamTest(); activeSection = s.id; renderNav(); renderSection(); },
@@ -69,6 +75,7 @@ function renderSection() {
   if (activeSection === 'aparencia') return renderAparenciaSection(content);
   if (activeSection === 'notificacoes') return renderNotificacoesSection(content);
   if (activeSection === 'prime') return renderPrimeSection(content);
+  if (activeSection === 'admin' && state.user?.isAdmin) return renderAdminSection(content);
 }
 
 // ============================================================
@@ -81,18 +88,35 @@ async function renderPerfilSection(content) {
   const links = linksSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   let pendingAvatar = null;
   let pendingBanner = null;
+  const isPrime = state.user.role === 'prime';
 
   const bannerPreview = el('div', {
     class: 'gk-settings-banner',
-    style: state.user.bannerUrl ? `background-image:url(${state.user.bannerUrl})` : '',
-  }, state.user.bannerUrl ? '' : 'Clique para escolher um banner');
-  const bannerInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
+    style: (state.user.bannerUrl && state.user.bannerType !== 'video') ? `background-image:url(${state.user.bannerUrl})` : '',
+  });
+  if (state.user.bannerUrl && state.user.bannerType === 'video') {
+    bannerPreview.appendChild(el('video', {
+      src: state.user.bannerUrl, class: 'gk-settings-banner-video',
+      autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
+    }));
+  } else if (!state.user.bannerUrl) {
+    bannerPreview.textContent = 'Clique para escolher um banner';
+  }
+  const bannerInput = el('input', { type: 'file', accept: isPrime ? 'image/*,video/*' : 'image/*', style: 'display:none;' });
   bannerPreview.addEventListener('click', () => bannerInput.click());
   bannerInput.addEventListener('change', () => {
-    if (bannerInput.files[0]) {
-      pendingBanner = bannerInput.files[0];
-      bannerPreview.style.backgroundImage = `url(${URL.createObjectURL(pendingBanner)})`;
-      bannerPreview.textContent = '';
+    const file = bannerInput.files[0];
+    if (!file) return;
+    pendingBanner = file;
+    bannerPreview.innerHTML = '';
+    bannerPreview.style.backgroundImage = '';
+    if (file.type.startsWith('video/')) {
+      bannerPreview.appendChild(el('video', {
+        src: URL.createObjectURL(file), class: 'gk-settings-banner-video',
+        autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
+      }));
+    } else {
+      bannerPreview.style.backgroundImage = `url(${URL.createObjectURL(file)})`;
     }
   });
 
@@ -114,6 +138,7 @@ async function renderPerfilSection(content) {
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     bannerPreview, bannerInput,
+    !isPrime ? el('div', { class: 'gk-hint' }, 'Banners em vídeo/GIF são exclusivos de assinantes G.K.IO Prime.') : null,
     el('div', { class: 'gk-settings-identity-row' }, [
       avatarWrap, avatarInput,
       el('div', { class: 'gk-hint' }, `@${state.user.username}`),
@@ -172,7 +197,10 @@ async function renderPerfilSection(content) {
         bio: bioInput.value.trim(),
       };
       if (pendingAvatar) updates.avatarUrl = await uploadProfileImage(pendingAvatar, 'avatars');
-      if (pendingBanner) updates.bannerUrl = await uploadProfileImage(pendingBanner, 'banners');
+      if (pendingBanner) {
+        updates.bannerUrl = await uploadProfileImage(pendingBanner, 'banners');
+        updates.bannerType = pendingBanner.type.startsWith('video/') ? 'video' : 'image';
+      }
 
       await updateDoc(userDoc(state.user.uid), updates);
       Object.assign(state.user, updates);
@@ -468,6 +496,101 @@ function primeSinceLabel(ts) {
   if (!ts || !ts.toDate) return 'Assinante Prime.';
   const d = ts.toDate();
   return `Assinante Prime desde ${d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}.`;
+}
+
+// ============================================================
+// Seção: Administração (só visível com isAdmin: true)
+// ============================================================
+function renderAdminSection(content) {
+  content.appendChild(sectionHeader('Administração', 'Gerencie assinaturas Prime e insígnias de qualquer usuário.'));
+
+  const searchInput = el('input', { type: 'text', placeholder: 'nome-de-usuario' });
+  const searchBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button' }, 'Buscar');
+  const resultBox = el('div', {});
+
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Buscar usuário por username'),
+    el('div', { class: 'gk-field-row' }, [searchInput, searchBtn]),
+  ]));
+  content.appendChild(resultBox);
+
+  async function doSearch() {
+    const username = searchInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!username) return;
+    resultBox.innerHTML = '';
+    searchBtn.disabled = true;
+    try {
+      const q = query(usersCol(), where('username', '==', username));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        resultBox.appendChild(el('div', { class: 'gk-hint' }, 'Usuário não encontrado.'));
+        return;
+      }
+      const d = snap.docs[0];
+      renderAdminUserCard(resultBox, { uid: d.id, ...d.data() });
+    } finally {
+      searchBtn.disabled = false;
+    }
+  }
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch(); } });
+}
+
+function renderAdminUserCard(container, target) {
+  container.innerHTML = '';
+  let pendingRole = target.role || 'free';
+
+  const roleBtn = el('button', { class: 'gk-btn ' + (pendingRole === 'prime' ? 'gk-btn-danger' : 'gk-btn-primary'), type: 'button' },
+    pendingRole === 'prime' ? 'Remover Prime' : 'Tornar Prime');
+  roleBtn.addEventListener('click', () => {
+    pendingRole = pendingRole === 'prime' ? 'free' : 'prime';
+    roleBtn.textContent = pendingRole === 'prime' ? 'Remover Prime' : 'Tornar Prime';
+    roleBtn.className = 'gk-btn ' + (pendingRole === 'prime' ? 'gk-btn-danger' : 'gk-btn-primary');
+  });
+
+  const badgeChecks = {};
+  const badgesRow = el('div', { class: 'gk-admin-badges-row' }, Object.entries(BADGE_CATALOG).map(([key, b]) => {
+    const cb = el('input', { type: 'checkbox' });
+    if ((target.customBadges || []).includes(key)) cb.checked = true;
+    badgeChecks[key] = cb;
+    return el('label', { class: 'gk-admin-badge-check' }, [cb, `${b.icon} ${b.label}`]);
+  }));
+
+  const saveBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Salvar');
+
+  container.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-admin-user-head' }, [
+      el('img', { class: 'gk-admin-user-avatar', src: target.avatarUrl || fallbackAvatar(target.username) }),
+      el('div', {}, [
+        el('div', { class: 'gk-name' }, target.displayName || target.username),
+        el('div', { class: 'gk-hint' }, '@' + target.username + (target.role === 'prime' ? ' · atualmente Prime' : ' · atualmente free')),
+      ]),
+    ]),
+    el('div', { class: 'gk-settings-card-title', style: 'margin-top:16px;' }, 'Assinatura'),
+    roleBtn,
+    el('div', { class: 'gk-settings-card-title', style: 'margin-top:16px;' }, 'Insígnias'),
+    badgesRow,
+    el('div', { class: 'gk-settings-save-row' }, [saveBtn]),
+  ]));
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Salvando...';
+    try {
+      const customBadges = Object.entries(badgeChecks).filter(([, cb]) => cb.checked).map(([key]) => key);
+      const updates = { role: pendingRole, customBadges };
+      if (pendingRole === 'prime' && target.role !== 'prime') updates.primeSince = serverTimestamp();
+      await updateDoc(userDoc(target.uid), updates);
+      toast(`Perfil de @${target.username} atualizado.`);
+      target.role = pendingRole;
+      target.customBadges = customBadges;
+    } catch (err) {
+      toast(err.message || 'Falha ao salvar — confira se isAdmin: true está setado na sua conta.', 'danger');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Salvar';
+    }
+  });
 }
 
 // ============================================================

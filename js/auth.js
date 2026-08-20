@@ -57,6 +57,7 @@ async function bootstrapUserDoc(uid, username, email) {
     email,
     avatarUrl: fallbackAvatar(username),
     bannerUrl: '',
+    bannerType: 'image', // 'image' | 'video' — banner em vídeo é exclusivo Prime
     bio: '',
     statusPresence: 'online',
     createdAt: serverTimestamp(),
@@ -66,6 +67,7 @@ async function bootstrapUserDoc(uid, username, email) {
     tag: '',
     frameStyle: 'none',  // 'none' | 'glacial' | 'aurora'
     customBadges: [],
+    isAdmin: false,       // só true se setado manualmente no console — libera a seção Administração
   });
 }
 
