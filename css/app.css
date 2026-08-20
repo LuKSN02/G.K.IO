@@ -574,18 +574,69 @@
 .gk-auth-logo .gk-wordmark span { color: var(--gk-accent); }
 
 /* ---------- Cartão / modal de perfil público ---------- */
-.gk-profile-modal { width: 380px; padding: 0; overflow: hidden; }
-.gk-profile-banner { height: 108px; background: linear-gradient(135deg, var(--gk-accent-soft), var(--gk-gray-100)); background-size: cover; background-position: center; position: relative; }
-.gk-profile-avatar-wrap { position: absolute; left: 20px; bottom: -34px; }
-.gk-profile-avatar-wrap img { width: 84px; height: 84px; border-radius: 20px; border: 4px solid var(--gk-surface); object-fit: cover; background: var(--gk-gray-100); }
-.gk-profile-body { padding: 46px 20px 20px; }
-.gk-profile-name { font-family: var(--gk-font-display); font-size: 18px; font-weight: 700; color: var(--gk-gray-900); }
-.gk-profile-handle { font-size: 13px; color: var(--gk-gray-500); font-family: var(--gk-font-mono); margin-bottom: 12px; }
-.gk-profile-bio { font-size: 13.5px; color: var(--gk-gray-700); line-height: 1.5; padding: 12px; background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); margin-bottom: 14px; }
-.gk-profile-links { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.gk-profile-modal {
+  width: 380px; padding: 0; overflow: hidden; border-radius: var(--gk-radius-lg);
+  animation: gk-profile-pop-in 320ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes gk-profile-pop-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+.gk-profile-avatar-wrap {
+  animation: gk-profile-avatar-pop 380ms cubic-bezier(.34,1.56,.64,1) both;
+  animation-delay: 90ms;
+}
+@keyframes gk-profile-avatar-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gk-profile-modal, .gk-profile-avatar-wrap { animation: none; }
+}
+.gk-profile-banner {
+  height: 128px;
+  background: linear-gradient(135deg, var(--gk-accent-soft), var(--gk-gray-100));
+  background-size: cover; background-position: center;
+  position: relative;
+}
+.gk-profile-banner::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0) 58%, rgba(0,0,0,0.32) 100%);
+  pointer-events: none;
+}
+.gk-profile-avatar-wrap { position: absolute; left: 20px; bottom: -36px; z-index: 1; }
+.gk-profile-avatar-wrap img {
+  display: block; width: 88px; height: 88px; border-radius: 22px;
+  border: 4px solid var(--gk-surface); object-fit: cover; background: var(--gk-gray-100);
+  box-shadow: var(--gk-shadow-md);
+}
+.gk-profile-body { padding: 50px 20px 20px; }
+.gk-profile-name { font-family: var(--gk-font-display); font-size: 19px; font-weight: 700; color: var(--gk-gray-900); line-height: 1.25; }
+.gk-profile-handle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--gk-gray-500); font-family: var(--gk-font-mono);
+  margin-top: 3px;
+}
+.gk-profile-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.gk-profile-status-dot[data-status="online"] { background: var(--gk-status-online); }
+.gk-profile-status-dot[data-status="idle"] { background: var(--gk-status-idle); }
+.gk-profile-status-dot[data-status="dnd"] { background: var(--gk-status-dnd); }
+.gk-profile-status-dot[data-status="offline"] { background: var(--gk-status-offline); }
+.gk-profile-bio { font-size: 13.5px; color: var(--gk-gray-700); line-height: 1.5; padding: 12px; background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); margin-top: 14px; }
+.gk-profile-links { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .gk-profile-link { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gk-accent-strong); text-decoration: none; }
 .gk-profile-link:hover { text-decoration: underline; }
-.gk-profile-actions { display: flex; gap: 8px; }
+.gk-profile-actions { display: flex; gap: 8px; margin-top: 18px; }
+.gk-profile-edit-btn {
+  background: transparent;
+  border: 1.5px solid var(--gk-accent);
+  color: var(--gk-accent-strong);
+  font-weight: 600;
+  transition: background var(--gk-transition), transform var(--gk-transition);
+}
+.gk-profile-edit-btn:hover { background: var(--gk-accent-soft); }
+.gk-profile-edit-btn:active { transform: scale(0.98); }
 
 /* ============================================================
    Chamadas — tela cheia de DM (estilo Discord/Skype) + barra
@@ -1116,10 +1167,16 @@
   line-height: 1.4;
 }
 
-.gk-badge-prime-row {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12.5px; font-weight: 600; color: var(--gk-accent-strong);
-  margin-top: 4px;
+/* Linha de "chips" no cartão de perfil: badge Prime + tag lado a lado */
+.gk-profile-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.gk-prime-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.01em;
+  color: var(--gk-accent-strong);
+  background: linear-gradient(135deg, var(--gk-accent-soft), transparent 120%);
+  border: 1px solid var(--gk-accent-soft);
+  border-radius: 999px; padding: 4px 11px 4px 9px;
+  cursor: default;
 }
 
 .gk-author-tag {
@@ -1128,7 +1185,7 @@
   color: var(--gk-gray-500);
   background: var(--gk-surface-sunken);
   border-radius: var(--gk-radius-sm);
-  padding: 1px 5px;
+  padding: 3px 7px;
 }
 
 /* ---------- Prime: upsell (quem ainda não é assinante) ---------- */
@@ -1172,7 +1229,7 @@
   background: conic-gradient(from 0deg, var(--gk-accent), #7C4FC2, var(--gk-status-online), var(--gk-accent));
 }
 .gk-avatar[data-frame]::before { border-radius: inherit; }
-.gk-profile-avatar-wrap[data-frame]::before { border-radius: 23px; }
+.gk-profile-avatar-wrap[data-frame]::before { border-radius: 25px; }
 
 @keyframes gk-frame-spin { to { transform: rotate(360deg); } }
 
@@ -1200,7 +1257,7 @@
 }
 
 /* ---------- Insígnias do catálogo ---------- */
-.gk-profile-badges-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gk-profile-badges-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .gk-profile-badge-chip {
   font-size: 11.5px; font-weight: 600; color: var(--gk-gray-700);
   background: var(--gk-surface-sunken);
@@ -1209,7 +1266,8 @@
 }
 
 /* ---------- Contador "assinante Prime há..." ---------- */
-.gk-prime-duration { font-size: 11.5px; color: var(--gk-gray-500); margin: 2px 0 6px; }
+/* gk-prime-duration agora só existe como texto de "title" (tooltip) no
+   .gk-prime-chip acima — sem regra própria de layout necessária. */
 
 /* ---------- Efeito de texto shimmer (mensagens de assinantes Prime) ---------- */
 .gk-msg-line-prime {

@@ -81,17 +81,19 @@ export async function openProfileCard(uid) {
 
   const body = el('div', { class: 'gk-profile-body' }, [
     el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
-    el('div', { class: 'gk-profile-handle' }, '@' + user.username + ' · ' + statusText(user.statusPresence)),
+    el('div', { class: 'gk-profile-handle' }, [
+      el('span', {}, '@' + user.username),
+      el('span', { class: 'gk-profile-status-dot', 'data-status': user.statusPresence || 'offline' }),
+      el('span', {}, statusText(user.statusPresence)),
+    ]),
   ]);
 
+  const metaChips = [];
   if (user.role === 'prime') {
-    body.appendChild(el('div', { class: 'gk-badge-prime-row' }, [
-      el('span', { class: 'gk-badge-prime' }, '◆'),
-      el('span', {}, 'G.K.IO Prime'),
-    ]));
-    body.appendChild(el('div', { class: 'gk-prime-duration' }, primeDurationLabel(user.primeSince)));
+    metaChips.push(el('span', { class: 'gk-prime-chip', title: primeDurationLabel(user.primeSince) }, '◆ G.K.IO Prime'));
   }
-  if (user.tag) body.appendChild(el('span', { class: 'gk-author-tag' }, user.tag));
+  if (user.tag) metaChips.push(el('span', { class: 'gk-author-tag' }, user.tag));
+  if (metaChips.length) body.appendChild(el('div', { class: 'gk-profile-meta-row' }, metaChips));
 
   if (user.customBadges && user.customBadges.length) {
     const badgesRow = el('div', { class: 'gk-profile-badges-row' });
@@ -128,10 +130,12 @@ export async function openProfileCard(uid) {
       }, '📞'),
     ]));
   } else {
-    body.appendChild(el('button', {
-      class: 'gk-btn gk-btn-ghost gk-btn-block',
-      onclick: () => { overlay.classList.remove('gk-open'); openSettingsModal('perfil'); },
-    }, 'Editar perfil'));
+    body.appendChild(el('div', { class: 'gk-profile-actions' }, [
+      el('button', {
+        class: 'gk-btn gk-profile-edit-btn gk-btn-block',
+        onclick: () => { overlay.classList.remove('gk-open'); openSettingsModal('perfil'); },
+      }, '✎ Editar perfil'),
+    ]));
   }
 
   modal.appendChild(body);
