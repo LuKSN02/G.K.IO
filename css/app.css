@@ -575,8 +575,16 @@
 
 /* ---------- Cartão / modal de perfil público ---------- */
 .gk-profile-modal {
-  width: 380px; padding: 0; overflow: hidden; border-radius: var(--gk-radius-lg);
+  width: 392px; padding: 0; overflow: hidden; border-radius: var(--gk-radius-lg);
+  position: relative;
+  box-shadow: var(--gk-shadow-lg);
   animation: gk-profile-pop-in 320ms cubic-bezier(.2,.8,.2,1) both;
+}
+/* Barra de destaque no topo — só aparece pra quem é G.K.IO Prime,
+   sinalizando o status antes mesmo de ler qualquer texto. */
+.gk-profile-modal[data-prime="true"]::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--gk-accent), transparent);
 }
 @keyframes gk-profile-pop-in {
   from { opacity: 0; transform: translateY(14px) scale(0.96); }
@@ -594,48 +602,62 @@
   .gk-profile-modal, .gk-profile-avatar-wrap { animation: none; }
 }
 .gk-profile-banner {
-  height: 128px;
-  background: linear-gradient(135deg, var(--gk-accent-soft), var(--gk-gray-100));
+  height: 152px;
+  background: radial-gradient(120% 140% at 20% 0%, var(--gk-accent-glow), var(--gk-gray-100) 65%);
   background-size: cover; background-position: center;
   position: relative;
 }
+/* Blend suave do banner pro corpo do card — sem borda dura entre os dois */
 .gk-profile-banner::after {
   content: '';
   position: absolute; inset: 0;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 58%, rgba(0,0,0,0.32) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0) 38%, var(--gk-surface) 100%);
   pointer-events: none;
 }
-.gk-profile-avatar-wrap { position: absolute; left: 20px; bottom: -36px; z-index: 1; }
+.gk-profile-avatar-wrap { position: absolute; left: 22px; bottom: -42px; z-index: 1; }
 .gk-profile-avatar-wrap img {
-  display: block; width: 88px; height: 88px; border-radius: 22px;
+  display: block; width: 96px; height: 96px; border-radius: 24px;
   border: 4px solid var(--gk-surface); object-fit: cover; background: var(--gk-gray-100);
-  box-shadow: var(--gk-shadow-md);
+  box-shadow: 0 0 0 1px var(--gk-accent-glow), var(--gk-shadow-md);
 }
-.gk-profile-body { padding: 50px 20px 20px; }
-.gk-profile-name { font-family: var(--gk-font-display); font-size: 19px; font-weight: 700; color: var(--gk-gray-900); line-height: 1.25; }
+.gk-profile-body { padding: 58px 22px 22px; }
+.gk-profile-name { font-family: var(--gk-font-display); font-size: 21px; font-weight: 700; color: var(--gk-gray-900); line-height: 1.2; letter-spacing: -0.01em; }
 .gk-profile-handle {
   display: flex; align-items: center; gap: 6px;
   font-size: 13px; color: var(--gk-gray-500); font-family: var(--gk-font-mono);
-  margin-top: 3px;
+  margin-top: 4px;
 }
 .gk-profile-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .gk-profile-status-dot[data-status="online"] { background: var(--gk-status-online); }
 .gk-profile-status-dot[data-status="idle"] { background: var(--gk-status-idle); }
 .gk-profile-status-dot[data-status="dnd"] { background: var(--gk-status-dnd); }
 .gk-profile-status-dot[data-status="offline"] { background: var(--gk-status-offline); }
-.gk-profile-bio { font-size: 13.5px; color: var(--gk-gray-700); line-height: 1.5; padding: 12px; background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); margin-top: 14px; }
-.gk-profile-links { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
-.gk-profile-link { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gk-accent-strong); text-decoration: none; }
-.gk-profile-link:hover { text-decoration: underline; }
-.gk-profile-actions { display: flex; gap: 8px; margin-top: 18px; }
+.gk-profile-bio {
+  font-size: 13.5px; color: var(--gk-gray-700); line-height: 1.55;
+  padding: 13px 14px; margin-top: 16px;
+  background: var(--gk-surface-sunken);
+  border-left: 3px solid var(--gk-accent);
+  border-radius: 0 var(--gk-radius-md) var(--gk-radius-md) 0;
+}
+.gk-profile-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.gk-profile-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--gk-accent-strong);
+  background: var(--gk-accent-soft);
+  border-radius: 999px; padding: 6px 12px 6px 10px;
+  text-decoration: none;
+  transition: transform var(--gk-transition), background var(--gk-transition);
+}
+.gk-profile-link:hover { background: var(--gk-accent-glow); transform: translateY(-1px); text-decoration: none; }
+.gk-profile-actions { display: flex; gap: 8px; margin-top: 20px; }
 .gk-profile-edit-btn {
-  background: transparent;
-  border: 1.5px solid var(--gk-accent);
+  background: var(--gk-accent-soft);
+  border: none;
   color: var(--gk-accent-strong);
-  font-weight: 600;
+  font-weight: 700;
   transition: background var(--gk-transition), transform var(--gk-transition);
 }
-.gk-profile-edit-btn:hover { background: var(--gk-accent-soft); }
+.gk-profile-edit-btn:hover { background: var(--gk-accent-glow); }
 .gk-profile-edit-btn:active { transform: scale(0.98); }
 
 /* ============================================================
@@ -1170,22 +1192,23 @@
 /* Linha de "chips" no cartão de perfil: badge Prime + tag lado a lado */
 .gk-profile-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .gk-prime-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 12px; font-weight: 700; letter-spacing: 0.01em;
-  color: var(--gk-accent-strong);
-  background: linear-gradient(135deg, var(--gk-accent-soft), transparent 120%);
-  border: 1px solid var(--gk-accent-soft);
-  border-radius: 999px; padding: 4px 11px 4px 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em;
+  color: #fff;
+  background: linear-gradient(120deg, var(--gk-accent), var(--gk-accent-strong));
+  border-radius: 999px; padding: 5px 13px 5px 11px;
+  box-shadow: 0 2px 10px var(--gk-accent-glow);
   cursor: default;
 }
 
 .gk-author-tag {
   display: inline-block;
-  font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--gk-gray-500);
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--gk-gray-600);
   background: var(--gk-surface-sunken);
+  border: 1px solid var(--gk-gray-200);
   border-radius: var(--gk-radius-sm);
-  padding: 3px 7px;
+  padding: 4px 8px;
 }
 
 /* ---------- Prime: upsell (quem ainda não é assinante) ---------- */
@@ -1261,7 +1284,8 @@
 .gk-profile-badge-chip {
   font-size: 11.5px; font-weight: 600; color: var(--gk-gray-700);
   background: var(--gk-surface-sunken);
-  border-radius: 999px; padding: 3px 10px;
+  border: 1px solid var(--gk-gray-100);
+  border-radius: 999px; padding: 4px 11px;
   display: inline-flex; align-items: center;
 }
 

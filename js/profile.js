@@ -61,6 +61,7 @@ export async function openProfileCard(uid) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.className = 'gk-modal gk-profile-modal';
+  modal.setAttribute('data-prime', user.role === 'prime' ? 'true' : 'false');
   modal.innerHTML = '';
 
   const bannerEl = el('div', {
