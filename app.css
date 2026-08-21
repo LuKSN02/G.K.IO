@@ -415,6 +415,36 @@
 }
 .gk-member-role-btn:hover { color: var(--gk-accent); background: var(--gk-surface-sunken); }
 
+/* ---------- Cargos personalizados (chips coloridos + cartão de edição) ---------- */
+.gk-role-chip {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; vertical-align: middle;
+  border: 1px solid; line-height: 1.6;
+}
+.gk-role-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.gk-role-card { border-left: 3px solid var(--gk-gray-200); }
+.gk-role-swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.gk-role-swatch {
+  width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer;
+  transition: transform var(--gk-transition), border-color var(--gk-transition);
+}
+.gk-role-swatch:hover { transform: scale(1.08); }
+.gk-role-swatch.gk-active { border-color: var(--gk-gray-700); }
+.gk-role-perms { display: flex; flex-direction: column; gap: 4px; }
+.gk-role-perm-row {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px; border-radius: var(--gk-radius-sm);
+  cursor: pointer; transition: background var(--gk-transition);
+}
+.gk-role-perm-row:hover { background: var(--gk-surface-sunken); }
+.gk-role-perm-row input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.gk-role-perm-label { font-size: 13px; font-weight: 600; color: var(--gk-gray-800); }
+.gk-role-assign-list { display: flex; flex-direction: column; gap: 2px; margin: 4px 0 4px; max-height: 260px; overflow-y: auto; }
+.gk-role-assign-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--gk-radius-sm);
+  cursor: pointer; font-size: 13.5px; color: var(--gk-gray-800); transition: background var(--gk-transition);
+}
+.gk-role-assign-row:hover { background: var(--gk-surface-sunken); }
+
 /* ---------- Ícone do servidor no modal "Criar servidor" ---------- */
 .gk-server-icon-picker {
   width: 76px; height: 76px; border-radius: 0; clip-path: var(--gk-clip-facet);
@@ -434,6 +464,12 @@
   animation: gk-fade-in var(--gk-transition-slow) both;
 }
 .gk-overlay.gk-open { display: flex; }
+/* O modal genérico (#gk-generic-modal-overlay) é reaproveitado como
+   diálogo aninhado em cima das Configurações de servidor/usuário
+   (ex: confirmar exclusão, atribuir cargos, criar canal a partir da
+   seção Canais) — precisa de um z-index acima dos outros .gk-overlay
+   para não ficar coberto por eles, já que no DOM ele vem antes. */
+#gk-generic-modal-overlay { z-index: 220; }
 @keyframes gk-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes gk-pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 .gk-modal {
@@ -1400,6 +1436,24 @@
 
 .gk-admin-user-head { display: flex; align-items: center; gap: 10px; }
 .gk-admin-user-avatar { width: 40px; height: 40px; border-radius: var(--gk-radius-md); object-fit: cover; }
+
+/* ============================================================
+   Configurações de servidor — variantes pequenas de componentes
+   já existentes (ícone, linhas de canal, zona de risco).
+   ============================================================ */
+.gk-server-icon-picker-sm {
+  width: 68px; height: 68px; font-size: 20px; flex-shrink: 0;
+}
+.gk-channel-manage-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.gk-channel-manage-row .gk-channel-icon { flex-shrink: 0; color: var(--gk-gray-400); font-size: 13px; }
+.gk-channel-manage-row input { flex: 1; }
+.gk-danger-zone {
+  border-color: var(--gk-danger-soft) !important;
+  background: var(--gk-danger-soft) !important;
+}
+.gk-danger-zone .gk-settings-card-title { color: var(--gk-danger); }
 
 .gk-admin-badges-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 .gk-admin-badge-check {
