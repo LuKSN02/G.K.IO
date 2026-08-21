@@ -12,6 +12,7 @@ import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
+import { SERVER_TEMPLATES } from './server-templates.js';
 
 let unsubServers = null;
 let unsubCategories = null;
@@ -61,8 +62,10 @@ function computePermissions(roleIds = [], rolesMap = lastRoles) {
 }
 
 // ---------- Criar / entrar em servidor ----------
-export async function createServer(name, description = '', iconUrl = '', bannerUrl = '') {
+export async function createServer(name, description = '', iconUrl = '', bannerUrl = '', templateKey = 'custom') {
   const uid = auth.currentUser.uid;
+  const template = SERVER_TEMPLATES[templateKey] || SERVER_TEMPLATES.custom;
+
   const ref = await addDoc(serversCol(), {
     name: name.trim() || 'Novo Servidor',
     description: (description || '').trim(),
@@ -70,15 +73,32 @@ export async function createServer(name, description = '', iconUrl = '', bannerU
     bannerUrl: bannerUrl || '',
     ownerId: uid,
     memberIds: [uid],
+    template: templateKey,
     createdAt: serverTimestamp(),
   });
   // Quem cria o servidor nasce com o cargo 'owner' — só ele (ou quem ele
   // promover a 'admin') pode criar/editar/excluir canais e categorias.
   await setDoc(memberDoc(ref.id, uid), { nickname: null, role: 'owner', joinedAt: serverTimestamp() });
-  // Categoria e canal padrão, para o servidor não nascer vazio
-  const catRef = await addDoc(categoriesCol(ref.id), { name: 'Geral', position: 0 });
-  await addDoc(channelsCol(ref.id), { name: 'geral', type: 'text', categoryId: catRef.id, position: 0 });
-  await addDoc(channelsCol(ref.id), { name: 'Sala de Voz', type: 'voice', categoryId: catRef.id, position: 1 });
+
+  // Categorias e canais do template escolhido (Gaming, Estudos ou "Criar
+  // do zero"). De propósito NÃO usa writeBatch aqui: as regras do
+  // Firestore para categories/channels dependem de canManageChannels(),
+  // que lê servers/{id} e members/{uid} via get() — num writeBatch essas
+  // leituras enxergam o estado de ANTES do lote inteiro ser aplicado, não
+  // os outros writes do mesmo lote. Por isso o servidor e o membro dono
+  // precisam estar de fato confirmados (await) antes de criar categorias
+  // e canais, exatamente como já funcionava antes desta mudança.
+  let catPosition = 0;
+  for (const cat of template.categories) {
+    const catRef = await addDoc(categoriesCol(ref.id), { name: cat.name, position: catPosition++ });
+    let chPosition = 0;
+    for (const ch of cat.channels) {
+      await addDoc(channelsCol(ref.id), {
+        name: ch.name, type: ch.type, categoryId: catRef.id, position: chPosition++,
+      });
+    }
+  }
+
   toast(`Servidor "${name}" criado.`);
   return ref.id;
 }
@@ -562,73 +582,120 @@ function closeGenericModal() {
 export function openCreateServerModal() {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
-  modal.innerHTML = '';
 
+  let step = 'template'; // 'template' -> 'details'
+  let chosenTemplate = 'custom';
   let iconFile = null;
 
-  // Ícone do servidor (opcional) — clique abre o seletor de arquivo,
-  // preview local imediato via object URL, upload real só ao criar.
-  const iconImg = el('img', { style: 'display:none;' });
-  const iconPlaceholder = el('span', {}, '+');
-  const iconInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
-  const iconPicker = el('div', {
-    class: 'gk-server-icon-picker', title: 'Ícone do servidor (opcional)',
-    onclick: () => iconInput.click(),
-  }, [iconImg, iconPlaceholder]);
-  iconInput.addEventListener('change', () => {
-    const file = iconInput.files[0];
-    if (!file) return;
-    iconFile = file;
-    iconImg.src = URL.createObjectURL(file);
-    iconImg.style.display = 'block';
-    iconPlaceholder.style.display = 'none';
-  });
-
-  const nameInput = el('input', { type: 'text', placeholder: 'ex: Clã Fênix', maxlength: '60' });
-  const descInput = el('textarea', { rows: '2', placeholder: 'Do que se trata o servidor? (opcional)', maxlength: '200' });
-
-  modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
-    el('div', { class: 'gk-modal-icon' }, 'SV'),
-    el('div', {}, [
-      el('h2', {}, 'Criar servidor'),
-      el('p', { class: 'gk-modal-sub' }, 'Um espaço para sua comunidade, com canais de texto e voz.'),
-    ]),
-  ]));
-  modal.appendChild(el('div', { class: 'gk-field', style: 'display:flex;justify-content:center;margin-bottom:18px;' }, [iconPicker, iconInput]));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
-  modal.appendChild(el('div', { class: 'gk-field' }, [
-    el('label', {}, 'Descrição'), descInput,
-    el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel 👥 Membros.'),
-  ]));
-
-  const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
-  createBtn.addEventListener('click', async () => {
-    if (!nameInput.value.trim()) return;
-    createBtn.disabled = true;
-    const originalLabel = createBtn.textContent;
-    try {
-      let iconUrl = '';
-      if (iconFile) {
-        createBtn.textContent = 'Enviando ícone...';
-        const uploaded = await uploadToCloudinary(iconFile, `server-icons/${auth.currentUser.uid}`);
-        iconUrl = uploaded.url;
-      }
-      const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl);
-      closeGenericModal();
-      selectServer(id);
-    } catch (err) {
-      toast(err.message || 'Não foi possível criar o servidor.', 'danger');
-      createBtn.disabled = false;
-      createBtn.textContent = originalLabel;
-    }
-  });
-
-  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
-    createBtn,
-  ]));
+  renderStep();
   overlay.classList.add('gk-open');
-  nameInput.focus();
+
+  function renderStep() {
+    modal.innerHTML = '';
+    if (step === 'template') renderTemplateStep();
+    else renderDetailsStep();
+  }
+
+  // ---------- Etapa 1: escolher um template ----------
+  function renderTemplateStep() {
+    modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+      el('div', { class: 'gk-modal-icon' }, 'SV'),
+      el('div', {}, [
+        el('h2', {}, 'Criar servidor'),
+        el('p', { class: 'gk-modal-sub' }, 'Escolha um ponto de partida. Dá pra reorganizar tudo depois.'),
+      ]),
+    ]));
+
+    // Reaproveita o mesmo padrão visual do seletor de tipo de canal
+    // (.gk-type-picker/.gk-type-option), só que empilhado em coluna e
+    // com mais de duas opções.
+    const picker = el('div', { class: 'gk-type-picker gk-template-picker' });
+    for (const [key, tpl] of Object.entries(SERVER_TEMPLATES)) {
+      picker.appendChild(el('button', {
+        type: 'button', class: 'gk-type-option',
+        onclick: () => { chosenTemplate = key; step = 'details'; renderStep(); },
+      }, [
+        el('span', { class: 'gk-type-icon' }, tpl.icon),
+        el('div', {}, [
+          el('div', { class: 'gk-type-name' }, tpl.label),
+          el('div', { class: 'gk-type-desc' }, tpl.desc),
+        ]),
+      ]));
+    }
+    modal.appendChild(picker);
+
+    modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
+    ]));
+  }
+
+  // ---------- Etapa 2: ícone, nome e descrição ----------
+  function renderDetailsStep() {
+    // Ícone do servidor (opcional) — clique abre o seletor de arquivo,
+    // preview local imediato via object URL, upload real só ao criar.
+    const iconImg = el('img', { style: 'display:none;' });
+    const iconPlaceholder = el('span', {}, '+');
+    const iconInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
+    const iconPicker = el('div', {
+      class: 'gk-server-icon-picker', title: 'Ícone do servidor (opcional)',
+      onclick: () => iconInput.click(),
+    }, [iconImg, iconPlaceholder]);
+    iconInput.addEventListener('change', () => {
+      const file = iconInput.files[0];
+      if (!file) return;
+      iconFile = file;
+      iconImg.src = URL.createObjectURL(file);
+      iconImg.style.display = 'block';
+      iconPlaceholder.style.display = 'none';
+    });
+
+    const nameInput = el('input', { type: 'text', placeholder: 'ex: Clã Fênix', maxlength: '60' });
+    const descInput = el('textarea', { rows: '2', placeholder: 'Do que se trata o servidor? (opcional)', maxlength: '200' });
+
+    const tpl = SERVER_TEMPLATES[chosenTemplate] || SERVER_TEMPLATES.custom;
+    modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+      el('div', { class: 'gk-modal-icon' }, tpl.icon),
+      el('div', {}, [
+        el('h2', {}, 'Personalize seu servidor'),
+        el('p', { class: 'gk-modal-sub' }, `Template: ${tpl.label}.`),
+      ]),
+    ]));
+    modal.appendChild(el('div', { class: 'gk-field', style: 'display:flex;justify-content:center;margin-bottom:18px;' }, [iconPicker, iconInput]));
+    modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
+    modal.appendChild(el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Descrição'), descInput,
+      el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel 👥 Membros.'),
+    ]));
+
+    const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
+    createBtn.addEventListener('click', async () => {
+      if (!nameInput.value.trim()) return;
+      createBtn.disabled = true;
+      const originalLabel = createBtn.textContent;
+      try {
+        let iconUrl = '';
+        if (iconFile) {
+          createBtn.textContent = 'Enviando ícone...';
+          const uploaded = await uploadToCloudinary(iconFile, `server-icons/${auth.currentUser.uid}`);
+          iconUrl = uploaded.url;
+        }
+        createBtn.textContent = 'Criando servidor...';
+        const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl, '', chosenTemplate);
+        closeGenericModal();
+        selectServer(id);
+      } catch (err) {
+        toast(err.message || 'Não foi possível criar o servidor.', 'danger');
+        createBtn.disabled = false;
+        createBtn.textContent = originalLabel;
+      }
+    });
+
+    modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 'template'; renderStep(); } }, '← Voltar'),
+      createBtn,
+    ]));
+    nameInput.focus();
+  }
 }
 
 export function openJoinServerModal() {
