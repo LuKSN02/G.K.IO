@@ -19,6 +19,7 @@ export const state = {
     categories: null,
     members: null,
     voicePresence: null,
+    roles: null,
   },
   activeCall: null, // { kind: 'dm'|'voiceChannel', id, pc, localStream, remoteStreams: Map }
 };

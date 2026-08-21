@@ -3,7 +3,8 @@
 // ============================================================
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
 import { state, fallbackAvatar } from './state.js';
-import { listenUserServers, openCreateServerModal, openJoinServerModal, openServerInviteModal } from './servers.js';
+import { listenUserServers, openCreateServerModal, openJoinServerModal } from './servers.js';
+import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal } from './dms.js';
 import { wireComposer, sendAttachmentMessage } from './chat.js';
 import { refreshMiniProfile } from './profile.js';
@@ -12,10 +13,19 @@ import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
+// O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
+// overflow-y:auto — isso corta (clipa) elementos position:fixed
+// descendentes, mesmo posicionados fora da área visível da rail (é um
+// comportamento padrão do navegador, não um bug do CSS). Movendo o menu
+// para ser filho direto do <body> ele escapa desse corte; a posição
+// continua sendo calculada normalmente em wireStaticUI() abaixo.
+document.body.appendChild(document.getElementById('gk-server-menu'));
+
 wireAuthForm();
 wireComposer();
 wireCallBar();
 wireSettingsModal();
+wireServerSettingsModal();
 wireStaticUI();
 wireMobileNav();
 initEmojiPicker({
@@ -62,7 +72,7 @@ function wireStaticUI() {
   document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal('perfil'); });
   document.getElementById('gk-logout-btn').addEventListener('click', (e) => { e.stopPropagation(); logoutUser(); });
   document.getElementById('gk-server-settings-btn').addEventListener('click', () => {
-    if (state.currentServerId) openServerInviteModal(state.currentServerId);
+    if (state.currentServerId) openServerSettingsModal(state.currentServerId);
   });
 
   document.getElementById('gk-status-online').addEventListener('click', (e) => { e.stopPropagation(); setStatusAndClose('online'); });
