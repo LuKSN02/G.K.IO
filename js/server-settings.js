@@ -12,7 +12,7 @@ import {
   isServerOwner, getCategoriesAndChannels,
   updateServerInfo, deleteServerPermanently, leaveServer, kickMember, setMemberRole,
   createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel,
-  createInvite, openCreateChannelModal,
+  createInvite, openCreateChannelModal, openChannelPermissionsModal,
   PERMISSION_CATALOG, ROLE_COLOR_SWATCHES, getRoles, createRole, updateRole, deleteRole, assignRoleToMember,
 } from './servers.js';
 import { openProfileCard } from './profile.js';
@@ -203,6 +203,10 @@ function renderCanaisSection(content) {
           class: 'gk-btn gk-btn-ghost', type: 'button', style: 'padding:6px 10px;',
           onclick: () => renameChannel(serverId, ch.id, chNameInput.value).then(() => toast('Canal renomeado.')),
         }, '✎'),
+        el('button', {
+          class: 'gk-btn gk-btn-ghost', type: 'button', style: 'padding:6px 10px;', title: 'Permissões do canal (por cargo)',
+          onclick: () => openChannelPermissionsModal(serverId, ch),
+        }, '🔒'),
         el('button', {
           class: 'gk-btn gk-btn-danger', type: 'button', style: 'padding:6px 10px;',
           onclick: () => confirmDangerAction('Excluir canal', `Excluir #${ch.name}? As mensagens desse canal deixam de ser acessíveis.`, () => deleteChannel(serverId, ch.id)),

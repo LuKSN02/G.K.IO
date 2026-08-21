@@ -22,16 +22,31 @@ let editingMessageId = null; // id da mensagem sendo editada no momento (ou null
 let editingDraft = '';       // texto em edição, preservado entre re-renders do snapshot
 let lastRenderedMessages = [];
 
-export function selectChannel(serverId, channelId, name) {
+export function selectChannel(serverId, channelId, name, readOnly = false) {
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = channelId;
   state.currentDmId = null;
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
-  document.getElementById('gk-topbar-subtitle').textContent = 'Canal de texto';
+  document.getElementById('gk-topbar-subtitle').textContent = readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto';
   document.getElementById('gk-call-btn').style.display = 'none';
+  applyComposerReadOnly(readOnly);
   attachMessagesListener(channelMessagesCol(serverId, channelId));
   refreshSidebarActiveState();
+}
+
+// Overwrite de canal negando 'sendMessages' pro(s) cargo(s) do membro atual
+// desabilita o composer — só no client (ver nota em CHANNEL_OVERWRITE_PERMISSIONS
+// em servers.js: as regras do Firestore ainda aceitariam o envio se alguém
+// forçasse via console, isto é só a barreira normal de uso pela UI).
+function applyComposerReadOnly(readOnly) {
+  const textarea = document.getElementById('gk-composer-input');
+  const sendBtn = document.getElementById('gk-send-btn');
+  const attachBtn = document.getElementById('gk-attach-btn');
+  textarea.disabled = readOnly;
+  sendBtn.disabled = readOnly;
+  attachBtn.disabled = readOnly;
+  textarea.placeholder = readOnly ? 'Você não pode enviar mensagens neste canal.' : 'Escreva uma mensagem...';
 }
 
 export function selectDm(dmId, title, subtitle) {
@@ -41,6 +56,7 @@ export function selectDm(dmId, title, subtitle) {
   document.getElementById('gk-topbar-title').textContent = title;
   document.getElementById('gk-topbar-subtitle').textContent = subtitle || '';
   document.getElementById('gk-call-btn').style.display = 'inline-flex';
+  applyComposerReadOnly(false);
   attachMessagesListener(dmMessagesCol(dmId));
   refreshSidebarActiveState();
 }

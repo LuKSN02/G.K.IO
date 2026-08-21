@@ -44,6 +44,27 @@ export const ROLE_COLOR_SWATCHES = [
   '#D64545', '#565F66', '#1C2733', '#1FA7C9',
 ];
 
+// ---------- Permissões por canal (overwrites, estilo Discord) ----------
+// Diferente de PERMISSION_CATALOG (server inteiro), estas são específicas
+// de um canal e ficam guardadas em channels/{id}.overwrites, no formato:
+//   { [roleId]: { viewChannel: 'allow'|'deny', sendMessages: 'allow'|'deny' } }
+// Sem entrada = neutro (o cargo nem permite nem nega, herda o padrão).
+// IMPORTANTE: isto é calculado e aplicado só no client (esconder o canal
+// na sidebar, desabilitar o composer) — as firestore.rules continuam
+// liberando leitura de qualquer canal para qualquer membro do servidor,
+// então não é uma barreira de segurança real, só de navegação/UI. Se
+// precisar de canais realmente privados (ex: canal de staff com dados
+// sensíveis), a próxima etapa é levar essa checagem pras rules também.
+export const CHANNEL_OVERWRITE_PERMISSIONS = {
+  text: [
+    { key: 'viewChannel', label: 'Ver canal' },
+    { key: 'sendMessages', label: 'Enviar mensagens' },
+  ],
+  voice: [
+    { key: 'viewChannel', label: 'Ver canal' },
+  ],
+};
+
 function emptyPermissions() {
   return { manageChannels: false, manageServer: false, manageMembers: false };
 }
@@ -251,6 +272,52 @@ function hasServerPermission(serverId, key) {
   return !!member.permissions?.[key];
 }
 
+// ---------- Permissões efetivas por canal (overwrites) ----------
+// Ordem de precedência, igual Discord: começa no padrão (permitido),
+// aplica os cargos do membro na ordem de position (o de position mais
+// alta é aplicado por último e vence em caso de conflito). Dono e o
+// cargo legado 'admin' sempre enxergam/enviam em tudo.
+function computeChannelPermission(serverId, channel, key, defaultValue = true) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
+  if (isServerOwner(serverId)) return true;
+  const member = state.serverMembersCache.get(serverId)?.get(uid);
+  if (!member) return false;
+  if (member.role === 'admin') return true;
+
+  const overwrites = channel.overwrites || {};
+  let result = defaultValue;
+  const myRoles = getRoles().filter((r) => (member.roleIds || []).includes(r.id));
+  for (const role of myRoles) {
+    const value = overwrites[role.id]?.[key];
+    if (value === 'allow') result = true;
+    else if (value === 'deny') result = false;
+  }
+  return result;
+}
+
+export function canViewChannel(serverId, channel) {
+  return computeChannelPermission(serverId, channel, 'viewChannel', true);
+}
+
+export function canSendInChannel(serverId, channel) {
+  if (channel.type !== 'text') return true;
+  return computeChannelPermission(serverId, channel, 'sendMessages', true);
+}
+
+// Define (ou remove, se value === null) o overwrite de um cargo para uma
+// permissão específica de um canal.
+export async function setChannelOverwrite(serverId, channelId, roleId, key, value) {
+  const channel = lastChannels.find((c) => c.id === channelId);
+  const overwrites = { ...(channel?.overwrites || {}) };
+  const roleOverwrite = { ...(overwrites[roleId] || {}) };
+  if (value === null) delete roleOverwrite[key];
+  else roleOverwrite[key] = value;
+  if (Object.keys(roleOverwrite).length === 0) delete overwrites[roleId];
+  else overwrites[roleId] = roleOverwrite;
+  await updateDoc(channelDoc(serverId, channelId), { overwrites });
+}
+
 export function isServerOwner(serverId) {
   const server = state.servers.get(serverId);
   return !!server && server.ownerId === auth.currentUser?.uid;
@@ -378,8 +445,8 @@ function listenCategoriesAndChannels(serverId) {
       lastChannels = channels;
       renderServerSidebar(serverId, categories, channels);
       if (!state.currentChannelId) {
-        const firstText = channels.find((c) => c.type === 'text');
-        if (firstText) selectChannel(serverId, firstText.id, firstText.name);
+        const firstText = channels.find((c) => c.type === 'text' && canViewChannel(serverId, c));
+        if (firstText) selectChannel(serverId, firstText.id, firstText.name, !canSendInChannel(serverId, firstText));
       }
     });
     state.unsubscribers.channels = () => unsubChannels && unsubChannels();
@@ -391,14 +458,14 @@ function renderServerSidebar(serverId, categories, channels) {
   const body = document.getElementById('gk-sidebar-body');
   body.innerHTML = '';
   for (const cat of categories) {
-    const catChannels = channels.filter((c) => c.categoryId === cat.id);
+    const catChannels = channels.filter((c) => c.categoryId === cat.id && canViewChannel(serverId, c));
     const list = el('div', { class: 'gk-channel-list' });
     for (const ch of catChannels) {
       const isActive = state.currentChannelId === ch.id;
       const row = el('div', {
         class: 'gk-channel' + (isActive ? ' gk-active' : ''),
         onclick: () => ch.type === 'text'
-          ? selectChannel(serverId, ch.id, ch.name)
+          ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
           : joinVoiceChannel(serverId, ch.id, ch.name),
       }, [
         el('span', { class: 'gk-channel-icon', html: ch.type === 'text' ? '#' : '&#128266;' }),
@@ -573,6 +640,70 @@ export function openCreateChannelModal(serverId, categories) {
 // último snapshot de categorias/canais sem precisar de um listener próprio.
 export function getCategoriesAndChannels() {
   return { categories: lastCategories, channels: lastChannels };
+}
+
+// ---------- Permissões por canal (overwrites por cargo) ----------
+export function openChannelPermissionsModal(serverId, channel) {
+  const overlay = document.getElementById('gk-generic-modal-overlay');
+  const modal = document.getElementById('gk-generic-modal');
+  const perms = CHANNEL_OVERWRITE_PERMISSIONS[channel.type] || CHANNEL_OVERWRITE_PERMISSIONS.text;
+
+  render();
+  overlay.classList.add('gk-open');
+
+  function render() {
+    modal.innerHTML = '';
+    // Sempre lê o canal mais recente do último snapshot (pode ter mudado
+    // entre um clique e outro, já que cada clique salva no Firestore).
+    const current = lastChannels.find((c) => c.id === channel.id) || channel;
+    const roles = getRoles();
+
+    modal.appendChild(el('h2', {}, `Permissões — ${current.type === 'text' ? '#' : '🔊'} ${current.name}`));
+    modal.appendChild(el('p', { class: 'gk-modal-sub' }, 'Restrinja este canal por cargo. Sem nenhuma marcação, o canal fica visível a todo mundo (dono e admin sempre veem tudo).'));
+
+    if (roles.length === 0) {
+      modal.appendChild(el('div', { class: 'gk-empty-state gk-empty-state-sm' }, 'Crie um cargo primeiro, na aba Cargos, para poder restringir este canal por ele.'));
+    }
+
+    const list = el('div', { class: 'gk-channel-overwrite-list' });
+    for (const role of roles) {
+      const overwrite = current.overwrites?.[role.id] || {};
+      const permCols = perms.map((perm) => {
+        const value = overwrite[perm.key] || 'neutral';
+        const btnRow = el('div', { class: 'gk-tri-toggle' }, [
+          triBtn('✕', 'deny', value === 'deny'),
+          triBtn('–', 'neutral', value !== 'allow' && value !== 'deny'),
+          triBtn('✓', 'allow', value === 'allow'),
+        ]);
+        function triBtn(label, val, active) {
+          return el('button', {
+            type: 'button', class: 'gk-tri-toggle-btn' + (active ? ' gk-active' : ''),
+            onclick: async () => {
+              await setChannelOverwrite(serverId, current.id, role.id, perm.key, val === 'neutral' ? null : val);
+              render();
+            },
+          }, label);
+        }
+        return el('div', { class: 'gk-channel-overwrite-perm' }, [
+          el('div', { class: 'gk-hint' }, perm.label),
+          btnRow,
+        ]);
+      });
+
+      list.appendChild(el('div', { class: 'gk-channel-overwrite-row' }, [
+        el('div', { class: 'gk-channel-overwrite-role' }, [
+          el('span', { class: 'gk-role-dot', style: `background:${role.color};` }),
+          el('span', {}, role.name),
+        ]),
+        ...permCols,
+      ]));
+    }
+    modal.appendChild(list);
+
+    modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-primary gk-btn-block', onclick: () => overlay.classList.remove('gk-open') }, 'Concluído'),
+    ]));
+  }
 }
 
 function closeGenericModal() {
