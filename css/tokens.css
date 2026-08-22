@@ -1,6 +1,8 @@
 /* ============================================================
    G.K.IO — Design Tokens
-   Paleta: Ice White / Gray, com um único accent "glacial teal".
+   Paleta: Ice White / Gray, com accent "Cosmic Violet" — derivado
+   diretamente do gradiente do ícone/logo do app (violeta → azul céu,
+   com o rosa das bochechas da mascote como toque secundário).
    Tipografia: Space Grotesk (display) + Inter (corpo) + IBM Plex Mono (dados/status)
    ============================================================ */
 
@@ -24,11 +26,22 @@
   --gk-gray-800: #262B2E;
   --gk-gray-900: #16191B;
 
-  /* --- Accent único da marca: "glacial teal" --- */
-  --gk-accent: #1F6F78;
-  --gk-accent-strong: #16545C;
-  --gk-accent-soft: #DCEEEF;
-  --gk-accent-glow: rgba(31, 111, 120, 0.25);
+  /* --- Accent único da marca: "Cosmic Violet" (tirado do ícone) --- */
+  --gk-accent: #5B6EE8;
+  --gk-accent-strong: #4453C4;
+  --gk-accent-soft: #E8EAFB;
+  --gk-accent-glow: rgba(91, 110, 232, 0.25);
+
+  /* --- Gradiente de marca: as duas pontas do ícone (violeta → azul céu),
+     usado nos elementos de "logo mark" (splash, tela de auth) para que
+     fiquem sempre fiéis ao ícone do app, independente do accent
+     escolhido pela pessoa nas configurações. --- */
+  --gk-brand-start: #7C4FE0;
+  --gk-brand-end: #3EA6F5;
+  --gk-brand-gradient: linear-gradient(145deg, var(--gk-brand-start), var(--gk-brand-end));
+  /* Toque secundário (bochechas da mascote) — usado com moderação em
+     pequenos detalhes/realces, nunca como accent funcional. */
+  --gk-brand-pink: #F26FA3;
 
   /* --- Estados de presença --- */
   --gk-status-online: #2FA36B;
@@ -97,8 +110,8 @@
   --gk-gray-800: #E7EBED;
   --gk-gray-900: #F5F8F9;
 
-  --gk-accent-soft: rgba(31, 111, 120, 0.18);
-  --gk-accent-glow: rgba(31, 111, 120, 0.38);
+  --gk-accent-soft: rgba(91, 110, 232, 0.18);
+  --gk-accent-glow: rgba(91, 110, 232, 0.38);
 
   --gk-danger-soft: rgba(214, 69, 69, 0.16);
 

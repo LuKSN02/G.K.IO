@@ -20,6 +20,7 @@
     if (mode === 'auto') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', mode);
     var accents = {
+      cosmic: { a: '#5B6EE8', s: '#4453C4', so: 'rgba(91,110,232,0.12)', g: 'rgba(91,110,232,0.25)' },
       teal: { a: '#1F6F78', s: '#16545C', so: 'rgba(31,111,120,0.12)', g: 'rgba(31,111,120,0.25)' },
       indigo: { a: '#4C5FD5', s: '#3945A8', so: 'rgba(76,95,213,0.12)', g: 'rgba(76,95,213,0.25)' },
       rose: { a: '#C24868', s: '#9C3550', so: 'rgba(194,72,104,0.12)', g: 'rgba(194,72,104,0.25)' },
@@ -29,7 +30,8 @@
       obsidian: { a: '#1C2733', s: '#0F161D', so: 'rgba(28,39,51,0.14)', g: 'rgba(28,39,51,0.3)' },
       aurora: { a: '#1FA7C9', s: '#146E85', so: 'rgba(31,167,201,0.14)', g: 'rgba(31,167,201,0.3)' },
     };
-    var acc = accents[prefs.accent] || accents.teal;
+    // "cosmic" (derivado do ícone do app) é o accent padrão agora.
+    var acc = accents[prefs.accent] || accents.cosmic;
     var root = document.documentElement.style;
     root.setProperty('--gk-accent', acc.a);
     root.setProperty('--gk-accent-strong', acc.s);

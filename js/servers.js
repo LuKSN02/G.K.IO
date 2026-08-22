@@ -40,7 +40,7 @@ export const PERMISSION_CATALOG = [
 ];
 
 export const ROLE_COLOR_SWATCHES = [
-  '#1F6F78', '#4C5FD5', '#C24868', '#B9812E', '#22916A', '#7C4FC2',
+  '#5B6EE8', '#1F6F78', '#4C5FD5', '#C24868', '#B9812E', '#22916A', '#7C4FC2',
   '#D64545', '#565F66', '#1C2733', '#1FA7C9',
 ];
 

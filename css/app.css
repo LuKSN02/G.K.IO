@@ -666,7 +666,7 @@
 .gk-splash-mark {
   position: relative; width: 60px; height: 60px; border-radius: 0;
   clip-path: var(--gk-clip-facet);
-  background: linear-gradient(145deg, var(--gk-accent), var(--gk-accent-strong));
+  background: var(--gk-brand-gradient);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-weight: 700; font-size: 22px;
   box-shadow: var(--gk-shadow-md);
@@ -700,8 +700,8 @@
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   background-color: var(--gk-bg);
   background-image:
-    radial-gradient(circle at 15% 20%, rgba(31,111,120,0.10), transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(31,111,120,0.08), transparent 45%),
+    radial-gradient(circle at 15% 20%, rgba(124,79,224,0.10), transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(62,166,245,0.10), transparent 45%),
     var(--gk-frost-pattern);
   z-index: 300;
 }
@@ -721,7 +721,7 @@
 .gk-auth-logo { position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
 .gk-auth-logo .gk-mark {
   width: 38px; height: 38px; border-radius: 0; clip-path: var(--gk-clip-facet);
-  background: linear-gradient(145deg, var(--gk-accent), var(--gk-accent-strong));
+  background: var(--gk-brand-gradient);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-weight: 700;
 }
