@@ -37,6 +37,13 @@ let attachedTextarea = null;
 let onSendGifCallback = null;
 let gifSearchDebounce = null;
 let uploadFileInput = null;
+let gifsTabBtn = null;
+// 'insert' (padrão, escreve no composer) ou 'react' (o painel foi aberto
+// pra escolher o emoji de uma reação numa mensagem — ver openEmojiPickerForReaction,
+// usado por chat.js). Em modo 'react' o clique num emoji chama reactionCallback
+// em vez de inserir no textarea.
+let pickerMode = 'insert';
+let reactionCallback = null;
 
 const customEmojiCache = new Map(); // id -> { id, name, url, uploaderId }
 let unsubCustomEmojis = null;
@@ -86,9 +93,14 @@ export function initEmojiPicker({ textarea, triggerBtn, onSendGif }) {
   triggerBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (panelEl.classList.contains('gk-open')) { closePicker(); return; }
+    pickerMode = 'insert';
+    reactionCallback = null;
+    if (gifsTabBtn) gifsTabBtn.style.display = '';
     const rect = triggerBtn.getBoundingClientRect();
     // position:fixed calculado a partir do botão real — evita o mesmo tipo
     // de corte por overflow que já resolvemos no menu de servidores.
+    panelEl.style.left = 'auto';
+    panelEl.style.top = 'auto';
     panelEl.style.right = `${window.innerWidth - rect.right}px`;
     panelEl.style.bottom = `${window.innerHeight - rect.top + 8}px`;
     panelEl.classList.add('gk-open');
@@ -96,21 +108,53 @@ export function initEmojiPicker({ textarea, triggerBtn, onSendGif }) {
   });
 
   document.addEventListener('click', (e) => {
-    if (panelEl.classList.contains('gk-open') && !panelEl.contains(e.target) && e.target !== triggerBtn) {
+    if (panelEl.classList.contains('gk-open') && !panelEl.contains(e.target) && e.target !== triggerBtn && !e.target.closest('.gk-reaction-add-btn')) {
       closePicker();
     }
   });
 }
 
-function closePicker() { pendingEmojiFile = null; panelEl.classList.remove('gk-open'); }
+// Abre o mesmo painel de emojis, mas em modo "reação" — usado pelo botão
+// "+😊" de cada mensagem (ver chat.js). Ao escolher um emoji nativo ou
+// personalizado, chama onPick(key) em vez de inserir no composer, onde
+// key é 'native:<emoji>' ou 'custom:<nome>'.
+export function openEmojiPickerForReaction(anchorEl, onPick) {
+  if (!panelEl) return; // picker ainda não foi inicializado (ver initEmojiPicker)
+  pickerMode = 'react';
+  reactionCallback = onPick;
+  if (gifsTabBtn) gifsTabBtn.style.display = 'none'; // reação não manda GIF
+
+  const rect = anchorEl.getBoundingClientRect();
+  const panelWidth = 320;
+  panelEl.style.right = 'auto';
+  panelEl.style.bottom = 'auto';
+  panelEl.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))}px`;
+  panelEl.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 380)}px`;
+  panelEl.classList.add('gk-open');
+  switchTab(currentTab === 'gifs' ? 'emojis' : currentTab);
+}
+
+// Consultada por chat.js pra desenhar o emoji certo (imagem) num chip de
+// reação a um emoji personalizado, sem duplicar a busca no cache interno.
+export function getCustomEmojiByName(name) {
+  return [...customEmojiCache.values()].find((e) => e.name === name) || null;
+}
+
+function closePicker() {
+  pendingEmojiFile = null;
+  pickerMode = 'insert';
+  reactionCallback = null;
+  panelEl.classList.remove('gk-open');
+}
 
 function buildPanel() {
   panelEl = el('div', { class: 'gk-emoji-picker', id: 'gk-emoji-picker' });
 
+  gifsTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, '🎬 GIFs');
   const tabs = el('div', { class: 'gk-emoji-picker-tabs' }, [
     el('button', { class: 'gk-emoji-tab gk-active', 'data-tab': 'emojis', onclick: () => switchTab('emojis') }, '😀 Emojis'),
     el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, '⭐ Personalizados'),
-    el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, '🎬 GIFs'),
+    gifsTabBtn,
   ]);
 
   searchInputEl = el('input', {
@@ -160,7 +204,7 @@ function renderEmojisTab() {
     for (const emoji of emojis) {
       grid.appendChild(el('button', {
         class: 'gk-emoji-item', title: emoji, type: 'button',
-        onclick: () => insertAtCursor(emoji),
+        onclick: () => pickEmoji('native', emoji),
       }, emoji));
     }
     bodyEl.appendChild(grid);
@@ -184,9 +228,22 @@ function renderCustomTab() {
   for (const emoji of list) {
     grid.appendChild(el('button', {
       class: 'gk-emoji-item gk-emoji-item-custom', title: `:${emoji.name}:`, type: 'button',
-      onclick: () => insertAtCursor(`:${emoji.name}:`),
+      onclick: () => pickEmoji('custom', emoji.name),
     }, [el('img', { src: emoji.url })]));
   }
+}
+
+// Ponto único de decisão: em modo normal insere no composer (comportamento
+// de sempre); em modo "reação" (aberto via openEmojiPickerForReaction)
+// devolve a escolha pro chamador e fecha o painel.
+function pickEmoji(kind, value) {
+  if (pickerMode === 'react' && reactionCallback) {
+    const cb = reactionCallback;
+    closePicker();
+    cb(`${kind}:${value}`);
+    return;
+  }
+  insertAtCursor(kind === 'native' ? value : `:${value}:`);
 }
 
 // Formulário exibido depois de escolher a imagem — substitui o antigo

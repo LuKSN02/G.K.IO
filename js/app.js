@@ -11,6 +11,7 @@ import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
 import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
+import { listenReadStates } from './unread.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -42,6 +43,7 @@ onAuthReady(() => {
   listenFriendsAndDms();
   listenIncomingCalls();
   listenCustomEmojis();
+  listenReadStates();
   goToDmsView();
 });
 

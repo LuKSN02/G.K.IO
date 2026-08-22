@@ -3,7 +3,8 @@
 // ============================================================
 import {
   auth,
-  channelMessagesCol, dmMessagesCol, dmDoc, channelMessageDoc, dmMessageDoc, addDoc, updateDoc,
+  channelMessagesCol, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc,
+  addDoc, updateDoc, arrayUnion, arrayRemove,
   query, orderBy, limit, onSnapshot, serverTimestamp,
 } from './db.js';
 import { state, el, escapeHtml, fallbackAvatar, formatTime, cleanupListener, toast } from './state.js';
@@ -11,8 +12,10 @@ import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
-import { renderMessageContent } from './emoji.js';
+import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName } from './emoji.js';
 import { openImageLightbox } from './lightbox.js';
+import { notifyTyping, stopTyping, listenTyping } from './typing.js';
+import { markConversationRead } from './unread.js';
 
 let pendingFile = null;
 let lastSeenMessageId = null;
@@ -24,17 +27,44 @@ let editingDraft = '';       // texto em edição, preservado entre re-renders d
 let lastRenderedMessages = [];
 
 export function selectChannel(serverId, channelId, name, readOnly = false) {
+  stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideFriendsHome();
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = channelId;
   state.currentDmId = null;
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
-  document.getElementById('gk-topbar-subtitle').textContent = readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto';
+  setBaseSubtitle(readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto');
   document.getElementById('gk-call-btn').style.display = 'none';
   applyComposerReadOnly(readOnly);
-  attachMessagesListener(channelMessagesCol(serverId, channelId));
+  attachMessagesListener(channelMessagesCol(serverId, channelId), channelId);
+  listenTyping({ serverId, channelId }, applyTypingLabel);
   refreshSidebarActiveState();
+}
+
+// O subtítulo do topbar é compartilhado com o indicador de "digitando..."
+// (ver applyTypingLabel abaixo) — guardamos o texto "de base" pra poder
+// restaurá-lo assim que ninguém mais estiver digitando.
+let baseSubtitle = '';
+function setBaseSubtitle(text) {
+  baseSubtitle = text || '';
+  const subtitleEl = document.getElementById('gk-topbar-subtitle');
+  subtitleEl.textContent = baseSubtitle;
+  subtitleEl.classList.remove('gk-typing-label');
+}
+
+function applyTypingLabel(names) {
+  const subtitleEl = document.getElementById('gk-topbar-subtitle');
+  if (!names.length) {
+    subtitleEl.textContent = baseSubtitle;
+    subtitleEl.classList.remove('gk-typing-label');
+    return;
+  }
+  const label = names.length === 1 ? `${names[0]} está digitando...`
+    : names.length === 2 ? `${names[0]} e ${names[1]} estão digitando...`
+    : `${names.length} pessoas estão digitando...`;
+  subtitleEl.textContent = label;
+  subtitleEl.classList.add('gk-typing-label');
 }
 
 // Overwrite de canal negando 'sendMessages' pro(s) cargo(s) do membro atual
@@ -52,15 +82,17 @@ function applyComposerReadOnly(readOnly) {
 }
 
 export function selectDm(dmId, title, subtitle) {
+  stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideFriendsHome();
   state.currentView = 'dms';
   state.currentDmId = dmId;
   state.currentChannelId = null;
   document.getElementById('gk-topbar-title').textContent = title;
-  document.getElementById('gk-topbar-subtitle').textContent = subtitle || '';
+  setBaseSubtitle(subtitle || '');
   document.getElementById('gk-call-btn').style.display = 'inline-flex';
   applyComposerReadOnly(false);
-  attachMessagesListener(dmMessagesCol(dmId));
+  attachMessagesListener(dmMessagesCol(dmId), dmId);
+  listenTyping({ dmId }, applyTypingLabel);
   refreshSidebarActiveState();
 }
 
@@ -71,7 +103,7 @@ function refreshSidebarActiveState() {
   document.querySelectorAll(`[data-id="${activeId}"]`).forEach((n) => n.classList.add('gk-active'));
 }
 
-function attachMessagesListener(colRef) {
+function attachMessagesListener(colRef, conversationId) {
   cleanupListener('messages');
   lastSeenMessageId = null;
   isFirstSnapshotForConversation = true;
@@ -84,8 +116,19 @@ function attachMessagesListener(colRef) {
     notifyIfNewIncomingMessage(messages);
     lastRenderedMessages = messages;
     renderMessages(messages);
+    // A pessoa está com esta conversa aberta agora — qualquer mensagem que
+    // chegue (inclusive em tempo real) conta como "lida" na hora.
+    markConversationRead(conversationId);
   });
   state.unsubscribers.messages = unsub;
+}
+
+// Referência do doc de uma mensagem na conversa atualmente aberta —
+// compartilhada entre edição (saveEditMessage) e reações (toggleReaction).
+function getMessageRef(msgId) {
+  if (state.currentChannelId && state.currentServerId) return channelMessageDoc(state.currentServerId, state.currentChannelId, msgId);
+  if (state.currentDmId) return dmMessageDoc(state.currentDmId, msgId);
+  return null;
 }
 
 function notifyIfNewIncomingMessage(messages) {
@@ -151,14 +194,19 @@ function renderMessages(messages) {
         if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag' }, '(editado)'));
         row.appendChild(line);
       }
+      const actionButtons = [
+        el('button', {
+          class: 'gk-msg-action-btn', type: 'button', title: 'Reagir',
+          onclick: (e) => openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)),
+        }, '😊'),
+      ];
       if (isOwn) {
-        row.appendChild(el('div', { class: 'gk-msg-actions' }, [
-          el('button', {
-            class: 'gk-msg-action-btn', type: 'button', title: 'Editar mensagem',
-            onclick: () => startEditMessage(msg.id, msg.content || ''),
-          }, '✎'),
-        ]));
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn', type: 'button', title: 'Editar mensagem',
+          onclick: () => startEditMessage(msg.id, msg.content || ''),
+        }, '✎'));
       }
+      row.appendChild(el('div', { class: 'gk-msg-actions' }, actionButtons));
     }
     body.appendChild(row);
 
@@ -178,6 +226,12 @@ function renderMessages(messages) {
         ]));
       }
     }
+
+    if (!isEditingThis) {
+      const reactionsBar = buildReactionsBar(msg);
+      if (reactionsBar) body.appendChild(reactionsBar);
+    }
+
     lastAuthor = msg.authorId;
     lastTs = ts;
   }
@@ -191,6 +245,51 @@ function renderMessages(messages) {
       ta.focus();
       ta.selectionStart = ta.selectionEnd = ta.value.length;
     }
+  }
+}
+
+// ---------- Reações rápidas ----------
+// Guardadas no doc da mensagem como reactions: { chave: [uid, uid, ...] }.
+// A chave é 'native:<emoji>' pra emoji nativo ou 'custom:<nome>' pra emoji
+// personalizado (biblioteca compartilhada — ver emoji.js), o que permite
+// reaproveitar o mesmo picker usado no composer (ver openEmojiPickerForReaction).
+function buildReactionsBar(msg) {
+  const reactions = msg.reactions || {};
+  const entries = Object.entries(reactions).filter(([, uids]) => Array.isArray(uids) && uids.length);
+  if (!entries.length) return null;
+
+  const bar = el('div', { class: 'gk-reactions-bar' });
+  for (const [key, uids] of entries) {
+    const mine = uids.includes(state.user?.uid);
+    const [kind, ...rest] = key.split(':');
+    const value = rest.join(':');
+    let contentNode;
+    if (kind === 'custom') {
+      const emoji = getCustomEmojiByName(value);
+      contentNode = emoji
+        ? el('img', { class: 'gk-reaction-emoji-img', src: emoji.url, title: `:${value}:`, alt: `:${value}:` })
+        : el('span', {}, `:${value}:`);
+    } else {
+      contentNode = el('span', {}, value);
+    }
+    bar.appendChild(el('button', {
+      class: 'gk-reaction-chip' + (mine ? ' gk-reaction-mine' : ''),
+      type: 'button', title: mine ? 'Remover reação' : 'Reagir',
+      onclick: () => toggleReaction(msg, key),
+    }, [contentNode, el('span', { class: 'gk-reaction-count' }, String(uids.length))]));
+  }
+  return bar;
+}
+
+async function toggleReaction(msg, key) {
+  const uid = state.user?.uid;
+  const ref = getMessageRef(msg.id);
+  if (!ref || !uid) return;
+  const already = (msg.reactions?.[key] || []).includes(uid);
+  try {
+    await updateDoc(ref, { [`reactions.${key}`]: already ? arrayRemove(uid) : arrayUnion(uid) });
+  } catch (err) {
+    toast('Não foi possível reagir.', 'danger');
   }
 }
 
@@ -239,9 +338,7 @@ async function saveEditMessage(msgId) {
     toast('A mensagem não pode ficar vazia.', 'danger');
     return;
   }
-  const ref = state.currentChannelId && state.currentServerId
-    ? channelMessageDoc(state.currentServerId, state.currentChannelId, msgId)
-    : state.currentDmId ? dmMessageDoc(state.currentDmId, msgId) : null;
+  const ref = getMessageRef(msgId);
   if (!ref) return;
 
   editingMessageId = null;
@@ -285,13 +382,21 @@ export async function sendCurrentMessage() {
 
   textarea.value = '';
   autoResizeComposer();
+  stopTyping(); // a mensagem já saiu — não faz sentido continuar mostrando "digitando..."
 
   try {
     if (state.currentChannelId && state.currentServerId) {
       await addDoc(channelMessagesCol(state.currentServerId, state.currentChannelId), payload);
+      // Denormalizado no próprio canal — é o que a sidebar usa pra saber se
+      // há mensagem "nova" ali (ver isConversationUnread em unread.js).
+      await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
+        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
+      });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
-      await updateDoc(dmDoc(state.currentDmId), { lastMessageAt: serverTimestamp(), lastMessagePreview: text.slice(0, 80) });
+      await updateDoc(dmDoc(state.currentDmId), {
+        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: text.slice(0, 80),
+      });
     }
   } catch (err) {
     toast('Não foi possível enviar a mensagem.', 'danger');
@@ -329,9 +434,14 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
   try {
     if (state.currentChannelId && state.currentServerId) {
       await addDoc(channelMessagesCol(state.currentServerId, state.currentChannelId), payload);
+      await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
+        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
+      });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
-      await updateDoc(dmDoc(state.currentDmId), { lastMessageAt: serverTimestamp(), lastMessagePreview: '📎 GIF' });
+      await updateDoc(dmDoc(state.currentDmId), {
+        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: '📎 GIF',
+      });
     }
   } catch (err) {
     toast('Não foi possível enviar o GIF.', 'danger');
@@ -349,7 +459,10 @@ export function wireComposer() {
   const sendBtn = document.getElementById('gk-send-btn');
   const fileInput = document.getElementById('gk-file-input');
 
-  textarea.addEventListener('input', autoResizeComposer);
+  textarea.addEventListener('input', () => {
+    autoResizeComposer();
+    if (textarea.value.trim()) notifyTyping();
+  });
   textarea.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();

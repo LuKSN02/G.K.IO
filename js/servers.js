@@ -13,6 +13,13 @@ import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
+import { isConversationUnread, onReadStatesChange } from './unread.js';
+
+// Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
+// do servidor atualmente aberto pra atualizar os indicadores de não lida.
+onReadStatesChange(() => {
+  if (state.currentServerId) renderServerSidebar(state.currentServerId, lastCategories, lastChannels);
+});
 
 let unsubServers = null;
 let unsubCategories = null;
@@ -462,8 +469,13 @@ function renderServerSidebar(serverId, categories, channels) {
     const list = el('div', { class: 'gk-channel-list' });
     for (const ch of catChannels) {
       const isActive = state.currentChannelId === ch.id;
+      // Só canais de texto têm indicador de não lida (voz não guarda
+      // histórico de "mensagens" da mesma forma) — a própria conversa
+      // aberta nunca mostra o indicador, ela já é marcada como lida em
+      // tempo real (ver markConversationRead em chat.js).
+      const unread = ch.type === 'text' && !isActive && isConversationUnread(ch.id, ch.lastMessageAt, ch.lastMessageAuthorId);
       const row = el('div', {
-        class: 'gk-channel' + (isActive ? ' gk-active' : ''),
+        class: 'gk-channel' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
         onclick: () => ch.type === 'text'
           ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
           : joinVoiceChannel(serverId, ch.id, ch.name),

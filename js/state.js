@@ -20,6 +20,8 @@ export const state = {
     members: null,
     voicePresence: null,
     roles: null,
+    typing: null,       // quem está digitando na conversa aberta agora (ver js/typing.js)
+    readStates: null,   // estado de "não lidas" do usuário logado (ver js/unread.js)
   },
   activeCall: null, // { kind: 'dm'|'voiceChannel', id, pc, localStream, remoteStreams: Map }
 };

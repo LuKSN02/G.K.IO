@@ -83,3 +83,21 @@ export const voicePresenceCol = (serverId, channelId) =>
 // qualquer conversa (servidores e DMs), como um "pacote" único do app.
 export const customEmojisCol = () => collection(db, 'customEmojis');
 export const customEmojiDoc = (emojiId) => doc(db, 'customEmojis', emojiId);
+
+// "Digitando..." — doc efêmero por pessoa, dentro do canal/DM em que ela
+// está digitando agora (ver js/typing.js). id do doc = uid de quem digita,
+// assim cada pessoa só pode escrever no próprio.
+export const typingCol = (serverId, channelId) =>
+  collection(db, 'servers', serverId, 'channels', channelId, 'typing');
+export const typingDoc = (serverId, channelId, uid) =>
+  doc(db, 'servers', serverId, 'channels', channelId, 'typing', uid);
+export const dmTypingCol = (dmId) => collection(db, 'directMessages', dmId, 'typing');
+export const dmTypingDoc = (dmId, uid) => doc(db, 'directMessages', dmId, 'typing', uid);
+
+// Estado de leitura — um doc por (usuário, conversa), guardando quando foi
+// a última vez que a pessoa "olhou" pra ela. id previsível (uid_conversationId)
+// evita precisar de uma query composta só pra achar o doc certo ao marcar como
+// lida (ver js/unread.js). conversationId é o id do canal (servers/.../channels/{id})
+// ou da DM (directMessages/{id}).
+export const readStatesCol = () => collection(db, 'readStates');
+export const readStateDoc = (uid, conversationId) => doc(db, 'readStates', `${uid}_${conversationId}`);

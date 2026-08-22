@@ -46,6 +46,18 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'editedAt']);
     }
+    // Reações: diferente da edição, QUALQUER pessoa que enxerga a conversa
+    // pode mexer — só no campo 'reactions', sem tocar em mais nada da
+    // mensagem (autor, conteúdo, anexo etc. continuam travados). A regra
+    // não valida que a pessoa só adicionou/removeu o PRÓPRIO uid dentro do
+    // mapa (o Firestore Rules não consegue inspecionar o conteúdo de um
+    // arrayUnion/arrayRemove dentro de um mapa aninhado) — mitigado no
+    // client, que só chama arrayUnion(auth.uid)/arrayRemove(auth.uid).
+    function isValidReactionUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
 
     // ---------- Usuários e perfil ----------
     // Campos de status Prime (role, primeSince, customBadges) NUNCA podem
@@ -101,7 +113,15 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
           && request.resource.data.authorId == request.auth.uid;
-        allow update: if signedIn() && isValidMessageEdit();
+        allow update: if signedIn()
+          && (isValidMessageEdit()
+              || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds && isValidReactionUpdate()));
+      }
+
+      // "Digitando..." — cada pessoa só escreve no próprio doc (id = uid).
+      match /typing/{uid} {
+        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds;
+        allow write: if signedIn() && isSelf(uid);
       }
     }
 
@@ -184,14 +204,28 @@ service cloud.firestore {
       match /channels/{channelId} {
         allow read: if signedIn() && isServerMember(serverId);
         allow write: if signedIn() && canManageChannels(serverId);
+        // Qualquer membro pode atualizar SÓ o "ponteiro" de última
+        // atividade do canal (gravado a cada mensagem enviada — ver
+        // sendCurrentMessage/sendAttachmentMessage em chat.js), usado pro
+        // badge de não lida na sidebar. Renomear, mudar tipo, overwrites
+        // etc. continuam exclusivos de quem gerencia canais (regra acima).
+        allow update: if signedIn() && isServerMember(serverId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageAuthorId']);
 
         match /messages/{msgId} {
           allow read: if signedIn() && isServerMember(serverId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
-          allow update: if signedIn() && isServerMember(serverId) && isValidMessageEdit();
+          allow update: if signedIn() && isServerMember(serverId)
+            && (isValidMessageEdit() || isValidReactionUpdate());
         }
 
         match /voicePresence/{uid} {
+          allow read: if signedIn() && isServerMember(serverId);
+          allow write: if signedIn() && isSelf(uid);
+        }
+
+        // "Digitando..." — cada pessoa só escreve no próprio doc (id = uid).
+        match /typing/{uid} {
           allow read: if signedIn() && isServerMember(serverId);
           allow write: if signedIn() && isSelf(uid);
         }
@@ -236,6 +270,15 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.uploaderId == request.auth.uid;
       allow delete: if signedIn() && resource.data.uploaderId == request.auth.uid;
+    }
+
+    // ---------- Estado de leitura (badge de "não lidas") ----------
+    // Um doc por (uid, conversationId) — só o próprio dono lê e escreve o
+    // seu (ver readStateDoc em db.js, chamado por unread.js).
+    match /readStates/{id} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid;
     }
   }
 }

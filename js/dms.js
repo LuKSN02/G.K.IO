@@ -9,6 +9,12 @@ import {
 import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername } from './state.js';
 import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
+import { stopTyping } from './typing.js';
+import { isConversationUnread, onReadStatesChange } from './unread.js';
+
+// Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
+// lida), re-renderiza a lista pra atualizar os indicadores de não lida.
+onReadStatesChange(() => renderDmSidebar());
 
 let unsubFriendships = null;
 let unsubDms = null;
@@ -82,8 +88,12 @@ function renderDmSidebar() {
     body.appendChild(el('div', { class: 'gk-empty-state-sm' }, 'Nenhuma conversa ainda.'));
   }
   for (const dm of dms) {
+    const isActive = state.currentDmId === dm.id;
+    // A própria conversa aberta nunca mostra o indicador — ela já está
+    // sendo marcada como lida em tempo real (ver markConversationRead em chat.js).
+    const unread = !isActive && isConversationUnread(dm.id, dm.lastMessageAt, dm.lastMessageAuthorId);
     const row = el('div', {
-      class: 'gk-dm-row' + (state.currentDmId === dm.id ? ' gk-active' : ''),
+      class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
       'data-id': dm.id,
       onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(dm.other.statusPresence)),
     }, [
@@ -151,6 +161,7 @@ export async function openOrCreateDm(otherUid) {
 }
 
 export function goToDmsView() {
+  stopTyping(); // saindo de qualquer conversa que estivesse aberta
   state.currentView = 'dms';
   state.currentServerId = null;
   state.currentChannelId = null;
