@@ -13,6 +13,9 @@ import { joinDmCall } from './calls.js';
 let unsubFriendships = null;
 let unsubDms = null;
 
+// Aba ativa na tela "Amigos" — 'friends' (lista de amigos) ou 'pending' (pedidos recebidos).
+let friendsHomeTab = 'friends';
+
 export function listenFriendsAndDms() {
   const uid = auth.currentUser.uid;
 
@@ -32,11 +35,13 @@ export function listenFriendsAndDms() {
     }
     state.friends.clear();
     accepted.forEach((f) => state.friends.set(f.uid, f));
-    // Guarda os pedidos pendentes no estado global — assim o listener de
-    // DMs (abaixo) também enxerga a lista correta quando re-renderiza o
-    // sidebar, em vez de apagá-la com um array vazio.
+    // Guarda os pedidos pendentes no estado global — assim tanto a tela
+    // "Amigos" quanto o badge da rail enxergam a lista atualizada, mesmo
+    // quando quem re-renderiza é o listener de DMs (abaixo).
     state.incomingFriendRequests = incoming;
+    refreshPendingBadge();
     renderDmSidebar();
+    renderFriendsHome();
   });
 
   if (unsubDms) unsubDms();
@@ -56,32 +61,27 @@ export function listenFriendsAndDms() {
   });
 }
 
-function renderFriendRequests(incoming) {
-  const box = document.getElementById('gk-friend-requests');
-  box.innerHTML = '';
-  if (incoming.length === 0) { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  box.appendChild(el('div', { class: 'gk-category-label' }, `Pedidos de amizade — ${incoming.length}`));
-  for (const req of incoming) {
-    box.appendChild(el('div', { class: 'gk-dm-row' }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': 'offline', 'data-frame': req.frameStyle || 'none' }, [el('img', { src: req.avatarUrl || fallbackAvatar(req.username) })]),
-      el('div', { class: 'gk-name' }, req.displayName || req.username),
-      el('div', { style: 'margin-left:auto;display:flex;gap:4px;' }, [
-        el('button', { class: 'gk-btn gk-btn-primary', style: 'padding:5px 9px;font-size:12px;', onclick: () => acceptFriendRequest(req.friendshipId) }, '✓'),
-        el('button', { class: 'gk-btn gk-btn-danger', style: 'padding:5px 9px;font-size:12px;', onclick: () => declineFriendRequest(req.friendshipId) }, '✕'),
-      ]),
-    ]));
-  }
+// Badge vermelho no ícone da rail (Mensagens diretas), com a contagem de
+// pedidos de amizade pendentes — visível mesmo fora da tela "Amigos".
+function refreshPendingBadge() {
+  const badge = document.getElementById('gk-dm-rail-badge');
+  if (!badge) return;
+  const count = (state.incomingFriendRequests || []).length;
+  if (count === 0) { badge.style.display = 'none'; return; }
+  badge.textContent = count > 9 ? '9+' : String(count);
+  badge.style.display = 'flex';
 }
 
 function renderDmSidebar() {
   if (state.currentView !== 'dms') return;
   const body = document.getElementById('gk-sidebar-body');
   body.innerHTML = '';
-  body.appendChild(el('div', { id: 'gk-friend-requests' }));
-  body.appendChild(el('div', { class: 'gk-category-label', style: 'margin-top:6px;' }, 'Conversas'));
-  for (const dm of state.dms.values()) {
-    if (!dm.other) continue;
+  body.appendChild(el('div', { class: 'gk-category-label' }, 'Conversas'));
+  const dms = [...state.dms.values()].filter((dm) => dm.other);
+  if (dms.length === 0) {
+    body.appendChild(el('div', { class: 'gk-empty-state-sm' }, 'Nenhuma conversa ainda.'));
+  }
+  for (const dm of dms) {
     const row = el('div', {
       class: 'gk-dm-row' + (state.currentDmId === dm.id ? ' gk-active' : ''),
       'data-id': dm.id,
@@ -96,10 +96,6 @@ function renderDmSidebar() {
     ]);
     body.appendChild(row);
   }
-  // Usa o cache em state (populado pelo listener de friendships) em vez de
-  // um array vazio "chumbado" — é isso que fazia a aba de pedidos de
-  // amizade sumir sempre que o listener de DMs re-renderizava o sidebar.
-  renderFriendRequests(state.incomingFriendRequests || []);
 }
 
 function statusLabel(s) {
@@ -158,17 +154,124 @@ export function goToDmsView() {
   state.currentView = 'dms';
   state.currentServerId = null;
   state.currentChannelId = null;
+  state.currentDmId = null;
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
   document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens diretas';
-  document.getElementById('gk-topbar-title').textContent = 'Selecione uma conversa';
-  document.getElementById('gk-topbar-subtitle').textContent = '';
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-messages').innerHTML = '';
   renderDmSidebar();
+  showFriendsHome();
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
   document.getElementById('gk-dm-rail-item').classList.add('gk-active');
+}
+
+// ============================================================
+// Tela "Amigos" — lista de amigos + pedidos de amizade, centralizada,
+// no lugar do placeholder "Selecione uma conversa" (estilo Discord).
+// ============================================================
+
+export function showFriendsHome() {
+  document.getElementById('gk-messages').style.display = 'none';
+  document.getElementById('gk-composer').style.display = 'none';
+  document.getElementById('gk-friends-home').style.display = 'flex';
+  document.getElementById('gk-topbar-title').textContent = 'Amigos';
+  document.getElementById('gk-topbar-subtitle').textContent = '';
+  renderFriendsHome();
+}
+
+export function hideFriendsHome() {
+  document.getElementById('gk-friends-home').style.display = 'none';
+  document.getElementById('gk-messages').style.display = 'flex';
+  document.getElementById('gk-composer').style.display = 'block';
+}
+
+function renderFriendsHome() {
+  const homeEl = document.getElementById('gk-friends-home');
+  if (!homeEl || homeEl.style.display === 'none') return; // não visível agora — evita trabalho à toa
+  const list = document.getElementById('gk-friends-home-list');
+  list.innerHTML = '';
+
+  const pendingCount = (state.incomingFriendRequests || []).length;
+  const badge = document.getElementById('gk-friends-pending-badge');
+  if (pendingCount > 0) { badge.textContent = String(pendingCount); badge.style.display = 'inline-flex'; }
+  else badge.style.display = 'none';
+
+  if (friendsHomeTab === 'pending') {
+    renderPendingTab(list);
+  } else {
+    renderFriendsTab(list);
+  }
+}
+
+function renderFriendsTab(list) {
+  const friends = [...state.friends.values()];
+  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Amigos — ${friends.length}`));
+  if (friends.length === 0) {
+    list.appendChild(el('div', { class: 'gk-empty-state' }, [
+      el('div', { class: 'gk-emoji' }, '🧊'),
+      el('div', {}, 'Você ainda não tem amigos por aqui. Que tal adicionar alguém?'),
+    ]));
+    return;
+  }
+  friends.sort((a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username));
+  for (const f of friends) {
+    list.appendChild(el('div', { class: 'gk-friend-card' }, [
+      el('div', { class: 'gk-avatar gk-sz-40', 'data-status': f.statusPresence || 'offline', 'data-frame': f.frameStyle || 'none' }, [
+        el('img', { src: f.avatarUrl || fallbackAvatar(f.username) }),
+      ]),
+      el('div', { class: 'gk-friend-info', onclick: () => openOrCreateDm(f.uid) }, [
+        el('div', { class: 'gk-friend-name' }, f.displayName || f.username),
+        el('div', { class: 'gk-friend-sub' }, statusLabel(f.statusPresence)),
+      ]),
+      el('div', { class: 'gk-friend-actions' }, [
+        el('button', { class: 'gk-friend-action-btn', title: 'Enviar mensagem', type: 'button', onclick: () => openOrCreateDm(f.uid) }, '💬'),
+      ]),
+    ]));
+  }
+}
+
+function renderPendingTab(list) {
+  const incoming = state.incomingFriendRequests || [];
+  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Pedidos de amizade — ${incoming.length}`));
+  if (incoming.length === 0) {
+    list.appendChild(el('div', { class: 'gk-empty-state' }, [
+      el('div', { class: 'gk-emoji' }, '📭'),
+      el('div', {}, 'Nenhum pedido de amizade pendente.'),
+    ]));
+    return;
+  }
+  for (const req of incoming) {
+    list.appendChild(el('div', { class: 'gk-friend-card' }, [
+      el('div', { class: 'gk-avatar gk-sz-40', 'data-status': 'offline', 'data-frame': req.frameStyle || 'none' }, [
+        el('img', { src: req.avatarUrl || fallbackAvatar(req.username) }),
+      ]),
+      el('div', { class: 'gk-friend-info' }, [
+        el('div', { class: 'gk-friend-name' }, req.displayName || req.username),
+        el('div', { class: 'gk-friend-sub' }, '@' + req.username),
+      ]),
+      el('div', { class: 'gk-friend-actions' }, [
+        el('button', { class: 'gk-friend-action-btn gk-friend-action-accept', title: 'Aceitar', type: 'button', onclick: () => acceptFriendRequest(req.friendshipId) }, '✓'),
+        el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', type: 'button', onclick: () => declineFriendRequest(req.friendshipId) }, '✕'),
+      ]),
+    ]));
+  }
+}
+
+// Liga as abas ("Amigos" / "Pedidos") e o botão "+ Adicionar amigo" da
+// tela home — chamada uma única vez no bootstrap (ver app.js).
+export function wireFriendsHome() {
+  document.getElementById('gk-friends-tab-friends').addEventListener('click', () => switchFriendsTab('friends'));
+  document.getElementById('gk-friends-tab-pending').addEventListener('click', () => switchFriendsTab('pending'));
+  document.getElementById('gk-friends-add-btn').addEventListener('click', openAddFriendModal);
+}
+
+function switchFriendsTab(tab) {
+  friendsHomeTab = tab;
+  document.getElementById('gk-friends-tab-friends').classList.toggle('gk-active', tab === 'friends');
+  document.getElementById('gk-friends-tab-pending').classList.toggle('gk-active', tab === 'pending');
+  renderFriendsHome();
 }
 
 export function openAddFriendModal() {

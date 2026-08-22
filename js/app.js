@@ -5,7 +5,7 @@ import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } 
 import { state, fallbackAvatar } from './state.js';
 import { listenUserServers, openCreateServerModal, openJoinServerModal } from './servers.js';
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
-import { listenFriendsAndDms, goToDmsView, openAddFriendModal } from './dms.js';
+import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome } from './dms.js';
 import { wireComposer, sendAttachmentMessage } from './chat.js';
 import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
@@ -26,6 +26,7 @@ wireComposer();
 wireCallBar();
 wireSettingsModal();
 wireServerSettingsModal();
+wireFriendsHome();
 wireStaticUI();
 wireMobileNav();
 initEmojiPicker({

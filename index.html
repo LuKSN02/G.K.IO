@@ -84,6 +84,7 @@
   <div class="gk-rail">
     <div class="gk-rail-item gk-active" id="gk-dm-rail-item" title="Mensagens diretas">
       <div class="gk-rail-pill"></div>
+      <span class="gk-rail-item-badge" id="gk-dm-rail-badge"></span>
       <img src="img/logo.png" alt="G.K.IO">
     </div>
     <div class="gk-rail-divider"></div>
@@ -141,7 +142,29 @@
       <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;">👥</button>
     </div>
     <div class="gk-messages" id="gk-messages"></div>
-    <div class="gk-composer">
+
+    <!-- ======================= TELA "AMIGOS" (home das DMs) =======================
+         Exibida em vez do chat quando nenhuma conversa está selecionada — ver
+         showFriendsHome()/hideFriendsHome() em js/dms.js. Estilo Discord: lista
+         de amigos e pedidos de amizade centralizados, com abas + botão de
+         adicionar amigo. -->
+    <div class="gk-friends-home" id="gk-friends-home" style="display:none;">
+      <div class="gk-friends-home-inner">
+        <div class="gk-friends-home-header">
+          <div class="gk-friends-home-tabs">
+            <button class="gk-friends-tab gk-active" id="gk-friends-tab-friends" data-tab="friends">Amigos</button>
+            <button class="gk-friends-tab" id="gk-friends-tab-pending" data-tab="pending">
+              Pedidos
+              <span class="gk-friends-pending-badge" id="gk-friends-pending-badge" style="display:none;">0</span>
+            </button>
+          </div>
+          <button class="gk-btn gk-btn-primary" id="gk-friends-add-btn">+ Adicionar amigo</button>
+        </div>
+        <div class="gk-friends-home-list" id="gk-friends-home-list"></div>
+      </div>
+    </div>
+
+    <div class="gk-composer" id="gk-composer">
       <div class="gk-composer-box">
         <button id="gk-attach-btn" title="Anexar mídia">📎</button>
         <input type="file" id="gk-file-input" style="display:none;">

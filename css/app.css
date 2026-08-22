@@ -50,6 +50,12 @@
   flex-shrink: 0;
 }
 .gk-rail-item img { width: 100%; height: 100%; object-fit: cover; }
+.gk-rail-item-badge {
+  position: absolute; top: -3px; right: -3px; z-index: 1;
+  display: none; align-items: center; justify-content: center; min-width: 17px; height: 17px;
+  padding: 0 4px; border-radius: 999px; background: var(--gk-danger); color: #fff;
+  font-family: var(--gk-font-mono); font-size: 10px; line-height: 1; border: 2px solid var(--gk-rail);
+}
 .gk-rail-item:hover, .gk-rail-item.gk-active {
   border-radius: var(--gk-radius-md);
   box-shadow: var(--gk-shadow-sm);
@@ -246,6 +252,51 @@
 .gk-messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 2px; }
 .gk-empty-state { margin: auto; text-align: center; color: var(--gk-gray-500); max-width: 320px; }
 .gk-empty-state .gk-emoji { font-size: 38px; margin-bottom: 10px; }
+
+/* ---------- Tela "Amigos" (home das DMs, estilo Discord) ---------- */
+.gk-friends-home { flex: 1; overflow-y: auto; display: flex; padding: 28px 22px; }
+.gk-friends-home-inner { width: 100%; max-width: 640px; margin: auto; display: flex; flex-direction: column; gap: 18px; }
+
+.gk-friends-home-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gk-friends-home-tabs { display: flex; gap: 4px; background: var(--gk-surface-sunken); padding: 4px; border-radius: var(--gk-radius-md); }
+.gk-friends-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 8px 16px; border-radius: var(--gk-radius-sm);
+  font-family: var(--gk-font-display); font-weight: 600; font-size: 13.5px; color: var(--gk-gray-600);
+  transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-friends-tab:hover { color: var(--gk-accent-strong); }
+.gk-friends-tab.gk-active { background: var(--gk-surface); color: var(--gk-accent-strong); box-shadow: var(--gk-shadow-sm); }
+.gk-friends-pending-badge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px;
+  padding: 0 4px; border-radius: 999px; background: var(--gk-danger); color: #fff;
+  font-family: var(--gk-font-mono); font-size: 10.5px; line-height: 1;
+}
+
+.gk-friends-home-list { display: flex; flex-direction: column; gap: 2px; }
+.gk-friends-list-label {
+  font-family: var(--gk-font-display); font-weight: 600; font-size: 11.5px; letter-spacing: 0.04em;
+  color: var(--gk-gray-500); text-transform: uppercase; padding: 8px 10px 10px;
+}
+
+.gk-friend-card {
+  display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--gk-radius-md);
+  border-bottom: 1px solid var(--gk-gray-100); transition: background var(--gk-transition);
+}
+.gk-friend-card:hover { background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); }
+.gk-friend-card:last-child { border-bottom: none; }
+.gk-friend-card .gk-friend-info { min-width: 0; flex: 1; cursor: pointer; }
+.gk-friend-card .gk-friend-name { font-weight: 600; font-size: 14.5px; color: var(--gk-gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-friend-card .gk-friend-sub { font-size: 12.5px; color: var(--gk-gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-friend-card .gk-friend-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.gk-friend-action-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+  border-radius: 50%; background: var(--gk-surface); border: 1px solid var(--gk-gray-100);
+  color: var(--gk-gray-600); font-size: 14px; transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-friend-action-btn:hover { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+.gk-friend-action-btn.gk-friend-action-accept:hover { background: var(--gk-status-online); color: #fff; border-color: transparent; }
+.gk-friend-action-btn.gk-friend-action-decline:hover { background: var(--gk-danger); color: #fff; border-color: transparent; }
 
 .gk-msg-group { display: flex; gap: 12px; padding: 8px 6px; border-radius: var(--gk-radius-md); }
 .gk-msg-group:hover { background: var(--gk-surface); }
@@ -1195,6 +1246,9 @@
 @media (max-width: 900px) {
   #gk-app { overflow-x: hidden; }
   .gk-main { width: 100%; }
+  .gk-friends-home { padding: 18px 12px; }
+  .gk-friends-home-header { align-items: stretch; }
+  .gk-friends-home-header .gk-btn { white-space: nowrap; }
 
   /* Gaveta de navegação (rail + sidebar) */
   .gk-nav-drawer {

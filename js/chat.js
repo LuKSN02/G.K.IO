@@ -8,6 +8,7 @@ import {
 } from './db.js';
 import { state, el, escapeHtml, fallbackAvatar, formatTime, cleanupListener, toast } from './state.js';
 import { openProfileCard } from './profile.js';
+import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
 import { renderMessageContent } from './emoji.js';
@@ -23,6 +24,7 @@ let editingDraft = '';       // texto em edição, preservado entre re-renders d
 let lastRenderedMessages = [];
 
 export function selectChannel(serverId, channelId, name, readOnly = false) {
+  hideFriendsHome();
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = channelId;
@@ -50,6 +52,7 @@ function applyComposerReadOnly(readOnly) {
 }
 
 export function selectDm(dmId, title, subtitle) {
+  hideFriendsHome();
   state.currentView = 'dms';
   state.currentDmId = dmId;
   state.currentChannelId = null;
