@@ -1,146 +1,279 @@
 // ============================================================
-// G.K.IO — Chamadas de voz/vídeo (WebRTC) + compartilhamento de tela
-// Sinalização via Firestore. Usa apenas servidores STUN públicos —
-// funciona na maioria das redes; para redes com NAT simétrico/
-// firewalls restritivos, um servidor TURN precisa ser adicionado
-// em produção (ver README.md, seção "Escalando as chamadas").
+// G.K.IO — Chamadas de voz/vídeo + compartilhamento de tela
+// Migrado de WebRTC "cru" (RTCPeerConnection + sinalização manual
+// via Firestore) para o LiveKit — um SFU (Selective Forwarding
+// Unit) hospedado. Isso resolve dois problemas do modelo anterior:
 //
-// Compartilhamento de tela: cada tela compartilhada vira uma NOVA
-// track de vídeo adicionada à RTCPeerConnection já existente
-// (pc.addTrack), o que dispara "onnegotiationneeded". Um pequeno
-// protocolo de renegociação (campos renego* no doc de sinalização)
-// troca um novo offer/answer sem derrubar a chamada em andamento.
-// Funciona tanto para chamadas de DM quanto para canais de voz
-// (malha P2P).
+//   1. Sem STUN/TURN público não dava pra atravessar NAT restritivo
+//      (CGNAT, redes móveis) — ninguém ouvia ninguém e a tela ficava
+//      preta quando os dois lados estavam em redes diferentes. O
+//      LiveKit já inclui relay de mídia na própria infraestrutura,
+//      então isso deixa de depender de STUN/TURN configurado por nós.
+//   2. Canal de voz em malha P2P não escalava além de ~5 pessoas —
+//      com um SFU, cada participante manda mídia só pra UM lugar (o
+//      servidor), que redistribui — escala bem mais.
+//
+// Autenticação: o navegador NUNCA fala direto com a "API secret" do
+// LiveKit. Ele pede um token pro nosso Cloudflare Worker (ver
+// cloudflare-worker/token-server.js), mandando o próprio ID token do
+// Firebase Auth — o Worker confere que esse ID token é legítimo e
+// só então devolve um token do LiveKit com identity = uid confirmado.
+//
+// O Firestore continua em uso só para o "toca / não toca" da chamada
+// de DM (o convite, tocando, aceitar/recusar) — depois que os dois
+// lados entram na mesma sala do LiveKit, toda a troca de mídia em si
+// passa a ser gerenciada pelo SDK do LiveKit, sem mais nenhuma troca
+// manual de offer/answer/ICE candidates.
 // ============================================================
+import { Room, RoomEvent, Track, LocalVideoTrack } from 'https://esm.sh/livekit-client@2';
 import {
-  auth, db, doc, collection, addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  auth, db, doc, addDoc, updateDoc, deleteDoc, getDoc,
   onSnapshot, query, where, serverTimestamp,
-  callsCol, callDoc, voicePresenceCol, userDoc,
+  callsCol, callDoc, userDoc,
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { getMediaPrefs } from './prefs.js';
+import { livekitConfig } from './livekit-config.js';
+import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
-
-let localStream = null;
-let screenStream = null;
+let room = null;               // instância única do LiveKit Room — só uma chamada ativa por vez
 let unsubIncoming = null;
 let unsubCurrentCall = null;
-let unsubVoicePresence = null;
-const voicePeers = new Map(); // uid -> RTCPeerConnection (canal de voz, mesh)
-const voiceUnsubs = new Map();
-let dmCameraTrackId = null; // id da track de vídeo "câmera" na chamada de DM atual (para distinguir de telas)
 
-// Detecção de "está falando" (canal de voz) — um AnalyserNode por stream
-// (o próprio usuário usa a chave 'self', os demais usam o uid). Puramente
-// visual/local: não é sincronizado via Firestore.
-const speakingDetectors = new Map(); // key -> { interval, audioCtx }
-
-// Estado da tela cheia de chamada (DM) — cronômetro e se está minimizada
+// Estado da tela cheia de chamada (DM) — cronômetro
 let callTimerInterval = null;
 let callStartedAt = null;
 
 // ============================================================
-// Utilitário: getUserMedia respeitando as preferências salvas
+// Token do LiveKit — pedido ao Cloudflare Worker a cada conexão
+// (o token expira em 6h, então pedimos um novo por chamada em vez
+// de tentar reaproveitar/cachear).
 // ============================================================
 
-async function getLocalStream(withVideo) {
+async function fetchLiveKitToken({ room: roomName, name, metadata }) {
+  if (!livekitConfig.tokenEndpoint || livekitConfig.tokenEndpoint.startsWith('COLE_AQUI')) {
+    throw new Error('LiveKit não configurado — preencha js/livekit-config.js.');
+  }
+  const idToken = await auth.currentUser.getIdToken();
+  const res = await fetch(livekitConfig.tokenEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ room: roomName, name, metadata: metadata ? JSON.stringify(metadata) : undefined }),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || 'Não foi possível obter acesso à chamada.');
+  }
+  return res.json(); // { token, url }
+}
+
+function captureDefaults() {
   const prefs = getMediaPrefs();
-  const audioConstraints = {
-    deviceId: prefs.micId ? { exact: prefs.micId } : undefined,
-    echoCancellation: prefs.echoCancellation,
-    noiseSuppression: prefs.noiseSuppression,
-    autoGainControl: prefs.autoGainControl,
+  return {
+    audioCaptureDefaults: {
+      deviceId: prefs.micId || undefined,
+      echoCancellation: prefs.echoCancellation,
+      noiseSuppression: prefs.noiseSuppression,
+      autoGainControl: prefs.autoGainControl,
+    },
+    videoCaptureDefaults: {
+      deviceId: prefs.camId || undefined,
+    },
   };
-  const videoConstraints = withVideo
-    ? { deviceId: prefs.camId ? { exact: prefs.camId } : undefined }
-    : false;
-  try {
-    return await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: videoConstraints });
-  } catch (err) {
-    toast('Não foi possível acessar microfone/câmera.', 'danger');
-    throw err;
+}
+
+// Conecta na sala do LiveKit (usada tanto por chamadas de DM quanto
+// por canais de voz — a diferença de comportamento entre os dois
+// fica nos handlers de evento, que consultam state.activeCall.kind).
+async function connectToRoom({ roomName, withVideo, metadata }) {
+  const { audioCaptureDefaults, videoCaptureDefaults } = captureDefaults();
+  room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults, videoCaptureDefaults });
+  wireRoomEvents(room);
+
+  const name = state.user.displayName || state.user.username;
+  const { token, url } = await fetchLiveKitToken({ room: roomName, name, metadata });
+  await room.connect(url, token);
+
+  await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
+  if (withVideo) await room.localParticipant.setCameraEnabled(true, videoCaptureDefaults);
+
+  const prefs = getMediaPrefs();
+  if (prefs.speakerId && room.switchActiveDevice) {
+    room.switchActiveDevice('audiooutput', prefs.speakerId).catch(() => {});
+  }
+  return room;
+}
+
+// Encontra a publicação de uma fonte específica (câmera, microfone,
+// tela...) de um participante — evita depender de getters de
+// conveniência cujo nome pode variar entre versões do SDK.
+function findPublication(participant, source) {
+  if (!participant) return null;
+  for (const pub of participant.trackPublications.values()) {
+    if (pub.source === source) return pub;
+  }
+  return null;
+}
+function isSourceOn(participant, source) {
+  const pub = findPublication(participant, source);
+  return !!(pub && pub.track && !pub.isMuted);
+}
+
+// ============================================================
+// Eventos da sala — central única que atualiza a UI conforme
+// participantes entram/saem e tracks são publicadas/assinadas.
+// O comportamento muda conforme state.activeCall.kind ('dm' ou
+// 'voiceChannel'), consultado dentro de cada handler.
+// ============================================================
+
+function wireRoomEvents(r) {
+  r.on(RoomEvent.TrackSubscribed, (track, publication, participant) => handleTrackSubscribed(track, participant));
+  r.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => handleTrackUnsubscribed(track, participant));
+  r.on(RoomEvent.TrackMuted, (publication, participant) => {
+    if (publication.source === Track.Source.Microphone) setTileMuted(participant.identity, true);
+  });
+  r.on(RoomEvent.TrackUnmuted, (publication, participant) => {
+    if (publication.source === Track.Source.Microphone) setTileMuted(participant.identity, false);
+  });
+  r.on(RoomEvent.LocalTrackPublished, (publication) => handleLocalTrackPublished(publication));
+  r.on(RoomEvent.LocalTrackUnpublished, (publication) => handleLocalTrackUnpublished(publication));
+  r.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+    if (!state.activeCall) return;
+    const speakingIds = new Set(speakers.map((p) => p.identity));
+    const known = new Set([auth.currentUser.uid, ...Array.from(r.remoteParticipants.keys())]);
+    known.forEach((uid) => setTileSpeaking(uid, speakingIds.has(uid)));
+  });
+  r.on(RoomEvent.ParticipantConnected, (participant) => onParticipantJoined(participant));
+  r.on(RoomEvent.ParticipantDisconnected, (participant) => onParticipantLeft(participant));
+  r.on(RoomEvent.Disconnected, () => {
+    // A sala caiu (rede, kick, servidor) — garante que a UI local também limpe.
+    if (state.activeCall) endCall(false);
+  });
+}
+
+function handleTrackSubscribed(track, participant) {
+  const otherUid = participant.identity;
+
+  if (track.kind === Track.Kind.Audio) {
+    if (track.source === Track.Source.ScreenShareAudio) {
+      track.attach(); // áudio da tela compartilhada do outro lado — toca em segundo plano
+      return;
+    }
+    const isVoiceChannel = state.activeCall?.kind === 'voiceChannel';
+    const audioId = isVoiceChannel ? `gk-voice-audio-${otherUid}` : 'gk-remote-dm-audio';
+    let audioEl = document.getElementById(audioId);
+    if (!audioEl) {
+      audioEl = track.attach();
+      audioEl.id = audioId;
+      audioEl.autoplay = true;
+      document.body.appendChild(audioEl);
+    } else {
+      track.attach(audioEl);
+    }
+    return;
+  }
+
+  // Vídeo: distinguimos câmera de tela compartilhada pelo `track.source`
+  // (o LiveKit já anuncia isso — nada de heurística por ordem de chegada).
+  if (track.source === Track.Source.ScreenShare) {
+    const videoEl = document.createElement('video');
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    track.attach(videoEl);
+    const memberData = state.activeCall?.kind === 'voiceChannel'
+      ? state.activeCall.participants.get(otherUid)
+      : { displayName: state.activeCall?.peer?.displayName };
+    renderRemoteScreenTile(otherUid, videoEl, memberData);
+    return;
+  }
+
+  if (track.source === Track.Source.Camera) {
+    if (state.activeCall?.kind === 'dm') {
+      const grid = document.getElementById('gk-call-video-grid');
+      let videoEl = document.getElementById('gk-remote-video');
+      if (!videoEl) {
+        videoEl = document.createElement('video');
+        videoEl.id = 'gk-remote-video';
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        grid.appendChild(videoEl);
+        grid.classList.add('gk-open');
+        setCallLayout('video');
+      }
+      track.attach(videoEl);
+    } else if (state.activeCall?.kind === 'voiceChannel') {
+      updateRemoteCameraTile(otherUid, track);
+    }
   }
 }
 
-// ============================================================
-// Detecção de "está falando" via nível de volume (Web Audio API)
-// ============================================================
-
-function attachSpeakingDetector(stream, key, onChange) {
-  detachSpeakingDetector(key);
-  if (!stream || !stream.getAudioTracks().length) return;
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioCtx();
-    const source = audioCtx.createMediaStreamSource(stream);
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    source.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    let isSpeaking = false;
-    const interval = setInterval(() => {
-      analyser.getByteFrequencyData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) sum += data[i];
-      const speaking = (sum / data.length) > 12; // limiar simples — suficiente para distinguir fala de silêncio/ruído de fundo
-      if (speaking !== isSpeaking) { isSpeaking = speaking; onChange(speaking); }
-    }, 200);
-    speakingDetectors.set(key, { interval, audioCtx });
-  } catch (e) { /* Web Audio pode falhar em navegadores sem suporte — o indicador de fala fica desativado, sem quebrar a chamada */ }
+function handleTrackUnsubscribed(track, participant) {
+  const otherUid = participant.identity;
+  track.detach().forEach((elNode) => elNode.remove());
+  if (track.source === Track.Source.ScreenShare) {
+    removeRemoteScreenTile(otherUid);
+  } else if (track.source === Track.Source.Camera) {
+    clearRemoteCameraTile(otherUid);
+  }
 }
 
-function detachSpeakingDetector(key) {
-  const d = speakingDetectors.get(key);
-  if (!d) return;
-  clearInterval(d.interval);
-  d.audioCtx.close().catch(() => {});
-  speakingDetectors.delete(key);
+function handleLocalTrackPublished(pub) {
+  if (pub.source === Track.Source.ScreenShare) {
+    renderLocalScreenTile(pub.track);
+    state.activeCall && (state.activeCall.screenSharing = true);
+    markTileSharing(auth.currentUser.uid, true);
+    updateScreenShareButton(true);
+  } else if (pub.source === Track.Source.Camera) {
+    attachLocalCameraTrack(pub.track);
+    updateCameraButtons(true);
+  }
+}
+function handleLocalTrackUnpublished(pub) {
+  if (pub.source === Track.Source.ScreenShare) {
+    removeLocalScreenTile();
+    state.activeCall && (state.activeCall.screenSharing = false);
+    markTileSharing(auth.currentUser.uid, false);
+    updateScreenShareButton(false);
+    if (isNativeAndroid()) stopNativeScreenCapture();
+  } else if (pub.source === Track.Source.Camera) {
+    detachLocalCameraTrack();
+    updateCameraButtons(false);
+  }
 }
 
+function onParticipantJoined(participant) {
+  if (!state.activeCall) return;
+  if (state.activeCall.kind === 'dm') {
+    onDmCallConnected();
+  } else if (state.activeCall.kind === 'voiceChannel') {
+    upsertVoiceParticipant(participant);
+  }
+}
+function onParticipantLeft(participant) {
+  if (!state.activeCall) return;
+  if (state.activeCall.kind === 'dm') {
+    toast('Chamada encerrada.');
+    endCall(true);
+  } else if (state.activeCall.kind === 'voiceChannel') {
+    removeVoiceParticipant(participant.identity);
+  }
+}
+
+function setTileMuted(uid, muted) {
+  document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-muted', muted);
+  document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-muted', muted);
+  if (state.activeCall?.kind === 'voiceChannel' && state.activeCall.participants.has(uid)) {
+    state.activeCall.participants.get(uid).muted = muted;
+  }
+}
 function setTileSpeaking(uid, speaking) {
   document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-speaking', speaking);
   document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-speaking', speaking);
 }
 
 // ============================================================
-// Renegociação genérica (usada por chamadas de DM e canais de voz)
-// ============================================================
-
-function attachRenegotiation(pc, { onOffer }) {
-  pc.onnegotiationneeded = async () => {
-    try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await onOffer({ type: offer.type, sdp: offer.sdp });
-    } catch (e) { /* pode falhar em corridas de renegociação simultâneas — ignorado no MVP */ }
-  };
-}
-
-async function handleRenegoSnapshot(pc, data, myUid, applyAnswer) {
-  if (data.renegoOffer && data.renegoBy && data.renegoBy !== myUid) {
-    const sdp = data.renegoOffer.sdp;
-    if (sdp !== pc._lastRemoteRenegoSdp) {
-      pc._lastRemoteRenegoSdp = sdp;
-      await pc.setRemoteDescription(new RTCSessionDescription(data.renegoOffer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await applyAnswer({ type: answer.type, sdp: answer.sdp }, data.renegoBy);
-    }
-  }
-  if (data.renegoAnswer && data.renegoAnswerFor === myUid && pc.signalingState === 'have-local-offer') {
-    await pc.setRemoteDescription(new RTCSessionDescription(data.renegoAnswer));
-  }
-}
-
-// ============================================================
-// Chamadas de DM (1:1)
+// Chamadas de DM (1:1) — o Firestore só cuida do "convite"
+// (tocando / aceitar / recusar); a mídia em si é 100% LiveKit.
 // ============================================================
 
 export async function startDmCall(withVideo = false) {
@@ -150,53 +283,31 @@ export async function startDmCall(withVideo = false) {
   const dm = state.dms.get(state.currentDmId);
   if (!dm || !dm.other) return;
 
-  localStream = await getLocalStream(withVideo);
-  dmCameraTrackId = withVideo ? localStream.getVideoTracks()[0]?.id || null : null;
-  const pc = new RTCPeerConnection(ICE_SERVERS);
+  const roomName = `dm-${state.currentDmId}`;
   const peer = { uid: dm.other.uid, displayName: dm.other.displayName || dm.other.username, avatarUrl: dm.other.avatarUrl || '' };
-  state.activeCall = { kind: 'dm', id: null, pc, dmId: state.currentDmId, remoteUid: dm.other.uid, withVideo, screenSharing: false, peer };
-  wirePeerConnection(pc, onDmCallConnected);
+  state.activeCall = { kind: 'dm', id: null, dmId: state.currentDmId, remoteUid: dm.other.uid, withVideo, screenSharing: false, peer, roomName };
 
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+  openCallScreen({ peer, withVideo, statusText: 'Chamando...' });
 
-  // IMPORTANTE: pc.onicecandidate precisa ser atribuído ANTES de
-  // setLocalDescription(offer) — a geração de candidatos ICE começa assim
-  // que a descrição local é aplicada, e um handler atribuído depois disso
-  // perde os candidatos que já dispararam (não há "replay" de eventos).
-  // Como ainda não sabemos o id da chamada (só existe depois do addDoc
-  // abaixo), bufferizamos os candidatos localmente e escrevemos no
-  // Firestore assim que o id estiver disponível.
-  const pendingCandidates = [];
-  let candidatesColRef = null;
-  pc.onicecandidate = (e) => {
-    if (!e.candidate) return;
-    const payload = { senderId: auth.currentUser.uid, candidate: e.candidate.toJSON() };
-    if (candidatesColRef) addDoc(candidatesColRef, payload);
-    else pendingCandidates.push(payload);
-  };
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
+  try {
+    await connectToRoom({
+      roomName, withVideo,
+      metadata: { displayName: state.user.displayName || state.user.username, avatarUrl: state.user.avatarUrl || '' },
+    });
+  } catch (e) {
+    toast(e.message || 'Não foi possível iniciar a chamada.', 'danger');
+    endCall(true);
+    return;
+  }
 
   const callRef = await addDoc(callsCol(), {
     kind: 'dm', dmId: state.currentDmId,
     callerId: auth.currentUser.uid, calleeId: dm.other.uid,
-    status: 'ringing', withVideo,
-    offer: { type: offer.type, sdp: offer.sdp },
+    status: 'ringing', withVideo, roomName,
     createdAt: serverTimestamp(),
   });
   state.activeCall.id = callRef.id;
-
-  candidatesColRef = collection(db, 'calls', callRef.id, 'candidates');
-  pendingCandidates.forEach((payload) => addDoc(candidatesColRef, payload));
-  pendingCandidates.length = 0;
-
-  attachRenegotiation(pc, {
-    onOffer: (offerDesc) => updateDoc(callDoc(callRef.id), { renegoOffer: offerDesc, renegoBy: auth.currentUser.uid }),
-  });
-
-  listenCallDoc(callRef.id, pc);
-  openCallScreen({ peer, withVideo, statusText: 'Chamando...' });
+  listenCallDoc(callRef.id);
 }
 
 export function joinDmCall() { /* alias usado pelo cartão de perfil */ return startDmCall(false); }
@@ -238,34 +349,24 @@ function promptIncomingCall(call) {
 
 async function acceptIncomingCall(call, caller) {
   document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
-  localStream = await getLocalStream(call.withVideo);
-  dmCameraTrackId = call.withVideo ? localStream.getVideoTracks()[0]?.id || null : null;
-  const pc = new RTCPeerConnection(ICE_SERVERS);
   const peer = { uid: call.callerId, displayName: caller.displayName || caller.username, avatarUrl: caller.avatarUrl || '' };
-  state.activeCall = { kind: 'dm', id: call.id, pc, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer };
-  wirePeerConnection(pc, onDmCallConnected);
+  state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName: call.roomName };
 
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
-
-  // Mesma correção do lado de quem liga: registra o envio de candidatos
-  // ICE ANTES de criar a resposta. Aqui já sabemos o id da chamada (é o
-  // doc que o outro lado criou), então não precisa buffer.
-  const candidatesColRef = collection(db, 'calls', call.id, 'candidates');
-  pc.onicecandidate = (e) => {
-    if (e.candidate) addDoc(candidatesColRef, { senderId: auth.currentUser.uid, candidate: e.candidate.toJSON() });
-  };
-
-  await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  await updateDoc(callDoc(call.id), { status: 'accepted', answer: { type: answer.type, sdp: answer.sdp } });
-
-  attachRenegotiation(pc, {
-    onOffer: (offerDesc) => updateDoc(callDoc(call.id), { renegoOffer: offerDesc, renegoBy: auth.currentUser.uid }),
-  });
-
-  listenCallDoc(call.id, pc);
   openCallScreen({ peer, withVideo: call.withVideo, statusText: 'Conectando...' });
+
+  try {
+    await connectToRoom({
+      roomName: call.roomName, withVideo: call.withVideo,
+      metadata: { displayName: state.user.displayName || state.user.username, avatarUrl: state.user.avatarUrl || '' },
+    });
+  } catch (e) {
+    toast(e.message || 'Não foi possível entrar na chamada.', 'danger');
+    endCall(true);
+    return;
+  }
+
+  await updateDoc(callDoc(call.id), { status: 'accepted' }).catch(() => {});
+  listenCallDoc(call.id);
 }
 
 async function declineIncomingCall(call) {
@@ -273,39 +374,20 @@ async function declineIncomingCall(call) {
   await updateDoc(callDoc(call.id), { status: 'declined' });
 }
 
-function listenCallDoc(callId, pc) {
+// Só precisa mais observar "recusou" ou "encerrou" enquanto ainda
+// estamos tocando — depois que os dois lados entram na sala do
+// LiveKit, quem detecta o fim da chamada é o próprio evento
+// ParticipantDisconnected (ver onParticipantLeft acima).
+function listenCallDoc(callId) {
   if (unsubCurrentCall) unsubCurrentCall();
-  const candidatesCol = collection(db, 'calls', callId, 'candidates');
-  unsubCurrentCall = onSnapshot(callDoc(callId), async (snap) => {
+  unsubCurrentCall = onSnapshot(callDoc(callId), (snap) => {
     const data = snap.data();
     if (!data) return;
-    if (data.status === 'accepted' && data.answer && pc.signalingState !== 'stable' && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-    }
     if (data.status === 'declined' || data.status === 'ended') {
       toast(data.status === 'declined' ? 'Chamada recusada.' : 'Chamada encerrada.');
-      endCall(false);
-      return;
+      endCall(true);
     }
-    await handleRenegoSnapshot(pc, data, auth.currentUser.uid, (answerDesc, answerFor) =>
-      updateDoc(callDoc(callId), { renegoAnswer: answerDesc, renegoAnswerFor: answerFor }));
   });
-
-  onSnapshot(candidatesCol, (snap) => {
-    snap.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const c = change.doc.data();
-        if (c.senderId !== auth.currentUser.uid) {
-          pc.addIceCandidate(new RTCIceCandidate(c.candidate)).catch(() => {});
-        }
-      }
-    });
-  });
-
-  // O envio de candidatos locais (pc.onicecandidate) agora é montado em
-  // startDmCall/acceptIncomingCall, antes da oferta/resposta ser criada —
-  // ver comentário lá. Aqui só ficamos responsáveis por RECEBER os
-  // candidatos remotos (acima).
 }
 
 export async function hangupCall() {
@@ -319,15 +401,12 @@ export async function hangupCall() {
   endCall(true);
 }
 
-function endCall(closeConnection) {
-  stopScreenShare(false);
-  if (state.activeCall && closeConnection && state.activeCall.pc) {
-    try { state.activeCall.pc.close(); } catch (e) {}
-  }
-  if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+function endCall(disconnectRoom) {
+  stopCallAudioMode();
+  if (disconnectRoom && room) { try { room.disconnect(); } catch (e) {} }
+  room = null;
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
-  detachSpeakingDetector('self');
-  dmCameraTrackId = null;
+  document.getElementById('gk-remote-dm-audio')?.remove();
   state.activeCall = null;
   stopCallTimer();
   closeCallScreen();
@@ -335,156 +414,84 @@ function endCall(closeConnection) {
 }
 
 // ============================================================
-// Canais de voz (mesh simples — adequado para grupos pequenos)
+// Canais de voz de servidor — mesma sala do LiveKit, só que com N
+// participantes em vez de 2. A lista de "quem está na sala" agora
+// vem diretamente dos participantes do LiveKit (participant.metadata
+// carrega displayName/avatarUrl/role — definido ao gerar o token),
+// sem precisar mais de uma coleção própria no Firestore para isso.
 // ============================================================
 
 export async function joinVoiceChannel(serverId, channelId, name) {
   if (state.activeCall) await hangupCall();
-  localStream = await getLocalStream(false);
-  const uid = auth.currentUser.uid;
+
+  const roomName = `server-${serverId}-channel-${channelId}`;
   state.activeCall = {
-    kind: 'voiceChannel', id: channelId, serverId, channelLabel: name,
-    remoteStreams: new Map(),
-    remoteCameraStreams: new Map(), // uid -> MediaStream da câmera de cada participante
-    presenceData: new Map(),        // uid -> último doc de voicePresence (usado p/ distinguir câmera de tela)
-    lastPresenceDocs: [],
-    screenSharingUids: new Set(),   // uids atualmente compartilhando tela (para o selo "Compartilhando tela")
+    kind: 'voiceChannel', id: channelId, serverId, channelLabel: name, roomName,
+    participants: new Map(),        // uid -> { displayName, avatarUrl, role, muted }
+    remoteCameraStreams: new Map(), // uid -> Track (câmera) de cada participante
+    screenSharingUids: new Set(),
     screenSharing: false,
   };
 
-  await setDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', uid), {
-    displayName: state.user.displayName || state.user.username,
-    avatarUrl: state.user.avatarUrl || '',
-    role: state.user.role || 'free',
-    joinedAt: serverTimestamp(),
-    muted: false,
-    cameraTrackId: null,
-  });
-
-  attachSpeakingDetector(localStream, 'self', (speaking) => setTileSpeaking(uid, speaking));
-
   showCallBar(`Sala de voz: ${name}`);
 
-  const presenceQ = voicePresenceCol(serverId, channelId);
-  unsubVoicePresence = onSnapshot(presenceQ, (snap) => {
-    const presentUids = new Set();
-    snap.forEach((d) => presentUids.add(d.id));
-    renderVoiceMembersList(channelId, snap);
-    renderParticipantsGrid(channelId, snap);
-
-    // Conecta com novos peers presentes (o uid "menor" inicia a oferta, evitando ofertas duplicadas)
-    presentUids.forEach((otherUid) => {
-      if (otherUid === uid || voicePeers.has(otherUid)) return;
-      const iInitiate = uid < otherUid;
-      connectVoicePeer(serverId, channelId, otherUid, iInitiate);
+  try {
+    await connectToRoom({
+      roomName, withVideo: false,
+      metadata: {
+        displayName: state.user.displayName || state.user.username,
+        avatarUrl: state.user.avatarUrl || '',
+        role: state.user.role || 'free',
+      },
     });
-    // Remove peers que saíram
-    voicePeers.forEach((pc, otherUid) => {
-      if (!presentUids.has(otherUid)) disconnectVoicePeer(otherUid);
-    });
-  });
-}
-
-function connectVoicePeer(serverId, channelId, otherUid, iInitiate) {
-  const uid = auth.currentUser.uid;
-  const pairId = [uid, otherUid].sort().join('_');
-  const sigDoc = doc(db, 'servers', serverId, 'channels', channelId, 'voiceSignaling', pairId);
-
-  const pc = new RTCPeerConnection(ICE_SERVERS);
-  voicePeers.set(otherUid, pc);
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
-
-  pc.ontrack = (e) => {
-    if (e.track.kind === 'audio') {
-      let audioEl = document.getElementById(`gk-voice-audio-${otherUid}`);
-      if (!audioEl) {
-        audioEl = document.createElement('audio');
-        audioEl.id = `gk-voice-audio-${otherUid}`;
-        audioEl.autoplay = true;
-        document.body.appendChild(audioEl);
-      }
-      audioEl.srcObject = e.streams[0];
-      attachSpeakingDetector(e.streams[0], otherUid, (speaking) => setTileSpeaking(otherUid, speaking));
-    } else if (e.track.kind === 'video') {
-      // Uma track de vídeo pode ser a câmera da pessoa ou uma tela compartilhada —
-      // distinguimos comparando com o cameraTrackId anunciado no doc de presença.
-      const presence = state.activeCall?.presenceData?.get(otherUid);
-      const isCamera = presence && presence.cameraTrackId === e.track.id;
-      if (isCamera) {
-        updateRemoteCameraTile(otherUid, e.streams[0]);
-        e.track.onended = () => clearRemoteCameraTile(otherUid);
-      } else {
-        const memberData = state.serverMembersCache.get(serverId)?.get(otherUid)?.user;
-        renderRemoteScreenTile(otherUid, e.streams[0], memberData);
-        e.track.onended = () => removeRemoteScreenTile(otherUid);
-      }
-    }
-  };
-
-  const candCol = collection(db, sigDoc.path, 'candidates');
-  pc.onicecandidate = (e) => {
-    if (e.candidate) addDoc(candCol, { senderId: uid, candidate: e.candidate.toJSON() });
-  };
-
-  attachRenegotiation(pc, {
-    onOffer: (offerDesc) => setDoc(sigDoc, { renegoOffer: offerDesc, renegoBy: uid }, { merge: true }),
-  });
-
-  const unsubSig = onSnapshot(sigDoc, async (snap) => {
-    const data = snap.data();
-    if (!data) return;
-    if (!iInitiate && data.offer && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      await updateDoc(sigDoc, { answer: { type: answer.type, sdp: answer.sdp } });
-    }
-    if (iInitiate && data.answer && !pc.currentRemoteDescription) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-    }
-    await handleRenegoSnapshot(pc, data, uid, (answerDesc, answerFor) =>
-      updateDoc(sigDoc, { renegoAnswer: answerDesc, renegoAnswerFor: answerFor }));
-  });
-  const unsubCand = onSnapshot(candCol, (snap) => {
-    snap.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const c = change.doc.data();
-        if (c.senderId !== uid) pc.addIceCandidate(new RTCIceCandidate(c.candidate)).catch(() => {});
-      }
-    });
-  });
-  voiceUnsubs.set(otherUid, () => { unsubSig(); unsubCand(); });
-
-  if (iInitiate) {
-    (async () => {
-      await setDoc(sigDoc, { offerBy: uid }, { merge: true });
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await updateDoc(sigDoc, { offer: { type: offer.type, sdp: offer.sdp } });
-    })();
+  } catch (e) {
+    toast(e.message || 'Não foi possível entrar na sala de voz.', 'danger');
+    state.activeCall = null;
+    hideCallBar();
+    return;
   }
+
+  startCallAudioMode();
+  upsertVoiceParticipant(room.localParticipant);
+  room.remoteParticipants.forEach((p) => upsertVoiceParticipant(p));
 }
 
-function disconnectVoicePeer(otherUid) {
-  const pc = voicePeers.get(otherUid);
-  if (pc) { try { pc.close(); } catch (e) {} voicePeers.delete(otherUid); }
-  const unsub = voiceUnsubs.get(otherUid);
-  if (unsub) { unsub(); voiceUnsubs.delete(otherUid); }
-  document.getElementById(`gk-voice-audio-${otherUid}`)?.remove();
-  removeRemoteScreenTile(otherUid);
-  clearRemoteCameraTile(otherUid);
-  detachSpeakingDetector(otherUid);
+function upsertVoiceParticipant(participant) {
+  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return;
+  let meta = {};
+  try { meta = participant.metadata ? JSON.parse(participant.metadata) : {}; } catch (e) { /* metadata malformado — segue com o padrão */ }
+  state.activeCall.participants.set(participant.identity, {
+    displayName: meta.displayName || participant.name || 'Membro',
+    avatarUrl: meta.avatarUrl || '',
+    role: meta.role || 'free',
+    muted: !isSourceOn(participant, Track.Source.Microphone),
+  });
+  refreshVoiceUI();
+}
+function removeVoiceParticipant(uid) {
+  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return;
+  state.activeCall.participants.delete(uid);
+  state.activeCall.remoteCameraStreams.delete(uid);
+  document.getElementById(`gk-voice-member-${uid}`)?.remove();
+  document.getElementById(`gk-calltile-${uid}`)?.remove();
+  document.getElementById(`gk-voice-audio-${uid}`)?.remove();
+  removeRemoteScreenTile(uid);
+  refreshVoiceUI();
+}
+function refreshVoiceUI() {
+  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return;
+  renderVoiceMembersList(state.activeCall.id, state.activeCall.participants);
+  renderParticipantsGridFromParticipants(state.activeCall.participants);
 }
 
-function renderVoiceMembersList(channelId, snap) {
+function renderVoiceMembersList(channelId, participantsMap) {
   const box = document.getElementById(`gk-voice-members-${channelId}`);
   if (!box) return;
   box.innerHTML = '';
-  snap.forEach((d) => {
-    const m = d.data();
+  participantsMap.forEach((m, uid) => {
     box.appendChild(el('div', {
       class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''),
-      id: `gk-voice-member-${d.id}`,
+      id: `gk-voice-member-${uid}`,
       'data-role': m.role || 'free',
     }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
@@ -496,31 +503,18 @@ function renderVoiceMembersList(channelId, snap) {
 
 // ---------- Grid de participantes (tela cheia expandida, estilo Discord) ----------
 
-function renderParticipantsGrid(channelId, snap) {
-  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel' || state.activeCall.id !== channelId) return;
-  state.activeCall.presenceData = new Map();
-  snap.forEach((d) => state.activeCall.presenceData.set(d.id, d.data()));
-  state.activeCall.lastPresenceDocs = snap.docs;
-  renderParticipantsGridFromDocs(snap.docs);
-}
-
-function renderParticipantsGridFromDocs(docs) {
+function renderParticipantsGridFromParticipants(participantsMap) {
   const grid = document.getElementById('gk-call-participants-grid');
   if (!grid || !state.activeCall) return;
   const uid = auth.currentUser.uid;
 
   grid.innerHTML = '';
-  for (const d of docs) {
-    const otherUid = d.id;
-    const data = d.data ? d.data() : d.data; // aceita tanto QueryDocumentSnapshot quanto objeto puro
+  participantsMap.forEach((data, otherUid) => {
     const isSelf = otherUid === uid;
-    const selfCameraOn = isSelf && localStream && localStream.getVideoTracks()[0]?.enabled;
-    const cameraStream = isSelf
-      ? (selfCameraOn ? localStream : null)
-      : state.activeCall.remoteCameraStreams.get(otherUid);
+    const cameraTrack = state.activeCall.remoteCameraStreams.get(otherUid);
 
     const tile = el('div', {
-      class: 'gk-call-tile' + (cameraStream ? ' gk-camera-on' : '') + (data.muted ? ' gk-muted' : ''),
+      class: 'gk-call-tile' + (cameraTrack ? ' gk-camera-on' : '') + (data.muted ? ' gk-muted' : ''),
       id: `gk-calltile-${otherUid}`,
     }, [
       el('video', { class: 'gk-call-tile-video', autoplay: 'true', playsinline: 'true', muted: isSelf ? 'true' : null }),
@@ -531,9 +525,9 @@ function renderParticipantsGridFromDocs(docs) {
       isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
     ]);
     grid.appendChild(tile);
-    if (cameraStream) tile.querySelector('.gk-call-tile-video').srcObject = cameraStream;
+    if (cameraTrack) cameraTrack.attach(tile.querySelector('.gk-call-tile-video'));
     if (state.activeCall.screenSharingUids?.has(otherUid)) tile.classList.add('gk-sharing');
-  }
+  });
   syncScreenshareSpotlightClass();
 }
 
@@ -546,24 +540,42 @@ function markTileSharing(targetUid, sharing) {
   document.getElementById(`gk-calltile-${targetUid}`)?.classList.toggle('gk-sharing', sharing);
 }
 
-function updateSelfTileCamera(on) {
-  const uid = auth.currentUser.uid;
-  const tile = document.getElementById(`gk-calltile-${uid}`);
-  if (!tile) return;
-  tile.classList.toggle('gk-camera-on', on);
-  const video = tile.querySelector('.gk-call-tile-video');
-  if (video) video.srcObject = on ? localStream : null;
+function attachLocalCameraTrack(track) {
+  if (state.activeCall?.kind === 'dm') {
+    track.attach(document.getElementById('gk-call-self-video'));
+    document.getElementById('gk-call-self-pip').style.display = 'block';
+    setCallLayout('video');
+  } else if (state.activeCall?.kind === 'voiceChannel') {
+    const uid = auth.currentUser.uid;
+    const tile = document.getElementById(`gk-calltile-${uid}`);
+    if (tile) {
+      tile.classList.add('gk-camera-on');
+      track.attach(tile.querySelector('.gk-call-tile-video'));
+    }
+  }
+}
+function detachLocalCameraTrack() {
+  if (state.activeCall?.kind === 'dm') {
+    const v = document.getElementById('gk-call-self-video');
+    if (v) v.srcObject = null;
+    document.getElementById('gk-call-self-pip').style.display = 'none';
+  } else if (state.activeCall?.kind === 'voiceChannel') {
+    const uid = auth.currentUser.uid;
+    const tile = document.getElementById(`gk-calltile-${uid}`);
+    if (!tile) return;
+    tile.classList.remove('gk-camera-on');
+    const v = tile.querySelector('.gk-call-tile-video');
+    if (v) v.srcObject = null;
+  }
 }
 
-function updateRemoteCameraTile(otherUid, stream) {
-  if (state.activeCall) state.activeCall.remoteCameraStreams.set(otherUid, stream);
+function updateRemoteCameraTile(otherUid, track) {
+  if (state.activeCall) state.activeCall.remoteCameraStreams.set(otherUid, track);
   const tile = document.getElementById(`gk-calltile-${otherUid}`);
   if (!tile) return;
   tile.classList.add('gk-camera-on');
-  const video = tile.querySelector('.gk-call-tile-video');
-  if (video) video.srcObject = stream;
+  track.attach(tile.querySelector('.gk-call-tile-video'));
 }
-
 function clearRemoteCameraTile(otherUid) {
   if (state.activeCall) state.activeCall.remoteCameraStreams.delete(otherUid);
   const tile = document.getElementById(`gk-calltile-${otherUid}`);
@@ -573,32 +585,17 @@ function clearRemoteCameraTile(otherUid) {
   if (video) video.srcObject = null;
 }
 
-function updateVoicePresenceField(patch) {
-  if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return Promise.resolve();
-  const { serverId, id: channelId } = state.activeCall;
-  return updateDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', auth.currentUser.uid), patch)
-    .catch(() => {});
-}
-
 export async function leaveVoiceChannel() {
   if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return;
-  stopScreenShare(false);
-  const { serverId, id: channelId } = state.activeCall;
   const uid = auth.currentUser.uid;
-  voicePeers.forEach((_, otherUid) => disconnectVoicePeer(otherUid));
-  detachSpeakingDetector('self');
 
-  // Remove o próprio doc de presença ANTES de desligar o listener, para que
-  // o onSnapshot ainda capture essa mudança e re-renderize a lista sem nós.
-  await deleteDoc(doc(db, 'servers', serverId, 'channels', channelId, 'voicePresence', uid)).catch(() => {});
-  if (unsubVoicePresence) { unsubVoicePresence(); unsubVoicePresence = null; }
-
-  // Limpa a UI imediatamente também, sem depender do round-trip do Firestore
-  // (evita a sala mostrar por alguns instantes/indefinidamente que ainda estamos nela).
+  // Limpa a UI imediatamente, sem esperar o round-trip de desconexão
+  // (evita a sala mostrar por alguns instantes que ainda estamos nela).
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
   document.getElementById(`gk-calltile-${uid}`)?.remove();
 
-  if (localStream) { localStream.getTracks().forEach((t) => t.stop()); localStream = null; }
+  if (room) { try { await room.disconnect(); } catch (e) {} }
+  room = null;
   endCall(false);
 }
 
@@ -607,80 +604,78 @@ export async function leaveVoiceChannel() {
 // ============================================================
 
 export function isScreenSharing() {
-  return !!screenStream;
+  return !!(room && isSourceOn(room.localParticipant, Track.Source.ScreenShare));
 }
 
 export async function startScreenShare() {
-  if (!state.activeCall) { toast('Entre em uma chamada ou canal de voz antes de compartilhar a tela.'); return; }
-  if (screenStream) return;
+  if (!state.activeCall || !room) { toast('Entre em uma chamada ou canal de voz antes de compartilhar a tela.'); return; }
+  if (isScreenSharing()) return;
+
   try {
-    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+    if (isNativeAndroid()) {
+      // Android (WebView) não tem getDisplayMedia() — usa o plugin nativo
+      // de captura de tela (MediaProjection) via ponte de canvas, e
+      // publica a track resultante manualmente na sala.
+      const stream = await startNativeScreenCapture(12);
+      const videoTrack = stream.getVideoTracks()[0];
+      videoTrack.onended = () => stopScreenShare();
+      const localTrack = new LocalVideoTrack(videoTrack);
+      await room.localParticipant.publishTrack(localTrack, { source: Track.Source.ScreenShare, name: 'screen' });
+    } else {
+      await room.localParticipant.setScreenShareEnabled(true, { audio: true });
+      const pub = findPublication(room.localParticipant, Track.Source.ScreenShare);
+      if (pub?.track?.mediaStreamTrack) pub.track.mediaStreamTrack.onended = () => stopScreenShare();
+    }
+    toast('Compartilhamento de tela iniciado.');
   } catch (e) {
-    return; // usuário cancelou o seletor de tela/janela
+    // usuário cancelou o seletor de tela/janela ou negou a permissão — sem erro pro usuário
   }
-  const screenTrack = screenStream.getVideoTracks()[0];
-  screenTrack.onended = () => stopScreenShare();
-
-  const pcs = state.activeCall.kind === 'dm' ? [state.activeCall.pc] : [...voicePeers.values()];
-  for (const pc of pcs) {
-    screenStream.getTracks().forEach((t) => pc.addTrack(t, screenStream));
-  }
-
-  state.activeCall.screenSharing = true;
-  renderLocalScreenTile(screenStream);
-  markTileSharing(auth.currentUser.uid, true);
-  updateScreenShareButton(true);
-  toast('Compartilhamento de tela iniciado.');
 }
 
-export function stopScreenShare(showToast = true) {
-  if (!screenStream) return;
-  screenStream.getTracks().forEach((t) => t.stop());
-  const pcs = state.activeCall && state.activeCall.kind === 'dm' ? [state.activeCall.pc] : [...voicePeers.values()];
-  const trackIds = new Set(screenStream.getTracks().map((t) => t.id));
-  for (const pc of pcs) {
-    pc.getSenders().forEach((sender) => {
-      if (sender.track && trackIds.has(sender.track.id)) pc.removeTrack(sender);
-    });
+export async function stopScreenShare(showToast = true) {
+  if (!room || !isScreenSharing()) return;
+  if (isNativeAndroid()) {
+    const pub = findPublication(room.localParticipant, Track.Source.ScreenShare);
+    if (pub) await room.localParticipant.unpublishTrack(pub.track, true);
+  } else {
+    await room.localParticipant.setScreenShareEnabled(false);
   }
-  screenStream = null;
-  if (state.activeCall) state.activeCall.screenSharing = false;
-  removeLocalScreenTile();
-  markTileSharing(auth.currentUser.uid, false);
-  updateScreenShareButton(false);
   if (showToast) toast('Compartilhamento de tela encerrado.');
 }
 
-function renderLocalScreenTile(stream) {
+function renderLocalScreenTile(track) {
   const grid = document.getElementById('gk-screenshare-grid');
   grid.classList.add('gk-open');
   let tile = document.getElementById('gk-screenshare-local');
   if (!tile) {
+    const videoEl = document.createElement('video');
+    videoEl.autoplay = true;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
     tile = el('div', { class: 'gk-screenshare-tile', id: 'gk-screenshare-local' }, [
-      el('video', { autoplay: 'true', muted: 'true', playsinline: 'true' }),
+      videoEl,
       el('span', { class: 'gk-screenshare-label' }, 'Sua tela'),
     ]);
     grid.appendChild(tile);
   }
-  tile.querySelector('video').srcObject = stream;
+  track.attach(tile.querySelector('video'));
   syncScreenshareSpotlightClass();
 }
 function removeLocalScreenTile() {
   document.getElementById('gk-screenshare-local')?.remove();
   maybeHideScreenGrid();
 }
-function renderRemoteScreenTile(otherUid, stream, userData) {
+function renderRemoteScreenTile(otherUid, videoEl, userData) {
   const grid = document.getElementById('gk-screenshare-grid');
   grid.classList.add('gk-open');
   let tile = document.getElementById(`gk-screenshare-${otherUid}`);
   if (!tile) {
     tile = el('div', { class: 'gk-screenshare-tile', id: `gk-screenshare-${otherUid}` }, [
-      el('video', { autoplay: 'true', playsinline: 'true' }),
+      videoEl,
       el('span', { class: 'gk-screenshare-label' }, `Tela de ${userData?.displayName || userData?.username || 'alguém'}`),
     ]);
     grid.appendChild(tile);
   }
-  tile.querySelector('video').srcObject = stream;
   markTileSharing(otherUid, true);
   syncScreenshareSpotlightClass();
 }
@@ -717,46 +712,6 @@ function updateScreenShareButton(active) {
 // UI compartilhada de chamada
 // ============================================================
 
-function wirePeerConnection(pc, onConnected) {
-  pc.ontrack = (e) => {
-    if (e.track.kind === 'audio') {
-      let audioEl = document.getElementById('gk-remote-dm-audio');
-      if (!audioEl) {
-        audioEl = document.createElement('audio');
-        audioEl.id = 'gk-remote-dm-audio';
-        audioEl.autoplay = true;
-        document.body.appendChild(audioEl);
-      }
-      audioEl.srcObject = e.streams[0];
-      return;
-    }
-    // Vídeo: o primeiro que chega é tratado como "principal" (câmera, se a chamada tiver vídeo);
-    // qualquer vídeo adicional é compartilhamento de tela do outro lado.
-    const grid = document.getElementById('gk-call-video-grid');
-    if (!document.getElementById('gk-remote-video')) {
-      const videoEl = document.createElement('video');
-      videoEl.id = 'gk-remote-video';
-      videoEl.autoplay = true;
-      videoEl.playsInline = true;
-      grid.appendChild(videoEl);
-      videoEl.srcObject = e.streams[0];
-      grid.classList.add('gk-open');
-      // O outro lado ligou a câmera (ou a chamada já era de vídeo) — troca
-      // a visão de avatar pulsando pela grade de vídeo, como no Discord.
-      setCallLayout('video');
-    } else {
-      const label = state.activeCall?.peer?.displayName || 'alguém';
-      renderRemoteScreenTile(state.activeCall?.remoteUid || 'peer', e.streams[0], { displayName: label });
-      e.track.onended = () => removeRemoteScreenTile(state.activeCall?.remoteUid || 'peer');
-    }
-  };
-  pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'connected') onConnected && onConnected();
-  };
-}
-
-// ---------- Tela cheia de chamada de DM (estilo Discord/Skype) ----------
-
 function openCallScreen({ peer, withVideo, statusText }) {
   const avatarSrc = peer.avatarUrl || fallbackAvatar(peer.displayName || peer.username);
   document.getElementById('gk-call-avatar-img').src = avatarSrc;
@@ -764,9 +719,7 @@ function openCallScreen({ peer, withVideo, statusText }) {
   document.getElementById('gk-call-screen-bg').style.backgroundImage = `url(${avatarSrc})`;
   setCallStatusText(statusText);
 
-  const selfVideo = document.getElementById('gk-call-self-video');
-  selfVideo.srcObject = localStream;
-  document.getElementById('gk-call-self-pip').style.display = withVideo ? 'block' : 'none';
+  document.getElementById('gk-call-self-pip').style.display = 'none';
   setCallLayout(withVideo ? 'video' : 'audio');
 
   updateMuteButtons(false);
@@ -778,9 +731,11 @@ function openCallScreen({ peer, withVideo, statusText }) {
 }
 
 function onDmCallConnected() {
-  if (!state.activeCall) return;
+  if (!state.activeCall || state.activeCall.kind !== 'dm') return;
+  if (callStartedAt) return; // já conectado — evita reiniciar o cronômetro numa reconexão
   startCallTimer();
   renderCallBar(state.activeCall.peer?.displayName || 'alguém');
+  startCallAudioMode();
 }
 
 function setCallLayout(mode) {
@@ -800,11 +755,10 @@ function openVoiceChannelCallScreen(name) {
   setCallStatusText(`Sala de voz: ${name}`);
   document.getElementById('gk-call-self-pip').style.display = 'none';
   setCallLayout('grid');
-  renderParticipantsGridFromDocs(state.activeCall?.lastPresenceDocs || []);
+  renderParticipantsGridFromParticipants(state.activeCall?.participants || new Map());
 
-  const audioTrack = localStream && localStream.getAudioTracks()[0];
-  updateMuteButtons(!!audioTrack && !audioTrack.enabled);
-  updateCameraButtons(!!(localStream && localStream.getVideoTracks()[0]?.enabled));
+  updateMuteButtons(room ? !isSourceOn(room.localParticipant, Track.Source.Microphone) : false);
+  updateCameraButtons(room ? isSourceOn(room.localParticipant, Track.Source.Camera) : false);
   updateScreenShareButton(isScreenSharing());
 
   document.getElementById('gk-call-bar').classList.remove('gk-open');
@@ -881,52 +835,10 @@ function updateCameraButtons(on) {
 }
 
 async function toggleCameraInCall() {
-  if (!state.activeCall || !localStream) return;
-  const isDm = state.activeCall.kind === 'dm';
-  let videoTrack = localStream.getVideoTracks()[0];
-
-  if (videoTrack) {
-    // Já existe uma track de câmera nesta chamada — apenas ativa/desativa.
-    videoTrack.enabled = !videoTrack.enabled;
-    updateCameraButtons(videoTrack.enabled);
-    if (isDm) {
-      document.getElementById('gk-call-self-pip').style.display = videoTrack.enabled ? 'block' : 'none';
-      setCallLayout(videoTrack.enabled ? 'video' : (document.getElementById('gk-remote-video') ? 'video' : 'audio'));
-    } else {
-      updateSelfTileCamera(videoTrack.enabled);
-      await updateVoicePresenceField({ cameraTrackId: videoTrack.enabled ? videoTrack.id : null });
-    }
-    return;
-  }
-
-  // Chamada começou só de voz — pede a câmera agora e "sobe de nível" para
-  // vídeo, adicionando a nova track à conexão já existente (isso dispara
-  // a renegociação automática configurada em attachRenegotiation, tanto
-  // para DM quanto para cada peer do mesh do canal de voz).
+  if (!room) return;
+  const next = !isSourceOn(room.localParticipant, Track.Source.Camera);
   try {
-    const prefs = getMediaPrefs();
-    const camStream = await navigator.mediaDevices.getUserMedia({
-      video: prefs.camId ? { deviceId: { exact: prefs.camId } } : true,
-    });
-    videoTrack = camStream.getVideoTracks()[0];
-    localStream.addTrack(videoTrack);
-
-    if (isDm) {
-      dmCameraTrackId = videoTrack.id;
-      if (state.activeCall.pc) state.activeCall.pc.addTrack(videoTrack, localStream);
-      state.activeCall.withVideo = true;
-      document.getElementById('gk-call-self-video').srcObject = localStream;
-      document.getElementById('gk-call-self-pip').style.display = 'block';
-      setCallLayout('video');
-    } else {
-      // Escreve o id da track ANTES de adicioná-la às conexões — assim, quando a
-      // renegociação disparar o ontrack do outro lado, o doc de presença já
-      // identifica essa track como "câmera" (ver connectVoicePeer).
-      await updateVoicePresenceField({ cameraTrackId: videoTrack.id });
-      voicePeers.forEach((pc) => pc.addTrack(videoTrack, localStream));
-      updateSelfTileCamera(true);
-    }
-    updateCameraButtons(true);
+    await room.localParticipant.setCameraEnabled(next, captureDefaults().videoCaptureDefaults);
   } catch (e) {
     toast('Não foi possível acessar a câmera.', 'danger');
   }
@@ -936,15 +848,11 @@ function showCallBar(label) {
   const bar = document.getElementById('gk-call-bar');
   document.getElementById('gk-call-bar-label').textContent = label;
   bar.classList.add('gk-open');
-  // Expandir para tela cheia agora funciona tanto em DM quanto em canal de
-  // voz de servidor — só o conteúdo exibido muda (avatar/vídeo vs. grid).
   const expandBtn = document.getElementById('gk-call-bar-expand-btn');
   if (expandBtn) expandBtn.style.display = 'inline-flex';
   updateScreenShareButton(isScreenSharing());
 }
 function renderCallBar(label) {
-  // Mantém o texto da barra minimizada atualizado mesmo enquanto ela está
-  // escondida (tela cheia aberta) — assim, ao minimizar, o texto já está certo.
   const labelEl = document.getElementById('gk-call-bar-label');
   if (labelEl) labelEl.textContent = `Em chamada com ${label}`;
 }
@@ -980,15 +888,12 @@ export function wireCallBar() {
   document.getElementById('gk-video-call-btn').addEventListener('click', () => startDmCall(true));
 }
 
-function toggleMute() {
-  if (!localStream) return;
-  const track = localStream.getAudioTracks()[0];
-  if (!track) return;
-  track.enabled = !track.enabled;
-  updateMuteButtons(!track.enabled);
-  if (state.activeCall && state.activeCall.kind === 'voiceChannel') {
-    updateVoicePresenceField({ muted: !track.enabled });
-  }
+async function toggleMute() {
+  if (!room) return;
+  const next = !isSourceOn(room.localParticipant, Track.Source.Microphone);
+  await room.localParticipant.setMicrophoneEnabled(next, captureDefaults().audioCaptureDefaults);
+  updateMuteButtons(!next);
+  if (state.activeCall && state.activeCall.kind === 'voiceChannel') setTileMuted(auth.currentUser.uid, !next);
 }
 function toggleScreenShareBtn() {
   if (isScreenSharing()) stopScreenShare(); else startScreenShare();
