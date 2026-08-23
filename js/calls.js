@@ -620,6 +620,15 @@ export async function startScreenShare() {
   if (!state.activeCall || !room) { toast('Entre em uma chamada ou canal de voz antes de compartilhar a tela.'); return; }
   if (isScreenSharing()) return;
 
+  // Navegadores de celular (Chrome Android, Safari iOS) não implementam a
+  // API que captura a tela (getDisplayMedia) — é uma limitação da própria
+  // plataforma, não algo que dê pra contornar por código no navegador.
+  // Só funciona em desktop ou dentro do app nativo Android (ver isNativeAndroid).
+  if (!isNativeAndroid() && !navigator.mediaDevices?.getDisplayMedia) {
+    toast('Compartilhar tela não é possível pelo navegador do celular — funciona no computador ou no app nativo.', 'danger');
+    return;
+  }
+
   try {
     if (isNativeAndroid()) {
       // Android (WebView) não tem getDisplayMedia() — usa o plugin nativo
@@ -708,10 +717,19 @@ function syncScreenshareSpotlightClass() {
   grid.classList.toggle('gk-in-callscreen', inCallScreen);
   participantsGrid.classList.toggle('gk-has-spotlight', inCallScreen && grid.children.length > 0);
 }
+// Compartilhar tela só é possível no app nativo Android ou em navegadores
+// desktop — em navegador de celular (Chrome Android, Safari iOS) a própria
+// plataforma não oferece a API de captura de tela, então nem mostramos o
+// botão nesse caso, pra não parecer uma função quebrada.
+function screenShareSupported() {
+  return isNativeAndroid() || !!navigator.mediaDevices?.getDisplayMedia;
+}
 function updateScreenShareButton(active) {
+  const supported = screenShareSupported();
   ['gk-call-screenshare-btn', 'gk-call-bar-screenshare-btn'].forEach((id) => {
     const btn = document.getElementById(id);
     if (!btn) return;
+    btn.style.display = supported ? '' : 'none';
     btn.classList.toggle('gk-active', active);
     btn.title = active ? 'Parar compartilhamento de tela' : 'Compartilhar tela';
   });
