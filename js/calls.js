@@ -94,6 +94,15 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   const { token, url } = await fetchLiveKitToken({ room: roomName, name, metadata });
   await room.connect(url, token);
 
+  // Se já tinha alguém na sala quando entramos (ex: numa DM, o outro lado
+  // costuma entrar primeiro, antes de "tocar"), o RoomEvent.ParticipantConnected
+  // NUNCA dispara pra essa pessoa — esse evento só é emitido pra quem entra
+  // DEPOIS de nós. Sem isso, a tela de quem atende uma chamada de DM ficava
+  // presa em "Conectando..." pra sempre, mesmo com a mídia já fluindo normal.
+  if (state.activeCall?.kind === 'dm' && room.remoteParticipants.size > 0) {
+    onDmCallConnected();
+  }
+
   await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
   if (withVideo) await room.localParticipant.setCameraEnabled(true, videoCaptureDefaults);
 
