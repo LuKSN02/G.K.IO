@@ -478,7 +478,7 @@ function renderServerSidebar(serverId, categories, channels) {
         class: 'gk-channel' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
         onclick: () => ch.type === 'text'
           ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
-          : joinVoiceChannel(serverId, ch.id, ch.name),
+          : confirmJoinVoiceChannel(serverId, ch),
       }, [
         el('span', { class: 'gk-channel-icon', html: ch.type === 'text' ? '#' : '&#128266;' }),
         el('span', {}, ch.name),
@@ -507,6 +507,34 @@ function renderServerSidebar(serverId, categories, channels) {
     }, [el('span', { class: 'gk-channel-icon', html: '&#43;' }), el('span', {}, 'Novo canal')]);
     body.appendChild(addBtn);
   }
+}
+
+// Confirmação antes de entrar numa sala de voz — evita entrar sem
+// querer (ex: clique perdido na sidebar) e, se a pessoa já estiver em
+// outra chamada/sala, avisa que ela vai ser encerrada automaticamente
+// ao entrar nessa nova, pra não pegar ninguém de surpresa.
+function confirmJoinVoiceChannel(serverId, ch) {
+  const overlay = document.getElementById('gk-generic-modal-overlay');
+  const modal = document.getElementById('gk-generic-modal');
+  modal.innerHTML = '';
+
+  let warning = '';
+  if (state.activeCall && !(state.activeCall.kind === 'voiceChannel' && state.activeCall.id === ch.id)) {
+    warning = state.activeCall.kind === 'dm'
+      ? ' Sua chamada em andamento será encerrada automaticamente.'
+      : ' Você vai sair da sala de voz atual automaticamente.';
+  }
+
+  modal.appendChild(el('h2', {}, 'Entrar na sala de voz?'));
+  modal.appendChild(el('p', { class: 'gk-modal-sub' }, `Você está prestes a entrar em "${ch.name}".${warning}`));
+  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+    el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
+    el('button', {
+      class: 'gk-btn gk-btn-primary',
+      onclick: () => { overlay.classList.remove('gk-open'); joinVoiceChannel(serverId, ch.id, ch.name); },
+    }, '🔊 Entrar'),
+  ]));
+  overlay.classList.add('gk-open');
 }
 
 function listenMembers(serverId) {
