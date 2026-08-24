@@ -338,7 +338,11 @@ function triggerUpload() {
       pendingEmojiFile = file;
       renderTab();
     });
-    document.body.appendChild(uploadFileInput);
+    // Anexado DENTRO do painel (não em document.body) — o listener de
+    // "clique fora fecha o painel" (ver initEmojiPicker) considera esse
+    // input como parte do painel, evitando fechar o picker no meio da
+    // seleção do arquivo, antes da pessoa poder nomear o emoji.
+    panelEl.appendChild(uploadFileInput);
   }
   uploadFileInput.click();
 }

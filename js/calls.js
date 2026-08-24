@@ -94,6 +94,18 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   const { token, url } = await fetchLiveKitToken({ room: roomName, name, metadata });
   await room.connect(url, token);
 
+  // Política de autoplay dos navegadores: os <audio>/<video> criados por
+  // track.attach() (em handleTrackSubscribed, mais abaixo) nascem depois
+  // que essa Promise resolve — ou seja, já fora da pilha de chamada síncrona
+  // do clique que iniciou/aceitou a chamada. Sem isso, o navegador bloqueia
+  // o play() silenciosamente: a pessoa publica e recebe os tracks normalmente,
+  // mas nenhum áudio realmente toca — em NENHUM dos dois lados. startAudio()
+  // é o método do próprio LiveKit pra (re)tentar destravar isso; se ainda
+  // assim falhar (Safari costuma ser mais estrito), o listener de
+  // AudioPlaybackStatusChanged em wireRoomEvents cobre o resto pedindo um
+  // clique extra.
+  try { await room.startAudio(); } catch (e) { /* seguimos — o listener abaixo lida com isso */ }
+
   // Se já tinha alguém na sala quando entramos (ex: numa DM, o outro lado
   // costuma entrar primeiro, antes de "tocar"), o RoomEvent.ParticipantConnected
   // NUNCA dispara pra essa pessoa — esse evento só é emitido pra quem entra
@@ -158,6 +170,26 @@ function wireRoomEvents(r) {
     // A sala caiu (rede, kick, servidor) — garante que a UI local também limpe.
     if (state.activeCall) endCall(false);
   });
+  // Se o navegador bloqueou o autoplay do áudio remoto (mesmo depois do
+  // startAudio() em connectToRoom — acontece principalmente no Safari),
+  // avisa a pessoa e destrava no próximo clique em qualquer lugar da tela.
+  r.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+    if (r.canPlaybackAudio) return;
+    promptEnableAudioPlayback(r);
+  });
+}
+
+let audioUnlockArmed = false;
+function promptEnableAudioPlayback(r) {
+  if (audioUnlockArmed) return;
+  audioUnlockArmed = true;
+  toast('Toque na tela para ativar o áudio da chamada.');
+  const unlock = async () => {
+    audioUnlockArmed = false;
+    document.removeEventListener('click', unlock);
+    try { await r.startAudio(); } catch (e) { /* tenta de novo no próximo clique, se ainda bloqueado */ }
+  };
+  document.addEventListener('click', unlock, { once: true });
 }
 
 function handleTrackSubscribed(track, participant) {
@@ -179,6 +211,10 @@ function handleTrackSubscribed(track, participant) {
     } else {
       track.attach(audioEl);
     }
+    // Reforço além do autoplay: se o navegador rejeitar o play() aqui
+    // (autoplay bloqueado), o listener de AudioPlaybackStatusChanged em
+    // wireRoomEvents entra em ação e pede um clique pra destravar.
+    audioEl.play?.().catch(() => {});
     return;
   }
 
@@ -460,6 +496,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
     return;
   }
 
+  try { await room.startAudio(); } catch (e) { /* listener de AudioPlaybackStatusChanged cobre o resto */ }
   startCallAudioMode();
   upsertVoiceParticipant(room.localParticipant);
   room.remoteParticipants.forEach((p) => upsertVoiceParticipant(p));
