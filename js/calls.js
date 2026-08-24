@@ -45,6 +45,62 @@ let callTimerInterval = null;
 let callStartedAt = null;
 
 // ============================================================
+// Zoom de vídeo (compartilhamento de tela / câmera) — clicar em
+// qualquer "janelinha" de transmissão dá um zoom nela em tela cheia,
+// igual o Discord faz ao clicar numa apresentação. Implementado como
+// um overlay independente (mesmo padrão do lightbox de imagens em
+// lightbox.js): o <video> do zoom só espelha o MediaStream do vídeo
+// de origem (um MediaStream alimenta vários <video> ao mesmo tempo
+// sem custo nem interrupção), então isso nunca mexe no attach/detach
+// de tracks nem interfere na chamada em si.
+// ============================================================
+let spotlightOverlayEl = null;
+let spotlightVideoEl = null;
+let spotlightLabelEl = null;
+let spotlightSourceEl = null; // <video> de origem atualmente em zoom
+
+function buildVideoSpotlight() {
+  spotlightVideoEl = el('video', { class: 'gk-video-spotlight-video', autoplay: 'true', playsinline: 'true' });
+  spotlightLabelEl = el('div', { class: 'gk-video-spotlight-label' });
+  const closeBtn = el('button', {
+    class: 'gk-video-spotlight-close', title: 'Sair da tela cheia (Esc)',
+    onclick: (e) => { e.stopPropagation(); closeVideoSpotlight(); },
+  }, '✕');
+  spotlightOverlayEl = el('div', { class: 'gk-video-spotlight-overlay', id: 'gk-video-spotlight-overlay' }, [
+    spotlightVideoEl, spotlightLabelEl, closeBtn,
+  ]);
+  spotlightOverlayEl.addEventListener('click', () => closeVideoSpotlight());
+  spotlightVideoEl.addEventListener('click', (e) => e.stopPropagation());
+  document.body.appendChild(spotlightOverlayEl);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && spotlightOverlayEl.classList.contains('gk-open')) closeVideoSpotlight();
+  });
+}
+function openVideoSpotlight(sourceVideoEl, label) {
+  if (!sourceVideoEl || !sourceVideoEl.srcObject) return;
+  if (!spotlightOverlayEl) buildVideoSpotlight();
+  spotlightSourceEl = sourceVideoEl;
+  spotlightVideoEl.srcObject = sourceVideoEl.srcObject;
+  spotlightVideoEl.muted = sourceVideoEl.muted;
+  spotlightLabelEl.textContent = label || '';
+  spotlightOverlayEl.classList.add('gk-open');
+  spotlightVideoEl.play?.().catch(() => {});
+}
+function closeVideoSpotlight() {
+  if (!spotlightOverlayEl) return;
+  spotlightOverlayEl.classList.remove('gk-open');
+  spotlightVideoEl.srcObject = null;
+  spotlightSourceEl = null;
+}
+// Chamado sempre que uma "janelinha" some (parou de compartilhar,
+// desligou a câmera, saiu da sala) — se o vídeo em zoom era
+// justamente aquela origem, fecha o zoom junto em vez de deixar uma
+// tela preta presa aberta.
+function closeSpotlightIfSourceIs(videoEl) {
+  if (videoEl && spotlightSourceEl === videoEl) closeVideoSpotlight();
+}
+
+// ============================================================
 // Token do LiveKit — pedido ao Cloudflare Worker a cada conexão
 // (o token expira em 6h, então pedimos um novo por chamada em vez
 // de tentar reaproveitar/cachear).
@@ -241,6 +297,9 @@ function handleTrackSubscribed(track, participant) {
         videoEl.id = 'gk-remote-video';
         videoEl.autoplay = true;
         videoEl.playsInline = true;
+        videoEl.title = 'Clique para dar zoom';
+        videoEl.style.cursor = 'zoom-in';
+        videoEl.addEventListener('click', () => openVideoSpotlight(videoEl, state.activeCall?.peer?.displayName || 'Chamada'));
         grid.appendChild(videoEl);
         grid.classList.add('gk-open');
         setCallLayout('video');
@@ -254,7 +313,7 @@ function handleTrackSubscribed(track, participant) {
 
 function handleTrackUnsubscribed(track, participant) {
   const otherUid = participant.identity;
-  track.detach().forEach((elNode) => elNode.remove());
+  track.detach().forEach((elNode) => { closeSpotlightIfSourceIs(elNode); elNode.remove(); });
   if (track.source === Track.Source.ScreenShare) {
     removeRemoteScreenTile(otherUid);
   } else if (track.source === Track.Source.Camera) {
@@ -456,6 +515,7 @@ function endCall(disconnectRoom) {
   stopCallTimer();
   closeCallScreen();
   hideCallBar();
+  closeVideoSpotlight();
 }
 
 // ============================================================
@@ -519,7 +579,9 @@ function removeVoiceParticipant(uid) {
   state.activeCall.participants.delete(uid);
   state.activeCall.remoteCameraStreams.delete(uid);
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
-  document.getElementById(`gk-calltile-${uid}`)?.remove();
+  const tile = document.getElementById(`gk-calltile-${uid}`);
+  if (tile) closeSpotlightIfSourceIs(tile.querySelector('.gk-call-tile-video'));
+  tile?.remove();
   document.getElementById(`gk-voice-audio-${uid}`)?.remove();
   removeRemoteScreenTile(uid);
   refreshVoiceUI();
@@ -559,15 +621,28 @@ function renderParticipantsGridFromParticipants(participantsMap) {
     const isSelf = otherUid === uid;
     const cameraTrack = state.activeCall.remoteCameraStreams.get(otherUid);
 
+    const tileId = `gk-calltile-${otherUid}`;
     const tile = el('div', {
       class: 'gk-call-tile' + (cameraTrack ? ' gk-camera-on' : '') + (data.muted ? ' gk-muted' : ''),
-      id: `gk-calltile-${otherUid}`,
+      id: tileId,
+      title: 'Clique para dar zoom na câmera',
+      // Verifica no momento do clique (não na criação) se a câmera está
+      // ligada — o tile pode ganhar/perder câmera depois de já montado
+      // (ver attachLocalCameraTrack/updateRemoteCameraTile), sem ser
+      // reconstruído do zero.
+      onclick: () => {
+        const t = document.getElementById(tileId);
+        if (!t || !t.classList.contains('gk-camera-on')) return;
+        const v = t.querySelector('.gk-call-tile-video');
+        openVideoSpotlight(v, isSelf ? 'Você' : (data.displayName || 'Membro'));
+      },
     }, [
       el('video', { class: 'gk-call-tile-video', autoplay: 'true', playsinline: 'true', muted: isSelf ? 'true' : null }),
       el('div', { class: 'gk-call-tile-avatar-wrap' }, [el('img', { src: data.avatarUrl || fallbackAvatar(data.displayName) })]),
       el('div', { class: 'gk-call-tile-name' }, data.displayName || 'Membro'),
       el('div', { class: 'gk-call-tile-sharing-badge' }, 'Compartilhando tela'),
       el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, '🔇'),
+      el('div', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
       isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
     ]);
     grid.appendChild(tile);
@@ -603,6 +678,7 @@ function attachLocalCameraTrack(track) {
 function detachLocalCameraTrack() {
   if (state.activeCall?.kind === 'dm') {
     const v = document.getElementById('gk-call-self-video');
+    closeSpotlightIfSourceIs(v);
     if (v) v.srcObject = null;
     document.getElementById('gk-call-self-pip').style.display = 'none';
   } else if (state.activeCall?.kind === 'voiceChannel') {
@@ -611,6 +687,7 @@ function detachLocalCameraTrack() {
     if (!tile) return;
     tile.classList.remove('gk-camera-on');
     const v = tile.querySelector('.gk-call-tile-video');
+    closeSpotlightIfSourceIs(v);
     if (v) v.srcObject = null;
   }
 }
@@ -628,6 +705,7 @@ function clearRemoteCameraTile(otherUid) {
   if (!tile) return;
   tile.classList.remove('gk-camera-on');
   const video = tile.querySelector('.gk-call-tile-video');
+  closeSpotlightIfSourceIs(video);
   if (video) video.srcObject = null;
 }
 
@@ -707,9 +785,13 @@ function renderLocalScreenTile(track) {
     videoEl.autoplay = true;
     videoEl.muted = true;
     videoEl.playsInline = true;
-    tile = el('div', { class: 'gk-screenshare-tile', id: 'gk-screenshare-local' }, [
+    tile = el('div', {
+      class: 'gk-screenshare-tile', id: 'gk-screenshare-local', title: 'Clique para dar zoom',
+      onclick: () => openVideoSpotlight(videoEl, 'Sua tela'),
+    }, [
       videoEl,
       el('span', { class: 'gk-screenshare-label' }, 'Sua tela'),
+      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
     ]);
     grid.appendChild(tile);
   }
@@ -717,17 +799,24 @@ function renderLocalScreenTile(track) {
   syncScreenshareSpotlightClass();
 }
 function removeLocalScreenTile() {
-  document.getElementById('gk-screenshare-local')?.remove();
+  const tile = document.getElementById('gk-screenshare-local');
+  if (tile) closeSpotlightIfSourceIs(tile.querySelector('video'));
+  tile?.remove();
   maybeHideScreenGrid();
 }
 function renderRemoteScreenTile(otherUid, videoEl, userData) {
   const grid = document.getElementById('gk-screenshare-grid');
   grid.classList.add('gk-open');
+  const label = `Tela de ${userData?.displayName || userData?.username || 'alguém'}`;
   let tile = document.getElementById(`gk-screenshare-${otherUid}`);
   if (!tile) {
-    tile = el('div', { class: 'gk-screenshare-tile', id: `gk-screenshare-${otherUid}` }, [
+    tile = el('div', {
+      class: 'gk-screenshare-tile', id: `gk-screenshare-${otherUid}`, title: 'Clique para dar zoom',
+      onclick: () => openVideoSpotlight(videoEl, label),
+    }, [
       videoEl,
-      el('span', { class: 'gk-screenshare-label' }, `Tela de ${userData?.displayName || userData?.username || 'alguém'}`),
+      el('span', { class: 'gk-screenshare-label' }, label),
+      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
     ]);
     grid.appendChild(tile);
   }
@@ -735,7 +824,9 @@ function renderRemoteScreenTile(otherUid, videoEl, userData) {
   syncScreenshareSpotlightClass();
 }
 function removeRemoteScreenTile(otherUid) {
-  document.getElementById(`gk-screenshare-${otherUid}`)?.remove();
+  const tile = document.getElementById(`gk-screenshare-${otherUid}`);
+  if (tile) closeSpotlightIfSourceIs(tile.querySelector('video'));
+  tile?.remove();
   markTileSharing(otherUid, false);
   maybeHideScreenGrid();
 }
@@ -941,6 +1032,11 @@ export function wireCallBar() {
   document.getElementById('gk-call-bar-mute-btn').addEventListener('click', toggleMute);
 
   document.getElementById('gk-call-camera-btn').addEventListener('click', toggleCameraInCall);
+
+  document.getElementById('gk-call-self-pip').addEventListener('click', () => {
+    const v = document.getElementById('gk-call-self-video');
+    openVideoSpotlight(v, 'Você');
+  });
 
   document.getElementById('gk-call-screenshare-btn').addEventListener('click', toggleScreenShareBtn);
   document.getElementById('gk-call-bar-screenshare-btn').addEventListener('click', toggleScreenShareBtn);

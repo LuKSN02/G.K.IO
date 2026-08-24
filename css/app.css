@@ -1244,6 +1244,71 @@
 }
 #gk-call-bar-screenshare-btn.gk-active { background: var(--gk-accent); color: #fff; }
 
+/* ============================================================
+   Zoom de vídeo (compartilhamento de tela / câmera) — clicar em
+   qualquer janelinha de transmissão dá um zoom nela em tela cheia,
+   estilo Discord. As janelinhas continuam do mesmo tamanho de sempre;
+   o zoom abre por cima, num overlay próprio, sem interromper a
+   transmissão nem a chamada em si.
+   ============================================================ */
+.gk-screenshare-tile, .gk-call-tile.gk-camera-on { cursor: zoom-in; }
+.gk-zoomable-hint {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0); opacity: 0; pointer-events: none;
+  transition: background var(--gk-transition), opacity var(--gk-transition);
+}
+.gk-screenshare-tile:hover .gk-zoomable-hint,
+.gk-call-tile.gk-camera-on:hover .gk-zoomable-hint {
+  background: rgba(0,0,0,0.28); opacity: 1;
+}
+.gk-zoomable-hint-icon {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.18); color: #fff; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+}
+/* PIP da própria câmera (DM) — mesmo afago visual, via ::after pra não
+   precisar reestruturar o markup estático do index.html. */
+.gk-call-self-pip { cursor: zoom-in; }
+.gk-call-self-pip::after {
+  content: '⤢'; position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 16px;
+  background: rgba(0,0,0,0); opacity: 0;
+  transition: background var(--gk-transition), opacity var(--gk-transition);
+}
+.gk-call-self-pip:hover::after { background: rgba(0,0,0,0.28); opacity: 1; }
+
+.gk-video-spotlight-overlay {
+  display: none; position: fixed; inset: 0; z-index: 510;
+  background: rgba(10, 12, 13, 0.94);
+  align-items: center; justify-content: center;
+  animation: gk-fade-in var(--gk-transition-slow) both;
+}
+.gk-video-spotlight-overlay.gk-open { display: flex; }
+.gk-video-spotlight-video {
+  max-width: 92vw; max-height: 88vh; width: auto; height: auto;
+  border-radius: var(--gk-radius-md); box-shadow: var(--gk-shadow-lg);
+  background: #000; object-fit: contain; cursor: default;
+}
+.gk-video-spotlight-label {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+  font-size: 12.5px; font-weight: 600; color: #fff; font-family: var(--gk-font-mono);
+  background: rgba(255,255,255,0.1); padding: 6px 14px; border-radius: 999px;
+}
+.gk-video-spotlight-close {
+  position: fixed; top: 18px; right: 18px; width: 40px; height: 40px; border-radius: 50%;
+  background: rgba(255,255,255,0.1); color: #fff; border: none; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--gk-transition);
+}
+.gk-video-spotlight-close:hover { background: rgba(255,255,255,0.22); }
+
+@media (max-width: 900px) {
+  .gk-video-spotlight-close { top: calc(14px + env(safe-area-inset-top)); }
+  .gk-video-spotlight-label { bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+
 /* ---------- Lightbox de imagens (clique para zoom) ---------- */
 .gk-lightbox-overlay {
   display: none; position: fixed; inset: 0; z-index: 500;
