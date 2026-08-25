@@ -5,6 +5,12 @@
 #gk-app { display: none; height: 100vh; height: 100dvh; }
 #gk-app.gk-ready { display: flex; }
 
+/* Ícones SVG (ver js/icons.js) — alinhamento e tamanho consistentes
+   em qualquer botão/rótulo onde aparecem. */
+.gk-icon { display: block; flex-shrink: 0; }
+.gk-icon-wrap { display: inline-flex; align-items: center; justify-content: center; }
+button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
+
 /* Grupo rail+sidebar — em desktop é só um wrapper flex sem estilo
    próprio; em smartphone (ver media query no fim do arquivo) vira
    uma gaveta deslizante. */
@@ -192,13 +198,20 @@
   background: var(--gk-surface-sunken);
   cursor: pointer;
 }
-.gk-mini-profile .gk-name { font-size: 13.5px; font-weight: 600; color: var(--gk-gray-800); }
-.gk-mini-profile .gk-status-text { font-size: 11.5px; color: var(--gk-gray-500); }
-.gk-mini-profile .gk-mini-actions { margin-left: auto; display: flex; gap: 4px; }
+.gk-mini-profile .gk-name { font-size: 13.5px; font-weight: 600; color: var(--gk-gray-800); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-mini-profile .gk-status-text { font-size: 11.5px; color: var(--gk-gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-mini-info { min-width: 0; flex: 1; }
+.gk-mini-profile .gk-mini-actions { margin-left: auto; display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
 .gk-mini-profile .gk-mini-actions button {
-  background: none; border: none; color: var(--gk-gray-500); font-size: 15px; padding: 6px; border-radius: var(--gk-radius-sm);
+  background: none; border: none; color: var(--gk-gray-500); padding: 5px; border-radius: var(--gk-radius-sm);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .gk-mini-profile .gk-mini-actions button:hover { background: var(--gk-gray-100); color: var(--gk-gray-800); }
+.gk-mini-profile .gk-mini-actions .gk-icon { width: 16px; height: 16px; }
+.gk-status-dot-btn .gk-icon { width: 10px; height: 10px; }
+.gk-status-dot-online .gk-icon { color: var(--gk-status-online); }
+.gk-status-dot-idle .gk-icon { color: var(--gk-status-idle); }
+.gk-status-dot-dnd .gk-icon { color: var(--gk-status-dnd); }
 
 /* ---------- Avatar + anel de presença (elemento assinatura) ---------- */
 .gk-avatar { position: relative; flex-shrink: 0; display: inline-flex; }
