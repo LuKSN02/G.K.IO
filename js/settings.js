@@ -554,7 +554,7 @@ function renderAdminUserCard(container, target) {
     const cb = el('input', { type: 'checkbox' });
     if ((target.customBadges || []).includes(key)) cb.checked = true;
     badgeChecks[key] = cb;
-    return el('label', { class: 'gk-admin-badge-check' }, [cb, `${b.icon} ${b.label}`]);
+    return el('label', { class: 'gk-admin-badge-check' }, [cb, icon(b.icon, { size: 13 }), ` ${b.label}`]);
   }));
 
   const saveBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Salvar');
