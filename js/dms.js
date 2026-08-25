@@ -10,6 +10,7 @@ import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername } 
 import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
+import { playNotifSound, showDesktopNotification } from './prefs.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 
 // Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
@@ -18,6 +19,13 @@ onReadStatesChange(() => renderDmSidebar());
 
 let unsubFriendships = null;
 let unsubDms = null;
+
+// Rastreia o `lastMessageAt` já visto de cada DM, pra distinguir "chegou
+// mensagem nova" de qualquer outra mudança que refaça este snapshot (ex:
+// dados do outro participante mudando). Também evita notificar de novo a
+// mesma mensagem se o listener for reconectado.
+const lastSeenDmMessageAt = new Map(); // dmId -> millis
+let isFirstDmsSnapshot = true; // não notifica pelo estado já existente ao carregar a página
 
 // Aba ativa na tela "Amigos" — 'friends' (lista de amigos) ou 'pending' (pedidos recebidos).
 let friendsHomeTab = 'friends';
@@ -61,6 +69,28 @@ export function listenFriendsAndDms() {
       dms.push({ id: d.id, ...data, other: otherSnap && otherSnap.exists() ? { uid: otherId, ...otherSnap.data() } : null });
     }
     dms.sort((a, b) => (b.lastMessageAt?.toMillis?.() || 0) - (a.lastMessageAt?.toMillis?.() || 0));
+
+    // Notifica (som + notificação do sistema) qualquer DM que recebeu
+    // mensagem nova desde o snapshot anterior — exceto a conversa que já
+    // está aberta agora (essa já é coberta por notifyIfNewIncomingMessage
+    // em chat.js, então notificar aqui também duplicaria o som).
+    for (const dm of dms) {
+      const millis = dm.lastMessageAt?.toMillis ? dm.lastMessageAt.toMillis() : 0;
+      const prevMillis = lastSeenDmMessageAt.get(dm.id) || 0;
+      lastSeenDmMessageAt.set(dm.id, millis);
+      if (isFirstDmsSnapshot || millis <= prevMillis) continue;
+      if (!dm.lastMessageAuthorId || dm.lastMessageAuthorId === uid) continue;
+      if (dm.id === state.currentDmId) continue;
+      if (!dm.other) continue;
+      playNotifSound();
+      showDesktopNotification(
+        dm.other.displayName || dm.other.username,
+        dm.lastMessagePreview || '📎 Anexo enviado',
+        dm.other.avatarUrl,
+      );
+    }
+    isFirstDmsSnapshot = false;
+
     state.dms.clear();
     dms.forEach((dm) => state.dms.set(dm.id, dm));
     renderDmSidebar();
