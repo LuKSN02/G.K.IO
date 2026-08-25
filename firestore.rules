@@ -64,10 +64,19 @@ service cloud.firestore {
     // ser alterados pelo próprio usuário via client — só mudam manualmente
     // no console do Firebase, ou futuramente via Cloud Function com Admin
     // SDK (ex: webhook de um gateway de pagamento), que ignora estas regras.
+    function isValidUsername(u) {
+      return u is string && u.size() >= 3 && u.size() <= 32 && u.matches('^[a-z0-9_-]+$');
+    }
     function isValidSelfProfileEdit() {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
-        || request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','tag','frameStyle']);
+        || (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','tag','frameStyle','username'])
+          // username só pode mudar para um valor no formato válido — a
+          // checagem de "já está em uso" é feita no client (settings.js)
+          // antes de chamar updateDoc; aqui é só a validação de formato.
+          && (request.resource.data.username == resource.data.username || isValidUsername(request.resource.data.username))
+        );
     }
     // Um "admin" é definido pelo próprio campo isAdmin no doc do usuário
     // logado — campo que, por sua vez, NENHUMA regra permite o próprio

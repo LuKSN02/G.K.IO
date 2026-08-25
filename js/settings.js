@@ -4,7 +4,7 @@
 // com painel de conteúdo à direita, trocando de seção sem recarregar.
 // ============================================================
 import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc, query, where, serverTimestamp } from './db.js';
-import { state, el, toast, fallbackAvatar } from './state.js';
+import { state, el, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
@@ -136,15 +136,25 @@ async function renderPerfilSection(content) {
 
   const displayNameInput = el('input', { type: 'text', value: state.user.displayName || state.user.username });
   const bioInput = el('textarea', { placeholder: 'Conte algo sobre você...' }, state.user.bio || '');
+  const usernameInput = el('input', { type: 'text', value: state.user.username, class: 'gk-mono', placeholder: 'nome-de-usuario' });
+  const usernameError = el('div', { class: 'gk-error', style: 'display:none;' });
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     bannerPreview, bannerInput,
     !isPrime ? el('div', { class: 'gk-hint' }, 'Banners em vídeo/GIF são exclusivos de assinantes G.K.IO Prime.') : null,
     el('div', { class: 'gk-settings-identity-row' }, [
       avatarWrap, avatarInput,
-      el('div', { class: 'gk-hint' }, `@${state.user.username}`),
     ]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Nome de exibição'), displayNameInput]),
+    el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Nome de usuário'),
+      el('div', { class: 'gk-field-row' }, [
+        el('span', { class: 'gk-mono', style: 'color:var(--gk-gray-500);padding:0 2px;' }, '@'),
+        usernameInput,
+      ]),
+      usernameError,
+      el('div', { class: 'gk-hint' }, 'Só letras minúsculas, números, hífen e underline. Usado por outras pessoas para te adicionar como amigo.'),
+    ]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Bio / status personalizado'), bioInput]),
   ]));
 
@@ -190,12 +200,31 @@ async function renderPerfilSection(content) {
   content.appendChild(el('div', { class: 'gk-settings-save-row' }, [saveBtn]));
 
   saveBtn.addEventListener('click', async () => {
+    usernameError.style.display = 'none';
+    const newUsername = normalizeUsername(usernameInput.value);
+    if (newUsername !== state.user.username) {
+      if (newUsername.length < 3) {
+        usernameError.textContent = 'O nome de usuário precisa ter ao menos 3 caracteres.';
+        usernameError.style.display = 'block';
+        return;
+      }
+      const takenQ = query(usersCol(), where('username', '==', newUsername));
+      const takenSnap = await getDocs(takenQ);
+      const takenByOther = takenSnap.docs.some((d) => d.id !== state.user.uid);
+      if (takenByOther) {
+        usernameError.textContent = 'Esse nome de usuário já está em uso.';
+        usernameError.style.display = 'block';
+        return;
+      }
+    }
+
     saveBtn.disabled = true;
     saveBtn.textContent = 'Salvando...';
     try {
       const updates = {
         displayName: displayNameInput.value.trim() || state.user.username,
         bio: bioInput.value.trim(),
+        username: newUsername,
       };
       if (pendingAvatar) updates.avatarUrl = await uploadProfileImage(pendingAvatar, 'avatars');
       if (pendingBanner) {
