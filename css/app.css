@@ -207,8 +207,9 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .gk-mini-profile .gk-mini-actions button:hover { background: var(--gk-gray-100); color: var(--gk-gray-800); }
-.gk-mini-profile .gk-mini-actions .gk-icon { width: 16px; height: 16px; }
-.gk-status-dot-btn .gk-icon { width: 10px; height: 10px; }
+.gk-mini-profile .gk-mini-actions button .gk-icon { width: 16px; height: 16px; }
+.gk-mini-profile .gk-mini-actions button.gk-status-dot-btn { padding: 7px; }
+.gk-mini-profile .gk-mini-actions button.gk-status-dot-btn .gk-icon { width: 9px; height: 9px; }
 .gk-status-dot-online .gk-icon { color: var(--gk-status-online); }
 .gk-status-dot-idle .gk-icon { color: var(--gk-status-idle); }
 .gk-status-dot-dnd .gk-icon { color: var(--gk-status-dnd); }
