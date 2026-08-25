@@ -16,17 +16,18 @@ import {
   PERMISSION_CATALOG, ROLE_COLOR_SWATCHES, getRoles, createRole, updateRole, deleteRole, assignRoleToMember,
 } from './servers.js';
 import { openProfileCard } from './profile.js';
+import { icon } from './icons.js';
 
 let activeSection = 'geral';
 let currentServerId = null;
 
 function sections(serverId) {
   const list = [];
-  if (canManageServerInfo(serverId)) list.push({ id: 'geral', label: 'Visão geral', icon: '🧊' });
-  if (canManageChannels(serverId)) list.push({ id: 'canais', label: 'Canais', icon: '#' });
-  if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: '🎭' });
-  list.push({ id: 'membros', label: 'Membros', icon: '👥' });
-  list.push({ id: 'convites', label: 'Convites', icon: '🔗' });
+  if (canManageServerInfo(serverId)) list.push({ id: 'geral', label: 'Visão geral', icon: 'snowflake' });
+  if (canManageChannels(serverId)) list.push({ id: 'canais', label: 'Canais', icon: '#', isText: true });
+  if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: 'shield' });
+  list.push({ id: 'membros', label: 'Membros', icon: 'members' });
+  list.push({ id: 'convites', label: 'Convites', icon: 'link' });
   return list;
 }
 
@@ -59,7 +60,7 @@ function renderNav() {
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
       onclick: () => { activeSection = s.id; renderNav(); renderSection(); },
-    }, [el('span', { class: 'gk-settings-nav-icon' }, s.icon), el('span', {}, s.label)]));
+    }, [el('span', { class: 'gk-settings-nav-icon' }, s.isText ? s.icon : [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
 }
 
@@ -187,30 +188,30 @@ function renderCanaisSection(content) {
       el('button', {
         class: 'gk-btn gk-btn-ghost', type: 'button', style: 'padding:8px 12px;',
         onclick: () => renameCategory(serverId, cat.id, catNameInput.value).then(() => toast('Categoria renomeada.')),
-      }, '✎'),
+      }, [icon('edit', { size: 14 })]),
       el('button', {
         class: 'gk-btn gk-btn-danger', type: 'button', style: 'padding:8px 12px;',
         onclick: () => deleteCategory(serverId, cat.id).then(() => toast('Categoria excluída.')).catch((err) => toast(err.message, 'danger')),
-      }, '✕'),
+      }, [icon('close', { size: 14 })]),
     ]));
 
     for (const ch of catChannels) {
       const chNameInput = el('input', { type: 'text', value: ch.name, class: 'gk-mono' });
       card.appendChild(el('div', { class: 'gk-channel-manage-row' }, [
-        el('span', { class: 'gk-channel-icon', html: ch.type === 'text' ? '#' : '&#128266;' }),
+        el('span', { class: 'gk-channel-icon' }, ch.type === 'text' ? '#' : [icon('speaker', { size: 13 })]),
         chNameInput,
         el('button', {
           class: 'gk-btn gk-btn-ghost', type: 'button', style: 'padding:6px 10px;',
           onclick: () => renameChannel(serverId, ch.id, chNameInput.value).then(() => toast('Canal renomeado.')),
-        }, '✎'),
+        }, [icon('edit', { size: 13 })]),
         el('button', {
           class: 'gk-btn gk-btn-ghost', type: 'button', style: 'padding:6px 10px;', title: 'Permissões do canal (por cargo)',
           onclick: () => openChannelPermissionsModal(serverId, ch),
-        }, '🔒'),
+        }, [icon('lock', { size: 13 })]),
         el('button', {
           class: 'gk-btn gk-btn-danger', type: 'button', style: 'padding:6px 10px;',
           onclick: () => confirmDangerAction('Excluir canal', `Excluir #${ch.name}? As mensagens desse canal deixam de ser acessíveis.`, () => deleteChannel(serverId, ch.id)),
-        }, '✕'),
+        }, [icon('close', { size: 13 })]),
       ]));
     }
     content.appendChild(card);
@@ -328,7 +329,7 @@ function renderRoleCard(serverId, role, memberCount) {
     headerChildren.push(el('button', {
       class: 'gk-btn gk-btn-danger', type: 'button', style: 'padding:6px 10px;',
       onclick: () => confirmDangerAction('Excluir cargo', `Excluir o cargo "${role.name}"? Ele será removido de todos os membros.`, () => deleteRole(serverId, role.id)),
-    }, '✕'));
+    }, [icon('close', { size: 13 })]));
   }
 
   return el('div', { class: 'gk-settings-card gk-role-card' }, [
@@ -375,13 +376,13 @@ function renderMembrosSection(content) {
       actions.push(el('button', {
         class: 'gk-member-role-btn', title: role === 'admin' ? 'Remover cargo de admin' : 'Tornar admin',
         onclick: (e) => { e.stopPropagation(); setMemberRole(serverId, m.uid, role === 'admin' ? 'member' : 'admin'); },
-      }, role === 'admin' ? '★' : '☆'));
+      }, [icon(role === 'admin' ? 'starFilled' : 'starOutline', { size: 14 })]));
     }
     if (iCanManageRoles && role !== 'owner' && roles.length > 0) {
       actions.push(el('button', {
         class: 'gk-member-role-btn', title: 'Atribuir cargos',
         onclick: (e) => { e.stopPropagation(); openAssignRolesPopover(serverId, m, roles); },
-      }, '🎭'));
+      }, [icon('shield', { size: 14 })]));
     }
     if (iCanKick && role !== 'owner' && m.uid !== myUid) {
       actions.push(el('button', {
@@ -390,7 +391,7 @@ function renderMembrosSection(content) {
           e.stopPropagation();
           confirmDangerAction('Expulsar membro', `Remover ${m.user.displayName || m.user.username} deste servidor?`, () => kickMember(serverId, m.uid));
         },
-      }, '⛔'));
+      }, [icon('block', { size: 14 })]));
     }
 
     list.appendChild(el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, [

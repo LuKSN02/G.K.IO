@@ -10,8 +10,8 @@ import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername } 
 import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
-import { playNotifSound, showDesktopNotification } from './prefs.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
+import { icon } from './icons.js';
 
 // Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
 // lida), re-renderiza a lista pra atualizar os indicadores de não lida.
@@ -19,13 +19,6 @@ onReadStatesChange(() => renderDmSidebar());
 
 let unsubFriendships = null;
 let unsubDms = null;
-
-// Rastreia o `lastMessageAt` já visto de cada DM, pra distinguir "chegou
-// mensagem nova" de qualquer outra mudança que refaça este snapshot (ex:
-// dados do outro participante mudando). Também evita notificar de novo a
-// mesma mensagem se o listener for reconectado.
-const lastSeenDmMessageAt = new Map(); // dmId -> millis
-let isFirstDmsSnapshot = true; // não notifica pelo estado já existente ao carregar a página
 
 // Aba ativa na tela "Amigos" — 'friends' (lista de amigos) ou 'pending' (pedidos recebidos).
 let friendsHomeTab = 'friends';
@@ -69,28 +62,6 @@ export function listenFriendsAndDms() {
       dms.push({ id: d.id, ...data, other: otherSnap && otherSnap.exists() ? { uid: otherId, ...otherSnap.data() } : null });
     }
     dms.sort((a, b) => (b.lastMessageAt?.toMillis?.() || 0) - (a.lastMessageAt?.toMillis?.() || 0));
-
-    // Notifica (som + notificação do sistema) qualquer DM que recebeu
-    // mensagem nova desde o snapshot anterior — exceto a conversa que já
-    // está aberta agora (essa já é coberta por notifyIfNewIncomingMessage
-    // em chat.js, então notificar aqui também duplicaria o som).
-    for (const dm of dms) {
-      const millis = dm.lastMessageAt?.toMillis ? dm.lastMessageAt.toMillis() : 0;
-      const prevMillis = lastSeenDmMessageAt.get(dm.id) || 0;
-      lastSeenDmMessageAt.set(dm.id, millis);
-      if (isFirstDmsSnapshot || millis <= prevMillis) continue;
-      if (!dm.lastMessageAuthorId || dm.lastMessageAuthorId === uid) continue;
-      if (dm.id === state.currentDmId) continue;
-      if (!dm.other) continue;
-      playNotifSound();
-      showDesktopNotification(
-        dm.other.displayName || dm.other.username,
-        dm.lastMessagePreview || '📎 Anexo enviado',
-        dm.other.avatarUrl,
-      );
-    }
-    isFirstDmsSnapshot = false;
-
     state.dms.clear();
     dms.forEach((dm) => state.dms.set(dm.id, dm));
     renderDmSidebar();
@@ -251,7 +222,7 @@ function renderFriendsTab(list) {
   list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Amigos — ${friends.length}`));
   if (friends.length === 0) {
     list.appendChild(el('div', { class: 'gk-empty-state' }, [
-      el('div', { class: 'gk-emoji' }, '🧊'),
+      el('div', { class: 'gk-emoji' }, [icon('snowflake', { size: 32 })]),
       el('div', {}, 'Você ainda não tem amigos por aqui. Que tal adicionar alguém?'),
     ]));
     return;
@@ -267,7 +238,7 @@ function renderFriendsTab(list) {
         el('div', { class: 'gk-friend-sub' }, statusLabel(f.statusPresence)),
       ]),
       el('div', { class: 'gk-friend-actions' }, [
-        el('button', { class: 'gk-friend-action-btn', title: 'Enviar mensagem', type: 'button', onclick: () => openOrCreateDm(f.uid) }, '💬'),
+        el('button', { class: 'gk-friend-action-btn', title: 'Enviar mensagem', type: 'button', onclick: () => openOrCreateDm(f.uid) }, [icon('chatBubble', { size: 15 })]),
       ]),
     ]));
   }
@@ -278,7 +249,7 @@ function renderPendingTab(list) {
   list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Pedidos de amizade — ${incoming.length}`));
   if (incoming.length === 0) {
     list.appendChild(el('div', { class: 'gk-empty-state' }, [
-      el('div', { class: 'gk-emoji' }, '📭'),
+      el('div', { class: 'gk-emoji' }, [icon('tray', { size: 32 })]),
       el('div', {}, 'Nenhum pedido de amizade pendente.'),
     ]));
     return;
@@ -293,8 +264,8 @@ function renderPendingTab(list) {
         el('div', { class: 'gk-friend-sub' }, '@' + req.username),
       ]),
       el('div', { class: 'gk-friend-actions' }, [
-        el('button', { class: 'gk-friend-action-btn gk-friend-action-accept', title: 'Aceitar', type: 'button', onclick: () => acceptFriendRequest(req.friendshipId) }, '✓'),
-        el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', type: 'button', onclick: () => declineFriendRequest(req.friendshipId) }, '✕'),
+        el('button', { class: 'gk-friend-action-btn gk-friend-action-accept', title: 'Aceitar', type: 'button', onclick: () => acceptFriendRequest(req.friendshipId) }, [icon('check', { size: 15 })]),
+        el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', type: 'button', onclick: () => declineFriendRequest(req.friendshipId) }, [icon('close', { size: 15 })]),
       ]),
     ]));
   }

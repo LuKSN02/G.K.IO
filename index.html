@@ -94,8 +94,8 @@
     <div class="gk-server-menu-wrap">
       <div class="gk-rail-item gk-add" id="gk-add-server-btn" title="Adicionar servidor">+</div>
       <div class="gk-server-menu" id="gk-server-menu">
-        <button id="gk-create-server-btn">➕ Criar servidor</button>
-        <button id="gk-join-server-btn">🔑 Entrar com convite</button>
+        <button id="gk-create-server-btn"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
+        <button id="gk-join-server-btn"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
       </div>
     </div>
   </div>
@@ -105,8 +105,8 @@
     <div class="gk-sidebar-header">
       <span id="gk-sidebar-header-title">Mensagens diretas</span>
       <div style="display:flex;gap:2px;">
-        <button id="gk-add-friend-btn" title="Adicionar amigo">👤+</button>
-        <button id="gk-server-settings-btn" title="Configurações do servidor" style="display:none;">⚙️</button>
+        <button id="gk-add-friend-btn" title="Adicionar amigo" data-icon="personPlus"></button>
+        <button id="gk-server-settings-btn" title="Configurações do servidor" style="display:none;" data-icon="settings"></button>
       </div>
     </div>
     <div class="gk-sidebar-body" id="gk-sidebar-body"></div>
@@ -119,11 +119,11 @@
         <div class="gk-status-text" id="gk-mini-status">—</div>
       </div>
       <div class="gk-mini-actions">
-        <button id="gk-status-online" title="Online">🟢</button>
-        <button id="gk-status-idle" title="Ausente">🟡</button>
-        <button id="gk-status-dnd" title="Não perturbe">🔴</button>
-        <button id="gk-settings-btn" title="Configurações">⚙️</button>
-        <button id="gk-logout-btn" title="Sair">⏻</button>
+        <button id="gk-status-online" class="gk-status-dot-btn gk-status-dot-online" title="Online" data-icon="dot"></button>
+        <button id="gk-status-idle" class="gk-status-dot-btn gk-status-dot-idle" title="Ausente" data-icon="dot"></button>
+        <button id="gk-status-dnd" class="gk-status-dot-btn gk-status-dot-dnd" title="Não perturbe" data-icon="dot"></button>
+        <button id="gk-settings-btn" title="Configurações" data-icon="settings"></button>
+        <button id="gk-logout-btn" title="Sair" data-icon="power"></button>
       </div>
     </div>
   </div>
@@ -135,13 +135,13 @@
   <!-- Área principal de chat -->
   <div class="gk-main">
     <div class="gk-topbar">
-      <button class="gk-icon-btn gk-mobile-menu-btn" id="gk-mobile-menu-btn" title="Menu" style="display:none;">☰</button>
+      <button class="gk-icon-btn gk-mobile-menu-btn" id="gk-mobile-menu-btn" title="Menu" style="display:none;" data-icon="menu"></button>
       <span class="gk-title" id="gk-topbar-title">Selecione uma conversa</span>
       <span class="gk-subtitle" id="gk-topbar-subtitle"></span>
       <div class="gk-spacer"></div>
-      <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;">📞</button>
-      <button class="gk-icon-btn" id="gk-video-call-btn" title="Chamada de vídeo" style="display:none;">🎥</button>
-      <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;">👥</button>
+      <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;" data-icon="phoneCall"></button>
+      <button class="gk-icon-btn" id="gk-video-call-btn" title="Chamada de vídeo" style="display:none;" data-icon="videoCall"></button>
+      <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;" data-icon="members"></button>
     </div>
     <div class="gk-messages" id="gk-messages"></div>
 
@@ -168,11 +168,11 @@
 
     <div class="gk-composer" id="gk-composer">
       <div class="gk-composer-box">
-        <button id="gk-attach-btn" title="Anexar mídia">📎</button>
+        <button id="gk-attach-btn" title="Anexar mídia" data-icon="attach"></button>
         <input type="file" id="gk-file-input" style="display:none;">
         <textarea id="gk-composer-input" rows="1" placeholder="Escreva uma mensagem..." enterkeyhint="send"></textarea>
-        <button id="gk-emoji-btn" title="Emojis, emojis personalizados e GIFs">😊</button>
-        <button class="gk-send" id="gk-send-btn" title="Enviar">➤</button>
+        <button id="gk-emoji-btn" title="Emojis, emojis personalizados e GIFs" data-icon="emojiSmile"></button>
+        <button class="gk-send" id="gk-send-btn" title="Enviar" data-icon="send"></button>
       </div>
     </div>
   </div>
@@ -206,7 +206,7 @@
   <div class="gk-settings-shell" id="gk-settings-shell">
     <div class="gk-settings-nav" id="gk-settings-nav"></div>
     <div class="gk-settings-content" id="gk-settings-content"></div>
-    <button class="gk-settings-close" id="gk-settings-close" title="Fechar">✕</button>
+    <button class="gk-settings-close" id="gk-settings-close" title="Fechar" data-icon="close"></button>
   </div>
 </div>
 
@@ -215,7 +215,7 @@
   <div class="gk-settings-shell" id="gk-server-settings-shell">
     <div class="gk-settings-nav" id="gk-server-settings-nav"></div>
     <div class="gk-settings-content" id="gk-server-settings-content"></div>
-    <button class="gk-settings-close" id="gk-server-settings-close" title="Fechar">✕</button>
+    <button class="gk-settings-close" id="gk-server-settings-close" title="Fechar" data-icon="close"></button>
   </div>
 </div>
 
@@ -225,7 +225,7 @@
 
   <div class="gk-call-screen-top">
     <span class="gk-call-screen-status" id="gk-call-screen-status">Chamando...</span>
-    <button class="gk-call-minimize-btn" id="gk-call-minimize-btn" title="Minimizar chamada">⌄</button>
+    <button class="gk-call-minimize-btn" id="gk-call-minimize-btn" title="Minimizar chamada" data-icon="chevronDown"></button>
   </div>
 
   <!-- Modo áudio: avatar grande com anéis pulsantes, como a tela de "chamando/tocando" do Skype -->
@@ -252,20 +252,20 @@
   </div>
 
   <div class="gk-call-controls" id="gk-call-controls">
-    <button class="gk-call-ctrl-btn" id="gk-call-mute-btn" title="Mutar/desmutar">🎤</button>
-    <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera">📷</button>
-    <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela">🖥️</button>
-    <button class="gk-call-ctrl-btn gk-call-hangup-btn" id="gk-call-hangup-btn" title="Encerrar chamada">☎</button>
+    <button class="gk-call-ctrl-btn" id="gk-call-mute-btn" title="Mutar/desmutar" data-icon="mic"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera" data-icon="camera"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
+    <button class="gk-call-ctrl-btn gk-call-hangup-btn" id="gk-call-hangup-btn" title="Encerrar chamada" data-icon="phoneEnd"></button>
   </div>
 </div>
 
 <!-- Barra minimizada — chamada em segundo plano (DM minimizada ou canal de voz de servidor) -->
 <div class="gk-call-bar" id="gk-call-bar">
   <span class="gk-call-label" id="gk-call-bar-label">Em chamada</span>
-  <button id="gk-call-bar-expand-btn" title="Expandir chamada" style="display:none;">⤢</button>
-  <button id="gk-call-bar-mute-btn" title="Mutar/desmutar">🎤</button>
-  <button id="gk-call-bar-screenshare-btn" title="Compartilhar tela">🖥️</button>
-  <button class="gk-hangup" id="gk-call-bar-hangup-btn" title="Encerrar">☎</button>
+  <button id="gk-call-bar-expand-btn" title="Expandir chamada" style="display:none;" data-icon="expand"></button>
+  <button id="gk-call-bar-mute-btn" title="Mutar/desmutar" data-icon="mic"></button>
+  <button id="gk-call-bar-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
+  <button class="gk-hangup" id="gk-call-bar-hangup-btn" title="Encerrar" data-icon="phoneEnd"></button>
 </div>
 <div class="gk-screenshare-grid" id="gk-screenshare-grid"></div>
 
@@ -278,5 +278,6 @@
 <div id="gk-toast-stack"></div>
 
 <script type="module" src="js/app.js"></script>
+<script type="module" src="js/apply-static-icons.js"></script>
 </body>
 </html>

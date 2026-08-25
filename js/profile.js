@@ -7,20 +7,21 @@ import { openOrCreateDm } from './dms.js';
 import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { openSettingsModal } from './settings.js';
+import { icon } from './icons.js';
 
 export const SOCIAL_ICONS = {
-  instagram: '📷', twitter: '🐦', x: '✕', github: '💻', youtube: '▶️',
-  twitch: '🎮', discord: '🗨️', tiktok: '🎵', linkedin: '💼', website: '🔗',
+  instagram: 'instagram', twitter: 'x', x: 'x', github: 'github', youtube: 'youtube',
+  twitch: 'twitch', discord: 'discord', tiktok: 'tiktok', linkedin: 'link', website: 'link',
 };
 
 // Catálogo de insígnias — customBadges guarda só os ids (ex: ['og','beta']),
 // atribuídos manualmente pelo console do Firebase (ver firestore.rules:
 // nenhum desses campos é editável pelo próprio usuário).
 export const BADGE_CATALOG = {
-  og: { icon: '🏆', label: 'Veterano' },
-  booster: { icon: '⚡', label: 'Booster' },
-  beta: { icon: '🧪', label: 'Beta Tester' },
-  founder: { icon: '👑', label: 'Fundador' },
+  og: { icon: 'trophy', label: 'Veterano' },
+  booster: { icon: 'bolt', label: 'Booster' },
+  beta: { icon: 'flask', label: 'Beta Tester' },
+  founder: { icon: 'crown', label: 'Fundador' },
 };
 
 function primeDurationLabel(ts) {
@@ -91,7 +92,7 @@ export async function openProfileCard(uid) {
 
   const metaChips = [];
   if (user.role === 'prime') {
-    metaChips.push(el('span', { class: 'gk-prime-chip', title: primeDurationLabel(user.primeSince) }, '◆ G.K.IO Prime'));
+    metaChips.push(el('span', { class: 'gk-prime-chip', title: primeDurationLabel(user.primeSince) }, [icon('diamond', { size: 12 }), ' G.K.IO Prime']));
   }
   if (user.tag) metaChips.push(el('span', { class: 'gk-author-tag' }, user.tag));
   if (metaChips.length) body.appendChild(el('div', { class: 'gk-profile-meta-row' }, metaChips));
@@ -101,7 +102,7 @@ export async function openProfileCard(uid) {
     for (const key of user.customBadges) {
       const b = BADGE_CATALOG[key];
       if (!b) continue;
-      badgesRow.appendChild(el('span', { class: 'gk-profile-badge-chip', title: b.label }, `${b.icon} ${b.label}`));
+      badgesRow.appendChild(el('span', { class: 'gk-profile-badge-chip', title: b.label }, [icon(b.icon, { size: 13 }), ` ${b.label}`]));
     }
     if (badgesRow.children.length) body.appendChild(badgesRow);
   }
@@ -112,7 +113,7 @@ export async function openProfileCard(uid) {
     const linksBox = el('div', { class: 'gk-profile-links' });
     for (const link of links) {
       linksBox.appendChild(el('a', { class: 'gk-profile-link', href: link.url, target: '_blank', rel: 'noopener' }, [
-        el('span', {}, SOCIAL_ICONS[link.platform] || '🔗'),
+        el('span', {}, [icon(SOCIAL_ICONS[link.platform] || 'link', { size: 14 })]),
         el('span', {}, link.url.replace(/^https?:\/\//, '')),
       ]));
     }
@@ -128,14 +129,14 @@ export async function openProfileCard(uid) {
       el('button', {
         class: 'gk-btn gk-btn-ghost',
         onclick: () => { overlay.classList.remove('gk-open'); openOrCreateDm(uid).then(() => startDmCall()); },
-      }, '📞'),
+      }, [icon('phoneCall', { size: 16 })]),
     ]));
   } else {
     body.appendChild(el('div', { class: 'gk-profile-actions' }, [
       el('button', {
         class: 'gk-btn gk-profile-edit-btn gk-btn-block',
         onclick: () => { overlay.classList.remove('gk-open'); openSettingsModal('perfil'); },
-      }, '✎ Editar perfil'),
+      }, [icon('edit', { size: 14 }), ' Editar perfil']),
     ]));
   }
 

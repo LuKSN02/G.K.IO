@@ -1255,15 +1255,7 @@
 .gk-zoomable-hint {
   position: absolute; inset: 0; z-index: 3;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0); opacity: 0; pointer-events: auto;
-  /* pointer-events:auto (em vez de none) é proposital: essa camada cobre
-     o <video> inteiro, e em navegadores/WebViews mobile o toque direto
-     sobre um <video> tocando uma transmissão ao vivo (WebRTC) às vezes é
-     engolido pela camada nativa de renderização de vídeo antes de virar
-     um clique normal do DOM — o que impedia o zoom de funcionar só no
-     celular. Com pointer-events:auto aqui, é este elemento (uma <div>
-     comum) que recebe o toque e borbulha o clique até a tile pai,
-     de forma confiável em qualquer dispositivo. */
+  background: rgba(0,0,0,0); opacity: 0; pointer-events: none;
   transition: background var(--gk-transition), opacity var(--gk-transition);
 }
 .gk-screenshare-tile:hover .gk-zoomable-hint,

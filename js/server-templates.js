@@ -9,7 +9,7 @@
 export const SERVER_TEMPLATES = {
   custom: {
     label: 'Criar do zero',
-    icon: '✨',
+    icon: 'sparkles',
     desc: 'Só o essencial — você organiza o resto depois.',
     categories: [
       {
@@ -24,7 +24,7 @@ export const SERVER_TEMPLATES = {
 
   gaming: {
     label: 'Gaming',
-    icon: '🎮',
+    icon: 'gamepad',
     desc: 'Pra clã, guild ou grupo fixo de jogo.',
     categories: [
       {
@@ -53,7 +53,7 @@ export const SERVER_TEMPLATES = {
 
   estudos: {
     label: 'Grupo de Estudos',
-    icon: '📚',
+    icon: 'book',
     desc: 'Pra turma, cursinho ou grupo de TCC.',
     categories: [
       {

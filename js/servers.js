@@ -14,6 +14,7 @@ import { joinVoiceChannel } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
+import { icon, iconHtml } from './icons.js';
 
 // Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
 // do servidor atualmente aberto pra atualizar os indicadores de não lida.
@@ -480,7 +481,7 @@ function renderServerSidebar(serverId, categories, channels) {
           ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
           : confirmJoinVoiceChannel(serverId, ch),
       }, [
-        el('span', { class: 'gk-channel-icon', html: ch.type === 'text' ? '#' : '&#128266;' }),
+        el('span', { class: 'gk-channel-icon' }, ch.type === 'text' ? '#' : [icon('speaker', { size: 14 })]),
         el('span', {}, ch.name),
       ]);
       list.appendChild(row);
@@ -493,7 +494,7 @@ function renderServerSidebar(serverId, categories, channels) {
       el('div', {
         class: 'gk-category-label',
         onclick: (e) => e.currentTarget.parentElement.classList.toggle('gk-collapsed'),
-      }, [el('span', { class: 'gk-chevron' }, '▾'), el('span', {}, cat.name)]),
+      }, [el('span', { class: 'gk-chevron' }, [icon('chevronDown', { size: 13 })]), el('span', {}, cat.name)]),
       list,
     ]);
     body.appendChild(catNode);
@@ -504,7 +505,7 @@ function renderServerSidebar(serverId, categories, channels) {
     const addBtn = el('div', {
       class: 'gk-channel', style: 'color:var(--gk-accent);font-weight:600;margin-top:6px;',
       onclick: () => openCreateChannelModal(serverId, categories),
-    }, [el('span', { class: 'gk-channel-icon', html: '&#43;' }), el('span', {}, 'Novo canal')]);
+    }, [el('span', { class: 'gk-channel-icon' }, [icon('plus', { size: 14 })]), el('span', {}, 'Novo canal')]);
     body.appendChild(addBtn);
   }
 }
@@ -532,7 +533,7 @@ function confirmJoinVoiceChannel(serverId, ch) {
     el('button', {
       class: 'gk-btn gk-btn-primary',
       onclick: () => { overlay.classList.remove('gk-open'); joinVoiceChannel(serverId, ch.id, ch.name); },
-    }, '🔊 Entrar'),
+    }, [icon('speaker', { size: 15 }), ' Entrar']),
   ]));
   overlay.classList.add('gk-open');
 }
@@ -589,7 +590,7 @@ function renderMembersPanel(cache, serverId) {
         class: 'gk-member-role-btn',
         title: role === 'admin' ? 'Remover cargo de administrador' : 'Tornar administrador (pode criar canais)',
         onclick: (e) => { e.stopPropagation(); setMemberRole(serverId, m.uid, role === 'admin' ? 'member' : 'admin'); },
-      }, role === 'admin' ? '★' : '☆'));
+      }, [icon(role === 'admin' ? 'starFilled' : 'starOutline', { size: 14 })]));
     }
 
     const row = el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, rowChildren);
@@ -630,7 +631,7 @@ export function openCreateChannelModal(serverId, categories) {
     el('div', {}, [el('div', { class: 'gk-type-name' }, 'Texto'), el('div', { class: 'gk-type-desc' }, 'Mensagens, imagens e GIFs')]),
   ]);
   const voiceOption = el('button', { type: 'button', class: 'gk-type-option', onclick: () => selectType('voice') }, [
-    el('span', { class: 'gk-type-icon', html: '&#128266;' }),
+    el('span', { class: 'gk-type-icon' }, [icon('speaker', { size: 18 })]),
     el('div', {}, [el('div', { class: 'gk-type-name' }, 'Voz'), el('div', { class: 'gk-type-desc' }, 'Conversa por áudio e vídeo')]),
   ]);
 
@@ -638,7 +639,7 @@ export function openCreateChannelModal(serverId, categories) {
     selectedType = type;
     textOption.classList.toggle('gk-active', type === 'text');
     voiceOption.classList.toggle('gk-active', type === 'voice');
-    prefixEl.innerHTML = type === 'text' ? '#' : '&#128266;';
+    prefixEl.innerHTML = type === 'text' ? '#' : iconHtml('speaker', { size: 15 });
   }
 
   const catSelect = el('select', { class: 'gk-select' },
@@ -698,7 +699,7 @@ export function openChannelPermissionsModal(serverId, channel) {
     const current = lastChannels.find((c) => c.id === channel.id) || channel;
     const roles = getRoles();
 
-    modal.appendChild(el('h2', {}, `Permissões — ${current.type === 'text' ? '#' : '🔊'} ${current.name}`));
+    modal.appendChild(el('h2', {}, ['Permissões — ', current.type === 'text' ? '#' : icon('speaker', { size: 16 }), ` ${current.name}`]));
     modal.appendChild(el('p', { class: 'gk-modal-sub' }, 'Restrinja este canal por cargo. Sem nenhuma marcação, o canal fica visível a todo mundo (dono e admin sempre veem tudo).'));
 
     if (roles.length === 0) {
@@ -711,18 +712,18 @@ export function openChannelPermissionsModal(serverId, channel) {
       const permCols = perms.map((perm) => {
         const value = overwrite[perm.key] || 'neutral';
         const btnRow = el('div', { class: 'gk-tri-toggle' }, [
-          triBtn('✕', 'deny', value === 'deny'),
-          triBtn('–', 'neutral', value !== 'allow' && value !== 'deny'),
-          triBtn('✓', 'allow', value === 'allow'),
+          triBtn('close', 'deny', value === 'deny'),
+          triBtn('minus', 'neutral', value !== 'allow' && value !== 'deny'),
+          triBtn('check', 'allow', value === 'allow'),
         ]);
-        function triBtn(label, val, active) {
+        function triBtn(iconName, val, active) {
           return el('button', {
             type: 'button', class: 'gk-tri-toggle-btn' + (active ? ' gk-active' : ''),
             onclick: async () => {
               await setChannelOverwrite(serverId, current.id, role.id, perm.key, val === 'neutral' ? null : val);
               render();
             },
-          }, label);
+          }, [icon(iconName, { size: 13 })]);
         }
         return el('div', { class: 'gk-channel-overwrite-perm' }, [
           el('div', { class: 'gk-hint' }, perm.label),
@@ -786,7 +787,7 @@ export function openCreateServerModal() {
         type: 'button', class: 'gk-type-option',
         onclick: () => { chosenTemplate = key; step = 'details'; renderStep(); },
       }, [
-        el('span', { class: 'gk-type-icon' }, tpl.icon),
+        el('span', { class: 'gk-type-icon' }, [icon(tpl.icon, { size: 18 })]),
         el('div', {}, [
           el('div', { class: 'gk-type-name' }, tpl.label),
           el('div', { class: 'gk-type-desc' }, tpl.desc),
@@ -825,7 +826,7 @@ export function openCreateServerModal() {
 
     const tpl = SERVER_TEMPLATES[chosenTemplate] || SERVER_TEMPLATES.custom;
     modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
-      el('div', { class: 'gk-modal-icon' }, tpl.icon),
+      el('div', { class: 'gk-modal-icon' }, [icon(tpl.icon, { size: 20 })]),
       el('div', {}, [
         el('h2', {}, 'Personalize seu servidor'),
         el('p', { class: 'gk-modal-sub' }, `Template: ${tpl.label}.`),
@@ -835,7 +836,7 @@ export function openCreateServerModal() {
     modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
     modal.appendChild(el('div', { class: 'gk-field' }, [
       el('label', {}, 'Descrição'), descInput,
-      el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel 👥 Membros.'),
+      el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel Membros.'),
     ]));
 
     const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
@@ -862,7 +863,7 @@ export function openCreateServerModal() {
     });
 
     modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 'template'; renderStep(); } }, '← Voltar'),
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 'template'; renderStep(); } }, [icon('chevronLeft', { size: 14 }), ' Voltar']),
       createBtn,
     ]));
     nameInput.focus();

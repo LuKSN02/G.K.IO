@@ -16,6 +16,7 @@ import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName 
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
+import { icon } from './icons.js';
 
 let pendingFile = null;
 let lastSeenMessageId = null;
@@ -149,7 +150,7 @@ function renderMessages(messages) {
 
   if (messages.length === 0) {
     box.appendChild(el('div', { class: 'gk-empty-state' }, [
-      el('div', { class: 'gk-emoji' }, '💬'),
+      el('div', { class: 'gk-emoji' }, [icon('chatBubble', { size: 32 })]),
       el('div', {}, 'Nenhuma mensagem ainda. Diga oi!'),
     ]));
     return;
@@ -173,7 +174,7 @@ function renderMessages(messages) {
         el('div', { class: 'gk-msg-body' }, [
           el('div', { class: 'gk-msg-head' }, [
             el('span', { class: 'gk-author', onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
-            msg.authorRole === 'prime' ? el('span', { class: 'gk-badge-prime', title: 'G.K.IO Prime' }, '◆') : null,
+            msg.authorRole === 'prime' ? el('span', { class: 'gk-badge-prime', title: 'G.K.IO Prime' }, [icon('diamond', { size: 12 })]) : null,
             msg.authorTag ? el('span', { class: 'gk-author-tag' }, msg.authorTag) : null,
             el('span', { class: 'gk-time' }, formatTime(msg.createdAt)),
           ]),
@@ -198,13 +199,13 @@ function renderMessages(messages) {
         el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Reagir',
           onclick: (e) => openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)),
-        }, '😊'),
+        }, [icon('emojiSmile', { size: 15 })]),
       ];
       if (isOwn) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Editar mensagem',
           onclick: () => startEditMessage(msg.id, msg.content || ''),
-        }, '✎'));
+        }, [icon('edit', { size: 14 })]));
       }
       row.appendChild(el('div', { class: 'gk-msg-actions' }, actionButtons));
     }
@@ -222,7 +223,7 @@ function renderMessages(messages) {
         body.appendChild(el('div', { class: 'gk-msg-attachment' }, [el('video', { src: msg.attachmentUrl, controls: 'true' })]));
       } else {
         body.appendChild(el('a', { class: 'gk-msg-file', href: msg.attachmentUrl, target: '_blank' }, [
-          el('span', { html: '&#128206;' }), el('span', {}, msg.attachmentName || 'Arquivo anexado'),
+          icon('attach', { size: 14 }), el('span', {}, msg.attachmentName || 'Arquivo anexado'),
         ]));
       }
     }

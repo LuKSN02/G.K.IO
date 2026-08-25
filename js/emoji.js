@@ -14,6 +14,7 @@ import {
 import { state, el, toast } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { giphyConfig } from './gif-config.js';
+import { icon } from './icons.js';
 
 // ---------- Emojis nativos (curadoria por categoria) ----------
 const EMOJI_CATEGORIES = {
@@ -150,10 +151,10 @@ function closePicker() {
 function buildPanel() {
   panelEl = el('div', { class: 'gk-emoji-picker', id: 'gk-emoji-picker' });
 
-  gifsTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, '🎬 GIFs');
+  gifsTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, [icon('clapperboard', { size: 15 }), ' GIFs']);
   const tabs = el('div', { class: 'gk-emoji-picker-tabs' }, [
-    el('button', { class: 'gk-emoji-tab gk-active', 'data-tab': 'emojis', onclick: () => switchTab('emojis') }, '😀 Emojis'),
-    el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, '⭐ Personalizados'),
+    el('button', { class: 'gk-emoji-tab gk-active', 'data-tab': 'emojis', onclick: () => switchTab('emojis') }, [icon('emojiSmile', { size: 15 }), ' Emojis']),
+    el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, [icon('starOutline', { size: 15 }), ' Personalizados']),
     gifsTabBtn,
   ]);
 
@@ -216,7 +217,7 @@ function renderCustomTab() {
   const filter = searchInputEl.value.trim().toLowerCase();
   const uploadTile = el('button', {
     class: 'gk-emoji-upload-tile', title: 'Enviar novo emoji', type: 'button', onclick: triggerUpload,
-  }, '➕');
+  }, [icon('plus', { size: 20 })]);
   const grid = el('div', { class: 'gk-emoji-grid gk-emoji-grid-custom' }, [uploadTile]);
   const list = [...customEmojiCache.values()].filter((e) => !filter || e.name.includes(filter));
   bodyEl.appendChild(grid);

@@ -35,6 +35,7 @@ import { state, el, toast, fallbackAvatar } from './state.js';
 import { getMediaPrefs } from './prefs.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
+import { icon, iconHtml } from './icons.js';
 
 let room = null;               // instância única do LiveKit Room — só uma chamada ativa por vez
 let unsubIncoming = null;
@@ -65,7 +66,7 @@ function buildVideoSpotlight() {
   const closeBtn = el('button', {
     class: 'gk-video-spotlight-close', title: 'Sair da tela cheia (Esc)',
     onclick: (e) => { e.stopPropagation(); closeVideoSpotlight(); },
-  }, '✕');
+  }, [icon('close', { size: 16 })]);
   spotlightOverlayEl = el('div', { class: 'gk-video-spotlight-overlay', id: 'gk-video-spotlight-overlay' }, [
     spotlightVideoEl, spotlightLabelEl, closeBtn,
   ]);
@@ -444,8 +445,8 @@ function promptIncomingCall(call) {
       el('div', { class: 'gk-incoming-call-sub' }, call.withVideo ? 'Chamada de vídeo recebida' : 'Chamada de voz recebida'),
     ]));
     card.appendChild(el('div', { class: 'gk-incoming-call-actions' }, [
-      el('button', { class: 'gk-incoming-call-btn gk-incoming-decline', title: 'Recusar', onclick: () => declineIncomingCall(call) }, '☎'),
-      el('button', { class: 'gk-incoming-call-btn gk-incoming-accept', title: 'Atender', onclick: () => acceptIncomingCall(call, caller) }, call.withVideo ? '🎥' : '📞'),
+      el('button', { class: 'gk-incoming-call-btn gk-incoming-decline', title: 'Recusar', onclick: () => declineIncomingCall(call) }, [icon('phoneEnd', { size: 20 })]),
+      el('button', { class: 'gk-incoming-call-btn gk-incoming-accept', title: 'Atender', onclick: () => acceptIncomingCall(call, caller) }, [icon(call.withVideo ? 'videoCall' : 'phoneCall', { size: 20 })]),
     ]));
     overlay.classList.add('gk-open');
   });
@@ -453,19 +454,14 @@ function promptIncomingCall(call) {
 
 async function acceptIncomingCall(call, caller) {
   document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
-  // Fallback defensivo: documentos antigos de `calls/` (de antes da migração
-  // para o LiveKit) podem não ter o campo `roomName` salvo — nesse caso,
-  // recalculamos a partir do dmId (mesma convenção usada em startDmCall),
-  // que sempre existe, em vez de mandar `room: undefined` pro token-server.
-  const roomName = call.roomName || `dm-${call.dmId}`;
   const peer = { uid: call.callerId, displayName: caller.displayName || caller.username, avatarUrl: caller.avatarUrl || '' };
-  state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName };
+  state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName: call.roomName };
 
   openCallScreen({ peer, withVideo: call.withVideo, statusText: 'Conectando...' });
 
   try {
     await connectToRoom({
-      roomName, withVideo: call.withVideo,
+      roomName: call.roomName, withVideo: call.withVideo,
       metadata: { displayName: state.user.displayName || state.user.username, avatarUrl: state.user.avatarUrl || '' },
     });
   } catch (e) {
@@ -609,7 +605,7 @@ function renderVoiceMembersList(channelId, participantsMap) {
     }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
       el('span', {}, m.displayName),
-      m.muted ? el('span', { class: 'gk-voice-member-mic-off', title: 'Mutado' }, '🔇') : null,
+      m.muted ? el('span', { class: 'gk-voice-member-mic-off', title: 'Mutado' }, [icon('micOff', { size: 12 })]) : null,
     ]));
   });
 }
@@ -646,8 +642,8 @@ function renderParticipantsGridFromParticipants(participantsMap) {
       el('div', { class: 'gk-call-tile-avatar-wrap' }, [el('img', { src: data.avatarUrl || fallbackAvatar(data.displayName) })]),
       el('div', { class: 'gk-call-tile-name' }, data.displayName || 'Membro'),
       el('div', { class: 'gk-call-tile-sharing-badge' }, 'Compartilhando tela'),
-      el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, '🔇'),
-      el('div', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
+      el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, [icon('micOff', { size: 13 })]),
+      el('div', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
       isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
     ]);
     grid.appendChild(tile);
@@ -796,7 +792,7 @@ function renderLocalScreenTile(track) {
     }, [
       videoEl,
       el('span', { class: 'gk-screenshare-label' }, 'Sua tela'),
-      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
+      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
     ]);
     grid.appendChild(tile);
   }
@@ -821,7 +817,7 @@ function renderRemoteScreenTile(otherUid, videoEl, userData) {
     }, [
       videoEl,
       el('span', { class: 'gk-screenshare-label' }, label),
-      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, '⤢')]),
+      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
     ]);
     grid.appendChild(tile);
   }
@@ -978,10 +974,10 @@ function expandCallScreen() {
 }
 
 function updateMuteButtons(muted) {
-  const icon = muted ? '🔇' : '🎤';
+  const html = iconHtml(muted ? 'micOff' : 'mic');
   ['gk-call-mute-btn', 'gk-call-bar-mute-btn'].forEach((id) => {
     const btn = document.getElementById(id);
-    if (btn) btn.textContent = icon;
+    if (btn) btn.innerHTML = html;
   });
 }
 
@@ -989,7 +985,7 @@ function updateCameraButtons(on) {
   const btn = document.getElementById('gk-call-camera-btn');
   if (!btn) return;
   btn.style.display = state.activeCall ? 'flex' : 'none';
-  btn.textContent = on ? '🎥' : '📷';
+  btn.innerHTML = iconHtml(on ? 'videoCall' : 'camera');
   btn.title = on ? 'Desativar câmera' : 'Ativar câmera';
   btn.classList.toggle('gk-active', !!on);
 }

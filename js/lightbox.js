@@ -2,6 +2,7 @@
 // G.K.IO — Lightbox de imagens (clique para dar zoom, estilo Discord)
 // ============================================================
 import { el } from './state.js';
+import { icon } from './icons.js';
 
 let overlayEl = null;
 let imgEl = null;
@@ -11,11 +12,11 @@ function buildLightbox() {
   const closeBtn = el('button', {
     class: 'gk-lightbox-close', title: 'Fechar (Esc)',
     onclick: (e) => { e.stopPropagation(); closeLightbox(); },
-  }, '✕');
+  }, [icon('close', { size: 18 })]);
   const openBtn = el('a', {
     class: 'gk-lightbox-open', title: 'Abrir em nova aba', target: '_blank', rel: 'noopener',
     onclick: (e) => e.stopPropagation(),
-  }, '↗');
+  }, [icon('externalLink', { size: 18 })]);
 
   overlayEl = el('div', { class: 'gk-lightbox-overlay', id: 'gk-lightbox-overlay' }, [
     closeBtn, openBtn, imgEl,

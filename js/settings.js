@@ -8,17 +8,18 @@ import { state, el, toast, fallbackAvatar } from './state.js';
 import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
+import { icon } from './icons.js';
 
 const SECTIONS = [
-  { id: 'perfil', label: 'Perfil', icon: '🧑‍🚀' },
-  { id: 'audio-video', label: 'Áudio & Vídeo', icon: '🎙️' },
-  { id: 'aparencia', label: 'Aparência', icon: '🎨' },
-  { id: 'notificacoes', label: 'Notificações', icon: '🔔' },
-  { id: 'prime', label: 'G.K.IO Prime', icon: '◆' },
+  { id: 'perfil', label: 'Perfil', icon: 'user' },
+  { id: 'audio-video', label: 'Áudio & Vídeo', icon: 'mic' },
+  { id: 'aparencia', label: 'Aparência', icon: 'palette' },
+  { id: 'notificacoes', label: 'Notificações', icon: 'bell' },
+  { id: 'prime', label: 'G.K.IO Prime', icon: 'diamond' },
 ];
 // Só aparece pra quem tem isAdmin: true no próprio doc (setado manualmente
 // no console do Firebase — ver firestore.rules, isAdminUser()).
-const ADMIN_SECTION = { id: 'admin', label: 'Administração', icon: '🛠️' };
+const ADMIN_SECTION = { id: 'admin', label: 'Administração', icon: 'wrench' };
 function visibleSections() {
   return state.user?.isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
 }
@@ -63,7 +64,7 @@ function renderNav() {
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
       onclick: () => { stopMicTest(); stopCamTest(); activeSection = s.id; renderNav(); renderSection(); },
-    }, [el('span', { class: 'gk-settings-nav-icon' }, s.icon), el('span', {}, s.label)]));
+    }, [el('span', { class: 'gk-settings-nav-icon' }, [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
 }
 
@@ -125,7 +126,7 @@ async function renderPerfilSection(content) {
     class: 'gk-settings-avatar-preview',
   });
   const avatarInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
-  const avatarWrap = el('div', { class: 'gk-settings-avatar-wrap', onclick: () => avatarInput.click() }, [avatarPreview, el('div', { class: 'gk-settings-avatar-edit' }, '✎')]);
+  const avatarWrap = el('div', { class: 'gk-settings-avatar-wrap', onclick: () => avatarInput.click() }, [avatarPreview, el('div', { class: 'gk-settings-avatar-edit' }, [icon('edit', { size: 13 })])]);
   avatarInput.addEventListener('change', () => {
     if (avatarInput.files[0]) {
       pendingAvatar = avatarInput.files[0];
@@ -153,12 +154,12 @@ async function renderPerfilSection(content) {
     linksList.innerHTML = '';
     for (const link of links) {
       linksList.appendChild(el('div', { class: 'gk-settings-link-row' }, [
-        el('span', {}, SOCIAL_ICONS[link.platform] || '🔗'),
+        el('span', {}, [icon(SOCIAL_ICONS[link.platform] || 'link', { size: 15 })]),
         el('input', { type: 'text', value: link.url, style: 'flex:1;', oninput: (e) => { link.url = e.target.value; link._edited = true; } }),
         el('button', {
           class: 'gk-btn gk-btn-danger', style: 'padding:6px 9px;',
           onclick: () => { links.splice(links.indexOf(link), 1); if (link.id) link._deleted = true; renderLinksList(); },
-        }, '✕'),
+        }, [icon('close', { size: 13 })]),
       ]));
     }
   }
@@ -333,15 +334,15 @@ function renderAparenciaSection(content) {
   const prefs = getThemePrefs();
 
   const modes = [
-    { id: 'light', label: 'Claro', icon: '☀️' },
-    { id: 'dark', label: 'Escuro', icon: '🌙' },
-    { id: 'auto', label: 'Automático', icon: '🖥️' },
+    { id: 'light', label: 'Claro', icon: 'sun' },
+    { id: 'dark', label: 'Escuro', icon: 'moon' },
+    { id: 'auto', label: 'Automático', icon: 'screenShare' },
   ];
   const modeRow = el('div', { class: 'gk-theme-mode-row' }, modes.map((m) =>
     el('div', {
       class: 'gk-theme-mode-btn' + (prefs.mode === m.id ? ' gk-active' : ''),
       onclick: () => { setThemeMode(m.id); renderSection(); },
-    }, [el('span', {}, m.icon), el('span', {}, m.label)])
+    }, [el('span', {}, [icon(m.icon, { size: 16 })]), el('span', {}, m.label)])
   ));
 
   const isPrime = state.user.role === 'prime';
@@ -357,7 +358,7 @@ function renderAparenciaSection(content) {
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, [
       'Cor de destaque',
-      !isPrime ? el('span', { class: 'gk-settings-card-title-hint' }, '  ·  cores ◆ exigem Prime') : null,
+      !isPrime ? el('span', { class: 'gk-settings-card-title-hint' }, [icon('diamond', { size: 12 }), ' cores exigem Prime']) : null,
     ]),
     swatchRow,
   ]));
@@ -372,7 +373,7 @@ function buildAccentSwatch(key, a, prefs, locked) {
       if (locked) { toast('Essa cor é exclusiva para assinantes G.K.IO Prime.', 'danger'); return; }
       setAccent(key); renderSection();
     },
-  }, locked ? '🔒' : (prefs.accent === key ? '✓' : ''));
+  }, [locked ? icon('lock', { size: 13 }) : (prefs.accent === key ? icon('check', { size: 13 }) : null)]);
 }
 
 // ============================================================
@@ -416,7 +417,7 @@ function renderPrimeSection(content) {
 // ---------- Visão de quem ainda não é Prime ----------
 function renderPrimeLockedView(content) {
   content.appendChild(el('div', { class: 'gk-settings-card gk-prime-upsell' }, [
-    el('div', { class: 'gk-prime-upsell-icon' }, '◆'),
+    el('div', { class: 'gk-prime-upsell-icon' }, [icon('diamond', { size: 28 })]),
     el('div', { class: 'gk-prime-upsell-title' }, 'Você ainda não é Prime'),
     el('div', { class: 'gk-prime-upsell-sub' },
       'Assinantes Prime ganham moldura de avatar animada, tag personalizada ao lado do nome, cores de destaque exclusivas e limites maiores de upload de emoji.'),
@@ -435,7 +436,7 @@ function renderPrimeActiveView(content) {
   });
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
-    el('div', { class: 'gk-settings-card-title' }, '◆ Membro Prime'),
+    el('div', { class: 'gk-settings-card-title' }, [icon('diamond', { size: 14 }), ' Membro Prime']),
     el('div', { class: 'gk-hint' }, primeSinceLabel(state.user.primeSince)),
   ]));
 
