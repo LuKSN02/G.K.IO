@@ -453,14 +453,19 @@ function promptIncomingCall(call) {
 
 async function acceptIncomingCall(call, caller) {
   document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
+  // Fallback defensivo: documentos antigos de `calls/` (de antes da migração
+  // para o LiveKit) podem não ter o campo `roomName` salvo — nesse caso,
+  // recalculamos a partir do dmId (mesma convenção usada em startDmCall),
+  // que sempre existe, em vez de mandar `room: undefined` pro token-server.
+  const roomName = call.roomName || `dm-${call.dmId}`;
   const peer = { uid: call.callerId, displayName: caller.displayName || caller.username, avatarUrl: caller.avatarUrl || '' };
-  state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName: call.roomName };
+  state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName };
 
   openCallScreen({ peer, withVideo: call.withVideo, statusText: 'Conectando...' });
 
   try {
     await connectToRoom({
-      roomName: call.roomName, withVideo: call.withVideo,
+      roomName, withVideo: call.withVideo,
       metadata: { displayName: state.user.displayName || state.user.username, avatarUrl: state.user.avatarUrl || '' },
     });
   } catch (e) {
