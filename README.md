@@ -52,6 +52,29 @@ Observacao: o Firebase Storage nao e usado neste setup porque, desde o final de 
    - Salve
 4. Abra js/cloudinary-config.js e cole o cloud name e o nome do preset.
 
+## 2.2. Notificações push (só relevante se você empacotar um APK)
+
+No navegador, notificação já funciona sem nada extra (Configurações ->
+Notificações -> ativa "Notificações no desktop") enquanto a aba estiver
+aberta. Para notificação de verdade num **APK** (chegando com o app
+fechado/em segundo plano), é preciso:
+
+1. No projeto Android (Capacitor), instalar o plugin oficial
+   `@capacitor/push-notifications` e colocar o `google-services.json`
+   do Firebase (Configurações do projeto -> seus apps -> app Android)
+   em `android/app/`.
+2. Seguir as instruções no topo de `cloudflare-worker/push-server.js`
+   para publicar o Worker que efetivamente dispara o push via FCM
+   (mesmo motivo do Worker do LiveKit: Cloud Functions do Firebase
+   exigem o plano pago Blaze, isso aqui não).
+3. Colar a URL do Worker publicado em `js/push-config.js`.
+4. Publicar as `firestore.rules` atualizadas (o campo `fcmToken` no
+   doc do usuário precisa estar liberado pela regra).
+
+Sem isso configurado, o app funciona normalmente — só não envia push;
+`js/push.js` detecta a ausência de configuração e não faz nada (fica
+em silêncio, sem quebrar o resto do app).
+
 ## 3. Rodando localmente
 
 Como o app usa ES Modules (script type="module") e importa o SDK do Firebase, ele precisa ser servido por HTTP (abrir o index.html direto como file:// nao funciona).
@@ -76,6 +99,7 @@ npx serve gkio
 - Chamadas de voz/video em DM: peer-to-peer via WebRTC, sinalizacao por Firestore.
 - Canais de voz em servidor: conexao em malha (mesh) entre participantes, boa para grupos pequenos (2-5 pessoas).
 - Presenca: online / ausente / nao perturbe / offline, refletida no anel do avatar.
+- Notificacoes push (FCM) em builds APK via Capacitor, com deep-link pra DM ao tocar na notificacao (ver secao 2.2).
 
 ## 5. Limitacoes conhecidas deste MVP (e como evoluir)
 
@@ -86,6 +110,8 @@ npx serve gkio
 | Sem cargos/permissoes granular | Fora do escopo do MVP | Colecao roles + bitmask de permissoes |
 | Sem compartilhamento de tela | Fora do escopo do MVP | getDisplayMedia() + troca de track no RTCPeerConnection existente |
 | Regras do Firestore sao um ponto de partida | Priorizam simplicidade para o MVP | Validacao de schema por campo + Firebase App Check antes de um lancamento mais amplo |
+| Push de canal so abre o servidor, nao o canal exato | Selecionar canal depende do listener de canais (async) ja estar carregado | Guardar nome/id do canal direto no payload e aguardar o snapshot antes de chamar selectChannel |
+| Push so cobre DM e canal de texto | Escopo inicial | Notificar tambem em @mencoes, reacoes, chamada recebida |
 
 ## 6. Identidade visual
 

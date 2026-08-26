@@ -71,7 +71,7 @@ service cloud.firestore {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','tag','frameStyle','username'])
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','tag','frameStyle','username','fcmToken'])
           // username só pode mudar para um valor no formato válido — a
           // checagem de "já está em uso" é feita no client (settings.js)
           // antes de chamar updateDoc; aqui é só a validação de formato.
