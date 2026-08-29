@@ -248,8 +248,8 @@ function renderFriendsTab(list) {
     return;
   }
   friends.sort((a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username));
-  for (const f of friends) {
-    list.appendChild(el('div', { class: 'gk-friend-card' }, [
+  friends.forEach((f, i) => {
+    list.appendChild(el('div', { class: 'gk-friend-card', style: `animation-delay:${Math.min(i, 8) * 25}ms;` }, [
       el('div', { class: 'gk-avatar gk-sz-40', 'data-status': f.statusPresence || 'offline', 'data-frame': f.frameStyle || 'none' }, [
         el('img', { src: f.avatarUrl || fallbackAvatar(f.username) }),
       ]),
@@ -261,7 +261,7 @@ function renderFriendsTab(list) {
         el('button', { class: 'gk-friend-action-btn', title: 'Enviar mensagem', type: 'button', onclick: () => openOrCreateDm(f.uid) }, [icon('chatBubble', { size: 15 })]),
       ]),
     ]));
-  }
+  });
 }
 
 function renderPendingTab(list) {
@@ -274,8 +274,8 @@ function renderPendingTab(list) {
     ]));
     return;
   }
-  for (const req of incoming) {
-    list.appendChild(el('div', { class: 'gk-friend-card' }, [
+  incoming.forEach((req, i) => {
+    list.appendChild(el('div', { class: 'gk-friend-card', style: `animation-delay:${Math.min(i, 8) * 25}ms;` }, [
       el('div', { class: 'gk-avatar gk-sz-40', 'data-status': 'offline', 'data-frame': req.frameStyle || 'none' }, [
         el('img', { src: req.avatarUrl || fallbackAvatar(req.username) }),
       ]),
@@ -288,7 +288,7 @@ function renderPendingTab(list) {
         el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', type: 'button', onclick: () => declineFriendRequest(req.friendshipId) }, [icon('close', { size: 15 })]),
       ]),
     ]));
-  }
+  });
 }
 
 // Liga as abas ("Amigos" / "Pedidos") e o botão "+ Adicionar amigo" da

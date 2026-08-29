@@ -275,7 +275,13 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-empty-state .gk-emoji { font-size: 38px; margin-bottom: 10px; }
 
 /* ---------- Tela "Amigos" (home das DMs, estilo Discord) ---------- */
-.gk-friends-home { flex: 1; overflow-y: auto; display: flex; padding: 28px 22px; }
+.gk-friends-home {
+  flex: 1; overflow-y: auto; display: flex; padding: 28px 22px;
+  background-image:
+    radial-gradient(circle at 10% -10%, var(--gk-accent-soft), transparent 40%),
+    radial-gradient(circle at 100% 110%, rgba(62,166,245,0.08), transparent 45%);
+  background-repeat: no-repeat;
+}
 .gk-friends-home-inner { width: 100%; max-width: 640px; margin: auto; display: flex; flex-direction: column; gap: 18px; }
 
 .gk-friends-home-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -294,25 +300,30 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   font-family: var(--gk-font-mono); font-size: 10.5px; line-height: 1;
 }
 
-.gk-friends-home-list { display: flex; flex-direction: column; gap: 2px; }
+.gk-friends-home-list { display: flex; flex-direction: column; }
 .gk-friends-list-label {
+  display: flex; align-items: center; gap: 10px;
   font-family: var(--gk-font-display); font-weight: 600; font-size: 11.5px; letter-spacing: 0.04em;
   color: var(--gk-gray-500); text-transform: uppercase; padding: 8px 10px 10px;
 }
+.gk-friends-list-label::after { content: ''; flex: 1; height: 1px; background: var(--gk-gray-100); }
 
 .gk-friend-card {
-  display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: var(--gk-radius-md);
-  border-bottom: 1px solid var(--gk-gray-100); transition: background var(--gk-transition);
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--gk-radius-md);
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-100); margin-bottom: 8px;
+  animation: gk-friend-card-in 220ms cubic-bezier(.2,.8,.2,1) both;
+  transition: border-color var(--gk-transition), box-shadow var(--gk-transition), transform var(--gk-transition);
 }
-.gk-friend-card:hover { background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); }
-.gk-friend-card:last-child { border-bottom: none; }
+@keyframes gk-friend-card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.gk-friend-card:last-child { margin-bottom: 0; }
+.gk-friend-card:hover { border-color: var(--gk-accent-soft); box-shadow: var(--gk-shadow-md); transform: translateY(-1px); }
 .gk-friend-card .gk-friend-info { min-width: 0; flex: 1; cursor: pointer; }
 .gk-friend-card .gk-friend-name { font-weight: 600; font-size: 14.5px; color: var(--gk-gray-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gk-friend-card .gk-friend-sub { font-size: 12.5px; color: var(--gk-gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gk-friend-card .gk-friend-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .gk-friend-action-btn {
   display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
-  border-radius: 50%; background: var(--gk-surface); border: 1px solid var(--gk-gray-100);
+  border-radius: 50%; background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100);
   color: var(--gk-gray-600); font-size: 14px; transition: background var(--gk-transition), color var(--gk-transition);
 }
 .gk-friend-action-btn:hover { background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
