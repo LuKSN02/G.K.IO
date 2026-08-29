@@ -125,13 +125,13 @@ export function wireAuthForm() {
       sub.textContent = 'Bem-vindo de volta. Entre com seu e-mail e senha.';
       usernameField.style.display = 'none';
       submitBtn.textContent = 'Entrar';
-      modeToggle.textContent = 'Não tem conta? Criar conta';
+      modeToggle.innerHTML = 'Não tem conta? <span class="gk-auth-toggle-action">Criar conta</span>';
     } else {
       title.textContent = 'Criar conta no G.K.IO';
       sub.textContent = 'Escolha um nome de usuário para começar.';
       usernameField.style.display = 'block';
       submitBtn.textContent = 'Criar conta';
-      modeToggle.textContent = 'Já tem conta? Entrar';
+      modeToggle.innerHTML = 'Já tem conta? <span class="gk-auth-toggle-action">Entrar</span>';
     }
     errorBox.style.display = 'none';
   }

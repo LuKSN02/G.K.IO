@@ -783,9 +783,13 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-auth-card .gk-modal-sub { font-size: 13px; color: var(--gk-gray-500); margin: 0 0 20px; } /* .gk-modal-sub só era estilizado dentro de .gk-modal — aqui não pegava nada */
 .gk-auth-toggle {
   text-align: center; margin-top: 16px; font-size: 13px;
-  color: var(--gk-gray-500); cursor: pointer; transition: color var(--gk-transition);
+  color: var(--gk-gray-500); cursor: pointer;
 }
-.gk-auth-toggle:hover { color: var(--gk-accent-strong); text-decoration: underline; }
+.gk-auth-toggle-action {
+  color: var(--gk-accent); font-weight: 600;
+  transition: color var(--gk-transition);
+}
+.gk-auth-toggle:hover .gk-auth-toggle-action { color: var(--gk-accent-strong); text-decoration: underline; }
 
 /* ---------- Cartão / modal de perfil público ---------- */
 .gk-profile-modal {
@@ -1173,7 +1177,11 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100);
   border-radius: var(--gk-radius-md); padding: 18px; margin-bottom: 16px;
 }
-.gk-settings-card-title { font-weight: 700; font-size: 13.5px; color: var(--gk-gray-800); margin-bottom: 12px; }
+.gk-settings-card > *:last-child { margin-bottom: 0; } /* evita somar a margem do último campo à padding do card */
+.gk-settings-card-title {
+  display: flex; align-items: center;
+  font-weight: 700; font-size: 13.5px; color: var(--gk-gray-800); margin-bottom: 12px;
+}
 .gk-settings-save-row { display: flex; justify-content: flex-end; }
 
 .gk-settings-banner {
@@ -1559,6 +1567,8 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-settings-card-title-hint {
   font-size: 11px; font-weight: 500; color: var(--gk-gray-500);
   text-transform: none; letter-spacing: 0;
+  margin-left: auto; padding-left: 10px; /* estava colado no texto do título, sem nenhum espaço entre os dois */
+  display: inline-flex; align-items: center;
 }
 
 /* ============================================================
