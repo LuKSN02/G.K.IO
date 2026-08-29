@@ -138,11 +138,17 @@ async function getGoogleAccessToken(env) {
 }
 
 // Converte o PEM da service account (PKCS8) numa CryptoKey importável.
+// Aceita tanto quebras de linha reais quanto sequências literais "\n"
+// (2 caracteres: barra invertida + n) — isso acontece quando a chave é
+// copiada de um editor de texto comum a partir do .json, onde o campo
+// aparece como "...\nMIIEv...\n..." em vez de já vir com Enter de verdade.
+// Sem esse tratamento, o resultado dava erro "Invalid PKCS8 input".
 async function importPrivateKey(pem) {
   const clean = pem
     .replace(/-----BEGIN PRIVATE KEY-----/, '')
     .replace(/-----END PRIVATE KEY-----/, '')
-    .replace(/\s/g, '');
+    .replace(/\\n/g, '') // sequência literal "\n" (barra + n) colada como texto
+    .replace(/\s/g, ''); // quebras de linha/espaços reais
   const bytes = b64urlToUint8(clean.replace(/-/g, '+').replace(/_/g, '/'));
   return crypto.subtle.importKey('pkcs8', bytes, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
 }
