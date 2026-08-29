@@ -779,6 +779,13 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-auth-logo .gk-wordmark { font-family: var(--gk-font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
 .gk-auth-logo .gk-wordmark span { color: var(--gk-accent); }
+#gk-auth-title { font-size: 20px; margin: 0 0 6px; } /* estava sem tamanho/margem definidos, herdando o default do navegador */
+.gk-auth-card .gk-modal-sub { font-size: 13px; color: var(--gk-gray-500); margin: 0 0 20px; } /* .gk-modal-sub só era estilizado dentro de .gk-modal — aqui não pegava nada */
+.gk-auth-toggle {
+  text-align: center; margin-top: 16px; font-size: 13px;
+  color: var(--gk-gray-500); cursor: pointer; transition: color var(--gk-transition);
+}
+.gk-auth-toggle:hover { color: var(--gk-accent-strong); text-decoration: underline; }
 
 /* ---------- Cartão / modal de perfil público ---------- */
 .gk-profile-modal {
