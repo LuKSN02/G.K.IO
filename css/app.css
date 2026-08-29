@@ -126,6 +126,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   border-bottom: 1px solid var(--gk-gray-100);
   font-family: var(--gk-font-display);
   font-weight: 600;
+  font-size: 15px; /* alinhado ao .gk-topbar .gk-title, mesmo peso visual */
   color: var(--gk-gray-900);
 }
 .gk-sidebar-header button {
@@ -255,7 +256,13 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   border-bottom: 1px solid var(--gk-gray-100);
 }
 .gk-topbar .gk-title { font-family: var(--gk-font-display); font-weight: 600; font-size: 15px; color: var(--gk-gray-900); }
-.gk-topbar .gk-subtitle { font-size: 12.5px; color: var(--gk-gray-500); }
+.gk-topbar .gk-subtitle {
+  position: relative;
+  margin-left: -4px; padding-left: 10px;
+  border-left: 1px solid var(--gk-gray-200);
+  font-size: 12.5px; color: var(--gk-gray-500);
+}
+.gk-topbar .gk-subtitle:empty { border-left: none; padding-left: 0; margin-left: 0; }
 .gk-topbar .gk-spacer { flex: 1; }
 .gk-topbar button.gk-icon-btn {
   background: none; border: none; color: var(--gk-gray-500); font-size: 17px;
@@ -263,7 +270,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-topbar button.gk-icon-btn:hover { background: var(--gk-surface-sunken); color: var(--gk-accent-strong); }
 
-.gk-messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 2px; }
+.gk-messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 6px; }
 .gk-empty-state { margin: auto; text-align: center; color: var(--gk-gray-500); max-width: 320px; }
 .gk-empty-state .gk-emoji { font-size: 38px; margin-bottom: 10px; }
 
@@ -333,6 +340,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
 /* ---------- Edição de mensagem ---------- */
 .gk-msg-row { position: relative; padding-right: 28px; }
+.gk-msg-row + .gk-msg-row { margin-top: 3px; } /* respiro entre mensagens seguidas do mesmo autor, sem repetir o cabeçalho */
 .gk-msg-actions {
   position: absolute; top: -8px; right: 0; display: flex; gap: 1px;
   background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-sm);
