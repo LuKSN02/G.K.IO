@@ -68,6 +68,7 @@ async function bootstrapUserDoc(uid, username, email) {
     frameStyle: 'none',  // 'none' | 'glacial' | 'aurora'
     customBadges: [],
     isAdmin: false,       // só true se setado manualmente no console — libera a seção Administração
+    fcmToken: null,        // token de push (FCM) do dispositivo — setado por js/push.js no APK
   });
 }
 

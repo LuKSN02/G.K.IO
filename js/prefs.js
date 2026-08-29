@@ -83,5 +83,11 @@ export function showDesktopNotification(title, body, icon) {
   if (!notifPrefs.desktop) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible') return;
-  try { new Notification(title, { body: notifPrefs.preview ? body : 'Nova mensagem', icon }); } catch (e) {}
+  try {
+    const n = new Notification(title, { body: notifPrefs.preview ? body : 'Nova mensagem', icon });
+    // No app de desktop (Electron), clicar na notificação restaura/foca
+    // a janela — no navegador comum, foca a aba. window.focus() é a API
+    // padrão pros dois casos.
+    n.onclick = () => { try { window.focus(); } catch (e) {} };
+  } catch (e) {}
 }

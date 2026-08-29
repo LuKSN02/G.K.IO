@@ -31,20 +31,23 @@ export async function initPushNotifications() {
   const Push = window.Capacitor?.Plugins?.PushNotifications;
   if (!Push) return; // plugin não instalado nessa build do APK ainda
 
-  try {
-    const perm = await Push.checkPermissions();
-    if (perm.receive !== 'granted') {
-      const req = await Push.requestPermissions();
-      if (req.receive !== 'granted') return; // pessoa negou — respeita e não insiste
-    }
-    await Push.register();
-  } catch (e) { return; /* plugin indisponível nessa build — segue sem push */ }
-
+  // IMPORTANTE: os listeners precisam ser registrados ANTES de chamar
+  // Push.register() — o evento 'registration' pode disparar rápido
+  // demais (processo nativo já em andamento) e, se o listener ainda
+  // não estiver anexado, o token se perde silenciosamente. Foi
+  // exatamente isso que fazia o push "não funcionar": permissão
+  // concedida, token gerado do lado nativo, mas nunca capturado nem
+  // salvo no Firestore — então o app nunca tinha o que enviar pro
+  // Worker (por isso nenhum request chegava lá).
   Push.addListener('registration', async (token) => {
-    if (!auth.currentUser || !token?.value) return;
-    try { await updateDoc(userDoc(auth.currentUser.uid), { fcmToken: token.value }); } catch (e) { /* melhor tentar de novo no próximo login do que travar o app */ }
+    toast(`[DEBUG] Token FCM recebido: ${token?.value ? token.value.slice(0, 20) + '...' : '(vazio)'}`);
+    if (!auth.currentUser || !token?.value) { toast('[DEBUG] Sem auth.currentUser ou token vazio — não salvou.'); return; }
+    try {
+      await updateDoc(userDoc(auth.currentUser.uid), { fcmToken: token.value });
+      toast('[DEBUG] fcmToken salvo no Firestore com sucesso.');
+    } catch (e) { toast(`[DEBUG] Falhou ao salvar fcmToken: ${e.message}`); }
   });
-  Push.addListener('registrationError', () => { /* sem sorte nessa tentativa — próximo login tenta de novo */ });
+  Push.addListener('registrationError', (err) => { toast(`[DEBUG] registrationError: ${JSON.stringify(err)}`); });
 
   // App aberto e em primeiro plano na hora que a notificação chega —
   // o Android não mostra a notificação sozinho nesse caso, então
@@ -59,25 +62,48 @@ export async function initPushNotifications() {
     const data = action.notification?.data;
     if (data && onNotificationTap) onNotificationTap(data);
   });
+
+  try {
+    const perm = await Push.checkPermissions();
+    toast(`[DEBUG] checkPermissions: ${perm.receive}`);
+    if (perm.receive !== 'granted') {
+      const req = await Push.requestPermissions();
+      toast(`[DEBUG] requestPermissions: ${req.receive}`);
+      if (req.receive !== 'granted') return; // pessoa negou — respeita e não insiste
+    }
+    toast('[DEBUG] Chamando Push.register()...');
+    await Push.register();
+    toast('[DEBUG] Push.register() retornou sem erro.');
+  } catch (e) { toast(`[DEBUG] Erro em checkPermissions/register: ${e.message}`); return; }
 }
 
 // Best-effort: nunca deixa uma falha no push derrubar o envio da
 // mensagem em si (ver chat.js) — por isso todo erro aqui é engolido.
 async function sendPushToUid(uid, { title, body, data }) {
-  if (!pushConfig.tokenEndpoint || pushConfig.tokenEndpoint.startsWith('COLE_AQUI')) return;
-  if (!auth.currentUser || uid === auth.currentUser.uid) return;
+  if (!pushConfig.tokenEndpoint || pushConfig.tokenEndpoint.startsWith('COLE_AQUI')) {
+    toast('[DEBUG] tokenEndpoint não configurado — abortando envio.');
+    return;
+  }
+  if (!auth.currentUser || uid === auth.currentUser.uid) {
+    toast('[DEBUG] Sem currentUser ou enviando pra si mesmo — abortando.');
+    return;
+  }
   try {
     const snap = await getDoc(userDoc(uid));
     const fcmToken = snap.exists() ? snap.data().fcmToken : null;
+    toast(`[DEBUG] fcmToken do destinatário: ${fcmToken ? fcmToken.slice(0, 20) + '...' : '(ausente)'}`);
     if (!fcmToken) return; // pessoa nunca abriu o APK (ou push ainda não registrou) — nada a fazer
 
     const idToken = await getIdToken(auth.currentUser);
-    await fetch(pushConfig.tokenEndpoint, {
+    toast(`[DEBUG] Enviando POST pra ${pushConfig.tokenEndpoint}`);
+    const res = await fetch(pushConfig.tokenEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
       body: JSON.stringify({ token: fcmToken, title, body, data }),
     });
-  } catch (e) { /* notificação é best-effort — a mensagem já foi enviada de verdade */ }
+    const resBody = await res.text().catch(() => '(sem corpo)');
+    toast(`[DEBUG] Resposta do Worker: status ${res.status} — ${resBody}`);
+  } catch (e) { toast(`[DEBUG] Erro no fetch pro Worker: ${e.message}`); }
 }
 
 // Chamada por chat.js depois de enviar uma DM.

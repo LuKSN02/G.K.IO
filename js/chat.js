@@ -17,10 +17,13 @@ import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
 import { icon } from './icons.js';
+import { notifyDmMessage, notifyChannelMessage } from './push.js';
 
 let pendingFile = null;
 let lastSeenMessageId = null;
 let isFirstSnapshotForConversation = true;
+let currentChannelName = '';
+let currentDmOtherUid = null;
 
 // ---------- Edição de mensagem ----------
 let editingMessageId = null; // id da mensagem sendo editada no momento (ou null)
@@ -34,6 +37,8 @@ export function selectChannel(serverId, channelId, name, readOnly = false) {
   state.currentServerId = serverId;
   state.currentChannelId = channelId;
   state.currentDmId = null;
+  currentChannelName = name;
+  currentDmOtherUid = null;
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
   setBaseSubtitle(readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto');
   document.getElementById('gk-call-btn').style.display = 'none';
@@ -82,12 +87,14 @@ function applyComposerReadOnly(readOnly) {
   textarea.placeholder = readOnly ? 'Você não pode enviar mensagens neste canal.' : 'Escreva uma mensagem...';
 }
 
-export function selectDm(dmId, title, subtitle) {
+export function selectDm(dmId, title, subtitle, otherUid = null) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideFriendsHome();
   state.currentView = 'dms';
   state.currentDmId = dmId;
   state.currentChannelId = null;
+  currentChannelName = '';
+  currentDmOtherUid = otherUid;
   document.getElementById('gk-topbar-title').textContent = title;
   setBaseSubtitle(subtitle || '');
   document.getElementById('gk-call-btn').style.display = 'inline-flex';
@@ -393,15 +400,31 @@ export async function sendCurrentMessage() {
       await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
         lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
       });
+      notifyChannelMessage(otherServerMemberUids(state.currentServerId, uid), {
+        authorName: payload.authorName, preview: text || (payload.attachmentUrl ? 'Enviou um anexo.' : ''),
+        serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
+      });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
       await updateDoc(dmDoc(state.currentDmId), {
         lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: text.slice(0, 80),
       });
+      if (currentDmOtherUid) {
+        notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: text || 'Enviou um anexo.', dmId: state.currentDmId });
+      }
     }
   } catch (err) {
     toast('Não foi possível enviar a mensagem.', 'danger');
   }
+}
+
+// Uids de todo mundo no servidor, exceto quem acabou de mandar a mensagem
+// — usado só pra notificar push (ver push.js); vem do cache de membros já
+// carregado pelo painel de membros (servers.js).
+function otherServerMemberUids(serverId, exceptUid) {
+  const membersMap = state.serverMembersCache.get(serverId);
+  if (!membersMap) return [];
+  return [...membersMap.keys()].filter((uid) => uid !== exceptUid);
 }
 
 export function setPendingFile(file) {
@@ -438,11 +461,18 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
       await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
         lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
       });
+      notifyChannelMessage(otherServerMemberUids(state.currentServerId, uid), {
+        authorName: payload.authorName, preview: 'Enviou um GIF.',
+        serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
+      });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
       await updateDoc(dmDoc(state.currentDmId), {
         lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: '📎 GIF',
       });
+      if (currentDmOtherUid) {
+        notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: 'Enviou um GIF.', dmId: state.currentDmId });
+      }
     }
   } catch (err) {
     toast('Não foi possível enviar o GIF.', 'danger');

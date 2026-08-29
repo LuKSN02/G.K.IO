@@ -6,7 +6,7 @@ import { firebaseConfig } from './firebase-config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
-  signInWithEmailAndPassword, signOut, updateProfile as fbUpdateProfile,
+  signInWithEmailAndPassword, signOut, updateProfile as fbUpdateProfile, getIdToken,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
@@ -24,7 +24,7 @@ export const db = getFirestore(app);
 
 export {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, fbUpdateProfile,
+  signOut, fbUpdateProfile, getIdToken,
   collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch,
 };

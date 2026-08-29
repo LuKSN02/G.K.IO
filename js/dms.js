@@ -96,7 +96,7 @@ function renderDmSidebar() {
     const row = el('div', {
       class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
       'data-id': dm.id,
-      onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(dm.other.statusPresence)),
+      onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(dm.other.statusPresence), dm.other.uid),
     }, [
       el('div', { class: 'gk-avatar gk-sz-32', 'data-status': dm.other.statusPresence || 'offline', 'data-frame': dm.other.frameStyle || 'none' }, [
         el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.username) }),
@@ -144,11 +144,31 @@ async function declineFriendRequest(friendshipId) {
   await updateDoc(doc(db, 'friendships', friendshipId), { status: 'declined' });
 }
 
+// Abre uma DM direto pelo id, sem depender do cache de state.dms já estar
+// carregado — usado ao tocar numa notificação push (ver push.js/app.js),
+// onde o app pode ter acabado de abrir "do zero" (cold start).
+export async function openDmById(dmId) {
+  const existing = state.dms.get(dmId);
+  if (existing && existing.other) {
+    selectDm(dmId, existing.other.displayName || existing.other.username, statusLabel(existing.other.statusPresence), existing.other.uid);
+    return;
+  }
+  const dmSnap = await getDoc(dmDoc(dmId));
+  if (!dmSnap.exists()) return;
+  const data = dmSnap.data();
+  const otherId = data.participantIds.find((x) => x !== auth.currentUser.uid);
+  if (!otherId) return;
+  const otherSnap = await getDoc(userDoc(otherId));
+  if (!otherSnap.exists()) return;
+  const other = otherSnap.data();
+  selectDm(dmId, other.displayName || other.username, statusLabel(other.statusPresence), otherId);
+}
+
 export async function openOrCreateDm(otherUid) {
   const uid = auth.currentUser.uid;
   const existing = [...state.dms.values()].find((dm) => dm.other && dm.other.uid === otherUid);
   if (existing) {
-    selectDm(existing.id, existing.other.displayName || existing.other.username, statusLabel(existing.other.statusPresence));
+    selectDm(existing.id, existing.other.displayName || existing.other.username, statusLabel(existing.other.statusPresence), existing.other.uid);
     return;
   }
   const ref = await addDoc(dmsCol(), {
@@ -158,7 +178,7 @@ export async function openOrCreateDm(otherUid) {
     lastMessageAt: serverTimestamp(),
   });
   const otherSnap = await getDoc(userDoc(otherUid));
-  selectDm(ref.id, otherSnap.data().displayName || otherSnap.data().username, statusLabel(otherSnap.data().statusPresence));
+  selectDm(ref.id, otherSnap.data().displayName || otherSnap.data().username, statusLabel(otherSnap.data().statusPresence), otherUid);
 }
 
 export function goToDmsView() {

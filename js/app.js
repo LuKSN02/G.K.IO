@@ -3,15 +3,16 @@
 // ============================================================
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
 import { state, fallbackAvatar } from './state.js';
-import { listenUserServers, openCreateServerModal, openJoinServerModal } from './servers.js';
+import { listenUserServers, openCreateServerModal, openJoinServerModal, selectServer } from './servers.js';
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
-import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome } from './dms.js';
+import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById } from './dms.js';
 import { wireComposer, sendAttachmentMessage } from './chat.js';
 import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
 import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
 import { listenReadStates } from './unread.js';
+import { initPushNotifications, onPushNotificationTap } from './push.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -37,6 +38,11 @@ initEmojiPicker({
 });
 initAuthListener();
 
+onPushNotificationTap((data) => {
+  if (data.type === 'dm' && data.dmId) openDmById(data.dmId);
+  else if (data.type === 'channel' && data.serverId) selectServer(data.serverId); // abre o servidor; escolher o canal exato ainda é manual
+});
+
 onAuthReady(() => {
   refreshMiniProfile();
   listenUserServers();
@@ -45,6 +51,7 @@ onAuthReady(() => {
   listenCustomEmojis();
   listenReadStates();
   goToDmsView();
+  initPushNotifications();
 });
 
 function wireStaticUI() {

@@ -9,5 +9,5 @@
 export const pushConfig = {
   // URL do seu Cloudflare Worker (push-server), ex:
   // 'https://gkio-push.seu-usuario.workers.dev'
-  tokenEndpoint: 'COLE_AQUI_A_URL_DO_WORKER',
+  tokenEndpoint: 'https://gkio-push.trajano-neves01.workers.dev',
 };
