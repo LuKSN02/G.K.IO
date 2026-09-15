@@ -29,16 +29,23 @@ export function listenFriendsAndDms() {
   if (unsubFriendships) unsubFriendships();
   const fq = query(friendshipsCol(), where('userIds', 'array-contains', uid));
   unsubFriendships = onSnapshot(fq, async (snap) => {
-    const accepted = [];
-    const incoming = [];
-    for (const d of snap.docs) {
+    // Busca os docs de usuário de todos os amigos/pedidos em paralelo em
+    // vez de um por vez — com dezenas de amizades, isso é a diferença
+    // entre a lista aparecer quase instantânea ou ir enchendo aos poucos.
+    const resolved = await Promise.all(snap.docs.map(async (d) => {
       const data = d.data();
       const otherId = data.userIds.find((x) => x !== uid);
       const otherSnap = await getDoc(userDoc(otherId));
-      if (!otherSnap.exists()) continue;
-      const other = { uid: otherId, ...otherSnap.data() };
-      if (data.status === 'accepted') accepted.push(other);
-      else if (data.status === 'pending' && data.requesterId !== uid) incoming.push({ ...other, friendshipId: d.id });
+      if (!otherSnap.exists()) return null;
+      return { friendshipId: d.id, data, otherId, other: otherSnap.data() };
+    }));
+    const accepted = [];
+    const incoming = [];
+    for (const r of resolved) {
+      if (!r) continue;
+      const other = { uid: r.otherId, ...r.other };
+      if (r.data.status === 'accepted') accepted.push(other);
+      else if (r.data.status === 'pending' && r.data.requesterId !== uid) incoming.push({ ...other, friendshipId: r.friendshipId });
     }
     state.friends.clear();
     accepted.forEach((f) => state.friends.set(f.uid, f));
@@ -54,13 +61,13 @@ export function listenFriendsAndDms() {
   if (unsubDms) unsubDms();
   const dq = query(dmsCol(), where('participantIds', 'array-contains', uid));
   unsubDms = onSnapshot(dq, async (snap) => {
-    const dms = [];
-    for (const d of snap.docs) {
+    // Mesma lógica: resolve o "outro participante" de cada DM em paralelo.
+    const dms = await Promise.all(snap.docs.map(async (d) => {
       const data = d.data();
       const otherId = data.participantIds.find((x) => x !== uid);
       const otherSnap = otherId ? await getDoc(userDoc(otherId)) : null;
-      dms.push({ id: d.id, ...data, other: otherSnap && otherSnap.exists() ? { uid: otherId, ...otherSnap.data() } : null });
-    }
+      return { id: d.id, ...data, other: otherSnap && otherSnap.exists() ? { uid: otherId, ...otherSnap.data() } : null };
+    }));
     dms.sort((a, b) => (b.lastMessageAt?.toMillis?.() || 0) - (a.lastMessageAt?.toMillis?.() || 0));
     state.dms.clear();
     dms.forEach((dm) => state.dms.set(dm.id, dm));

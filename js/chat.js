@@ -117,13 +117,17 @@ function attachMessagesListener(colRef, conversationId) {
   isFirstSnapshotForConversation = true;
   editingMessageId = null;
   editingDraft = '';
+  // Mostra um esqueleto na hora — sem isso, ao trocar de conversa a tela
+  // fica com as mensagens da conversa anterior (ou em branco) até o
+  // primeiro snapshot do Firestore chegar, o que parece travado.
+  renderMessagesSkeleton();
   const q = query(colRef, orderBy('createdAt'), limit(200));
   const unsub = onSnapshot(q, (snap) => {
     const messages = [];
     snap.forEach((d) => messages.push({ id: d.id, ...d.data() }));
-    notifyIfNewIncomingMessage(messages);
+    const isNewIncoming = notifyIfNewIncomingMessage(messages);
     lastRenderedMessages = messages;
-    renderMessages(messages);
+    renderMessages(messages, isNewIncoming);
     // A pessoa está com esta conversa aberta agora — qualquer mensagem que
     // chegue (inclusive em tempo real) conta como "lida" na hora.
     markConversationRead(conversationId);
@@ -139,21 +143,46 @@ function getMessageRef(msgId) {
   return null;
 }
 
+// Retorna true quando a última mensagem do snapshot é realmente nova (chegou
+// agora, não é só um re-render por edição/reação, e não é o primeiro
+// snapshot ao abrir a conversa) — usado tanto pra notificação quanto pro
+// "pill" de novas mensagens quando a pessoa está com o scroll pra cima.
 function notifyIfNewIncomingMessage(messages) {
-  if (!messages.length) { isFirstSnapshotForConversation = false; return; }
+  if (!messages.length) { isFirstSnapshotForConversation = false; return false; }
   const last = messages[messages.length - 1];
   const isNew = last.id !== lastSeenMessageId;
   lastSeenMessageId = last.id;
-  if (!isNew || isFirstSnapshotForConversation) { isFirstSnapshotForConversation = false; return; }
-  if (last.authorId === state.user?.uid) return;
+  if (!isNew || isFirstSnapshotForConversation) { isFirstSnapshotForConversation = false; return false; }
+  if (last.authorId === state.user?.uid) return false;
   playNotifSound();
   showDesktopNotification(last.authorName || 'Nova mensagem', last.content || '📎 Anexo enviado', last.authorAvatar);
+  return true;
 }
 
-function renderMessages(messages) {
+// Esqueleto simples (barras pulsando) enquanto o primeiro snapshot da
+// conversa não chega — algumas "linhas" com largura/alinhamento variados
+// pra sugerir texto de verdade em vez de blocos idênticos.
+function renderMessagesSkeleton() {
+  const box = document.getElementById('gk-messages');
+  box.innerHTML = '';
+  hideJumpToBottomPill();
+  const widths = [72, 45, 88, 60];
+  for (let i = 0; i < 4; i++) {
+    box.appendChild(el('div', { class: 'gk-msg-skeleton-row' }, [
+      el('div', { class: 'gk-skeleton gk-skeleton-avatar' }),
+      el('div', { class: 'gk-msg-skeleton-lines' }, [
+        el('div', { class: 'gk-skeleton gk-skeleton-line', style: 'width:120px' }),
+        el('div', { class: 'gk-skeleton gk-skeleton-line', style: `width:${widths[i % widths.length]}%` }),
+      ]),
+    ]));
+  }
+}
+
+function renderMessages(messages, isNewIncoming = false) {
   const box = document.getElementById('gk-messages');
   const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 60;
   box.innerHTML = '';
+  hideJumpToBottomPill();
 
   if (messages.length === 0) {
     box.appendChild(el('div', { class: 'gk-empty-state' }, [
@@ -244,7 +273,11 @@ function renderMessages(messages) {
     lastTs = ts;
   }
 
-  if (wasAtBottom || true) box.scrollTop = box.scrollHeight;
+  if (wasAtBottom) {
+    box.scrollTop = box.scrollHeight;
+  } else if (isNewIncoming) {
+    showJumpToBottomPill(box);
+  }
 
   if (editingMessageId) {
     const ta = box.querySelector(`.gk-msg-row[data-msg-id="${editingMessageId}"] .gk-msg-edit-textarea`);
@@ -321,6 +354,23 @@ function buildEditBox(msg) {
       el('button', { class: 'gk-btn gk-btn-primary', type: 'button', onclick: () => saveEditMessage(msg.id) }, 'Salvar'),
     ]),
   ]);
+}
+
+// ---------- "Novas mensagens" (pill de voltar ao fim) ----------
+// Antes disso, um `|| true` deixado no código forçava a rolagem pro fim a
+// cada snapshot do Firestore — mesmo com a pessoa lendo mensagens antigas
+// mais acima. Agora só rola sozinho se ela já estava perto do fim; senão,
+// mostra esse aviso discreto em vez de puxar a tela.
+function showJumpToBottomPill(box) {
+  if (document.getElementById('gk-jump-pill')) return;
+  const pill = el('button', {
+    id: 'gk-jump-pill', class: 'gk-jump-pill', type: 'button',
+    onclick: () => { box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' }); hideJumpToBottomPill(); },
+  }, [el('span', {}, 'Novas mensagens'), icon('chevronDown', { size: 14 })]);
+  box.appendChild(pill);
+}
+function hideJumpToBottomPill() {
+  document.getElementById('gk-jump-pill')?.remove();
 }
 
 function autoResizeEditTextarea(ta) {
@@ -506,4 +556,12 @@ export function wireComposer() {
     if (fileInput.files[0]) setPendingFile(fileInput.files[0]);
     fileInput.value = '';
   });
+
+  // Se a pessoa rolar de volta pro fim por conta própria (sem clicar no
+  // pill), some com o aviso de "novas mensagens" também.
+  const messagesBox = document.getElementById('gk-messages');
+  messagesBox.addEventListener('scroll', () => {
+    const atBottom = messagesBox.scrollTop + messagesBox.clientHeight >= messagesBox.scrollHeight - 60;
+    if (atBottom) hideJumpToBottomPill();
+  }, { passive: true });
 }

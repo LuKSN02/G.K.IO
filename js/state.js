@@ -35,6 +35,15 @@ export function cleanupListener(key) {
 
 export function el(tag, opts = {}, children = []) {
   const node = document.createElement(tag);
+  // Toda <img> criada pelo app carrega "sob demanda" por padrão (o
+  // navegador só busca quando ela está perto de entrar na tela) e decodifica
+  // fora da thread principal — evita que listas longas de avatares/anexos
+  // (mensagens, membros, DMs) travem o scroll baixando tudo de uma vez.
+  // Uma chamada específica ainda pode sobrescrever passando loading/decoding.
+  if (tag === 'img') {
+    if (opts.loading === undefined) opts.loading = 'lazy';
+    if (opts.decoding === undefined) opts.decoding = 'async';
+  }
   for (const [k, v] of Object.entries(opts)) {
     if (k === 'class') node.className = v;
     else if (k === 'html') node.innerHTML = v;

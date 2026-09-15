@@ -541,11 +541,15 @@ function confirmJoinVoiceChannel(serverId, ch) {
 function listenMembers(serverId) {
   cleanupListener('members');
   unsubMembers = onSnapshot(membersCol(serverId), async (snap) => {
+    // Busca os docs de usuário de todos os membros em paralelo — num
+    // servidor com muita gente, isso evita que o painel de membros
+    // demore vários segundos pra aparecer (era um getDoc por vez).
     const cache = new Map();
-    for (const d of snap.docs) {
+    const resolved = await Promise.all(snap.docs.map(async (d) => {
       const userSnap = await getDoc(userDoc(d.id));
-      if (userSnap.exists()) cache.set(d.id, { uid: d.id, ...d.data(), user: userSnap.data() });
-    }
+      return userSnap.exists() ? { uid: d.id, ...d.data(), user: userSnap.data() } : null;
+    }));
+    resolved.forEach((m) => { if (m) cache.set(m.uid, m); });
     state.serverMembersCache.set(serverId, cache);
     renderMembersPanel(cache, serverId);
     // Um cargo pode ter mudado (ex: alguém virou admin) — re-renderiza a
