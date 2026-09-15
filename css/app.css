@@ -360,6 +360,19 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-friend-action-btn.gk-friend-action-accept:hover { background: var(--gk-status-online); color: #fff; border-color: transparent; }
 .gk-friend-action-btn.gk-friend-action-decline:hover { background: var(--gk-danger); color: #fff; border-color: transparent; }
 
+/* ---------- Divisor de dia ("Hoje", "Ontem", "3 de março") ---------- */
+.gk-date-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 14px 6px 6px; user-select: none;
+}
+.gk-date-divider::before, .gk-date-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--gk-gray-100);
+}
+.gk-date-divider span {
+  font-family: var(--gk-font-mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.04em; color: var(--gk-gray-400); white-space: nowrap;
+}
+
 .gk-msg-group { display: flex; gap: 12px; padding: 8px 6px; border-radius: var(--gk-radius-md); }
 .gk-msg-group:hover { background: var(--gk-surface); }
 .gk-msg-group .gk-msg-body { min-width: 0; flex: 1; }
@@ -382,6 +395,77 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 /* ---------- Edição de mensagem ---------- */
 .gk-msg-row { position: relative; padding-right: 28px; }
 .gk-msg-row + .gk-msg-row { margin-top: 3px; } /* respiro entre mensagens seguidas do mesmo autor, sem repetir o cabeçalho */
+
+/* Horário na margem esquerda das mensagens seguidas do mesmo autor —
+   ocupa a coluna do avatar, que nessas linhas fica vazia. Só aparece
+   ao passar o mouse, pra não competir com o texto. */
+.gk-msg-row-time {
+  position: absolute; left: -52px; top: 2px; width: 44px;
+  text-align: right; font-family: var(--gk-font-mono); font-size: 10px;
+  color: var(--gk-gray-400); opacity: 0; transition: opacity var(--gk-transition);
+  pointer-events: none; user-select: none;
+}
+.gk-msg-row:hover .gk-msg-row-time { opacity: 1; }
+
+/* Mensagem que acabou de chegar entra com um fade curto. Mensagens já
+   na tela são redesenhadas sem animação — ver renderedMessageIds em chat.js. */
+.gk-msg-new { animation: gk-msg-in 200ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes gk-msg-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* Mensagem só com emoji (até 3) aparece em tamanho grande, como no Discord */
+.gk-msg-line-jumbo { font-size: 38px; line-height: 1.25; }
+.gk-msg-line-jumbo .gk-inline-emoji { width: 44px; height: 44px; vertical-align: -8px; }
+
+/* ---------- Formatação do texto (ver js/markdown.js) ---------- */
+.gk-msg-line strong { font-weight: 700; color: var(--gk-gray-900); }
+.gk-msg-line em { font-style: italic; }
+.gk-msg-line u { text-decoration: underline; text-underline-offset: 2px; }
+.gk-msg-line s { text-decoration: line-through; color: var(--gk-gray-500); }
+
+.gk-md-link { color: var(--gk-accent); text-decoration: none; word-break: break-word; }
+.gk-md-link:hover { text-decoration: underline; }
+
+.gk-md-code {
+  font-family: var(--gk-font-mono); font-size: 0.88em;
+  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100);
+  border-radius: 4px; padding: 1px 5px; color: var(--gk-gray-800);
+  white-space: pre-wrap; word-break: break-word;
+}
+.gk-md-block {
+  position: relative; margin: 6px 0 2px; padding: 12px 14px;
+  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100);
+  border-radius: var(--gk-radius-md); overflow-x: auto;
+}
+.gk-md-block code {
+  font-family: var(--gk-font-mono); font-size: 12.5px; line-height: 1.55;
+  color: var(--gk-gray-800); white-space: pre; display: block;
+}
+.gk-md-block-lang {
+  position: absolute; top: 6px; right: 10px;
+  font-family: var(--gk-font-mono); font-size: 9.5px; letter-spacing: 0.04em;
+  color: var(--gk-gray-400); user-select: none;
+}
+
+.gk-md-quote {
+  display: block; margin: 3px 0; padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--gk-gray-200); border-radius: 1px;
+  color: var(--gk-gray-600);
+}
+
+/* Spoiler: texto coberto até clicar. O conteúdo fica com visibility
+   hidden (não só transparente) pra não ser lido por acidente nem
+   copiado junto com a seleção antes de revelar. */
+.gk-md-spoiler {
+  position: relative; border-radius: 4px; cursor: pointer;
+  background: var(--gk-gray-300); color: transparent;
+  transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-md-spoiler > * { visibility: hidden; }
+.gk-md-spoiler:hover { background: var(--gk-gray-400); }
+.gk-md-spoiler.gk-revealed {
+  background: var(--gk-accent-soft); color: inherit; cursor: auto;
+}
+.gk-md-spoiler.gk-revealed > * { visibility: visible; }
 .gk-msg-actions {
   position: absolute; top: -8px; right: 0; display: flex; gap: 1px;
   background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-sm);
@@ -394,6 +478,16 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   padding: 6px 8px; border-radius: var(--gk-radius-sm);
 }
 .gk-msg-action-btn:hover { background: var(--gk-gray-100); color: var(--gk-accent-strong); }
+.gk-msg-action-btn.gk-msg-action-danger:hover { background: var(--gk-danger-soft); color: var(--gk-danger); }
+
+/* Trecho da mensagem mostrado no diálogo de confirmação de exclusão */
+.gk-delete-preview {
+  margin: -6px 0 2px; padding: 10px 12px;
+  background: var(--gk-surface-sunken); border-left: 3px solid var(--gk-gray-200);
+  border-radius: var(--gk-radius-sm); font-size: 13px; line-height: 1.5;
+  color: var(--gk-gray-600); white-space: pre-wrap; word-break: break-word;
+  max-height: 120px; overflow-y: auto;
+}
 .gk-msg-edited-tag { font-size: 11px; color: var(--gk-gray-400); margin-left: 4px; }
 
 .gk-msg-edit-box { margin-top: 2px; }
@@ -411,6 +505,9 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
    de "trocar avatar" precisam ficar visíveis sem passar o mouse. */
 @media (hover: none) {
   .gk-msg-row { padding-right: 0; }
+  /* Sem mouse não há como revelar o horário da margem — ele nunca
+     apareceria, então sai do fluxo de vez. */
+  .gk-msg-row-time { display: none; }
   .gk-msg-actions {
     position: static; opacity: 1; pointer-events: auto;
     background: none; border: none; box-shadow: none;
@@ -421,6 +518,48 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 
 .gk-composer { flex-shrink: 0; padding: 14px 22px 20px; }
+
+/* ---------- Anexo engatilhado (antes de enviar) ---------- */
+.gk-composer-attachment { margin-bottom: 8px; }
+.gk-attach-chip {
+  display: inline-flex; align-items: center; gap: 10px; max-width: 100%;
+  padding: 8px 10px; background: var(--gk-surface); border: 1px solid var(--gk-gray-200);
+  border-radius: var(--gk-radius-md); box-shadow: var(--gk-shadow-sm);
+  animation: gk-msg-in 180ms cubic-bezier(.2,.8,.2,1) both;
+}
+.gk-attach-thumb {
+  width: 38px; height: 38px; border-radius: var(--gk-radius-sm); object-fit: cover;
+  flex-shrink: 0; background: var(--gk-surface-sunken);
+}
+.gk-attach-thumb-file {
+  display: flex; align-items: center; justify-content: center; color: var(--gk-gray-500);
+}
+.gk-attach-meta { min-width: 0; }
+.gk-attach-name {
+  font-size: 13px; font-weight: 600; color: var(--gk-gray-800);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
+}
+.gk-attach-size { font-family: var(--gk-font-mono); font-size: 10.5px; color: var(--gk-gray-500); }
+.gk-attach-remove {
+  background: none; border: none; color: var(--gk-gray-500);
+  padding: 6px; border-radius: var(--gk-radius-sm); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.gk-attach-remove:hover { background: var(--gk-danger-soft); color: var(--gk-danger); }
+
+/* Enquanto o upload acontece: barra de progresso indeterminada na base
+   do chip, e o botão de remover sai de cena (já não dá pra cancelar). */
+.gk-attach-chip.gk-uploading { position: relative; overflow: hidden; }
+.gk-attach-chip.gk-uploading .gk-attach-remove { display: none; }
+.gk-attach-chip.gk-uploading .gk-attach-thumb { opacity: 0.55; }
+.gk-attach-chip.gk-uploading::after {
+  content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 40%;
+  background: var(--gk-accent); border-radius: 2px;
+  animation: gk-attach-progress 1.1s ease-in-out infinite;
+}
+@keyframes gk-attach-progress {
+  0% { left: -40%; } 100% { left: 100%; }
+}
 .gk-composer-box {
   display: flex; align-items: flex-end; gap: 8px;
   background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-200);
@@ -1462,6 +1601,9 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
   /* Mensagens e composer com respiro menor nas laterais */
   .gk-messages { padding: 12px 12px; }
+  .gk-attach-chip { display: flex; }
+  .gk-attach-name { max-width: none; }
+  .gk-msg-line-jumbo { font-size: 32px; }
   .gk-msg-attachment img, .gk-msg-attachment video { max-width: min(280px, 68vw); max-height: 220px; }
   .gk-composer { padding: 10px 12px calc(16px + env(safe-area-inset-bottom)); }
   .gk-composer-box button { padding: 8px; }

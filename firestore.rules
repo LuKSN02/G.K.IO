@@ -125,6 +125,8 @@ service cloud.firestore {
         allow update: if signedIn()
           && (isValidMessageEdit()
               || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds && isValidReactionUpdate()));
+        // Numa DM não existe moderação: só o próprio autor apaga o que escreveu.
+        allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
       }
 
       // "Digitando..." — cada pessoa só escreve no próprio doc (id = uid).
@@ -226,6 +228,10 @@ service cloud.firestore {
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
           allow update: if signedIn() && isServerMember(serverId)
             && (isValidMessageEdit() || isValidReactionUpdate());
+          // O autor apaga a própria mensagem; quem modera o canal apaga a de
+          // qualquer um (mesma régua usada para gerenciar canais).
+          allow delete: if signedIn() && isServerMember(serverId)
+            && (resource.data.authorId == request.auth.uid || canManageChannels(serverId));
         }
 
         match /voicePresence/{uid} {

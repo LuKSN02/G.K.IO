@@ -19,6 +19,7 @@ gkio/
     cloudinary-config.js  - Preencha com seu cloud name + upload preset do Cloudinary
     db.js                - Inicializacao do Firebase + referencias de colecoes
     state.js              - Estado global em memoria + utilitarios
+    markdown.js            - Formatacao do texto das mensagens (negrito, codigo, citacao, spoiler, links)
     auth.js                - Login, registro, logout, presenca
     servers.js              - Servidores, categorias, canais, convites
     chat.js                  - Mensagens (canais e DMs), anexos de midia

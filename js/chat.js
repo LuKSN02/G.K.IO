@@ -4,10 +4,11 @@
 import {
   auth,
   channelMessagesCol, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc,
-  addDoc, updateDoc, arrayUnion, arrayRemove,
+  addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   query, orderBy, limit, onSnapshot, serverTimestamp,
 } from './db.js';
 import { state, el, escapeHtml, fallbackAvatar, formatTime, cleanupListener, toast } from './state.js';
+import { isEmojiOnly } from './markdown.js';
 import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
@@ -18,6 +19,11 @@ import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
 import { icon } from './icons.js';
 import { notifyDmMessage, notifyChannelMessage } from './push.js';
+// Import circular com servers.js (que importa selectChannel daqui). É seguro:
+// canManageChannels é uma declaração de função, então já existe no escopo do
+// módulo antes de qualquer chamada — só é usada em resposta a clique, muito
+// depois dos dois módulos terminarem de avaliar.
+import { canManageChannels } from './servers.js';
 
 let pendingFile = null;
 let lastSeenMessageId = null;
@@ -29,6 +35,16 @@ let currentDmOtherUid = null;
 let editingMessageId = null; // id da mensagem sendo editada no momento (ou null)
 let editingDraft = '';       // texto em edição, preservado entre re-renders do snapshot
 let lastRenderedMessages = [];
+
+// Ids que já apareceram na tela desta conversa. Como cada snapshot do
+// Firestore redesenha a lista inteira, é isso que distingue "mensagem
+// que acabou de chegar" (ganha animação de entrada) de "mensagem que já
+// estava aqui e só foi redesenhada porque alguém reagiu/editou".
+const renderedMessageIds = new Set();
+// notifyIfNewIncomingMessage() já zera isFirstSnapshotForConversation antes
+// de renderMessages() rodar, então não dá pra usar aquela flag aqui: o
+// primeiro desenho da conversa animaria o histórico inteiro de uma vez.
+let hasRenderedConversationOnce = false;
 
 export function selectChannel(serverId, channelId, name, readOnly = false) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
@@ -117,6 +133,9 @@ function attachMessagesListener(colRef, conversationId) {
   isFirstSnapshotForConversation = true;
   editingMessageId = null;
   editingDraft = '';
+  renderedMessageIds.clear();
+  hasRenderedConversationOnce = false;
+  clearPendingFile(); // anexo escolhido e não enviado não "viaja" pra outra conversa
   // Mostra um esqueleto na hora — sem isso, ao trocar de conversa a tela
   // fica com as mensagens da conversa anterior (ou em branco) até o
   // primeiro snapshot do Firestore chegar, o que parece travado.
@@ -181,6 +200,11 @@ function renderMessagesSkeleton() {
 function renderMessages(messages, isNewIncoming = false) {
   const box = document.getElementById('gk-messages');
   const wasAtBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 60;
+  // Guardados pra restaurar a posição de leitura depois do re-render: sem
+  // isso, quem estava lendo mensagens antigas era jogado pro topo toda vez
+  // que alguém reagia ou editava algo na conversa.
+  const prevScrollTop = box.scrollTop;
+  const prevScrollHeight = box.scrollHeight;
   box.innerHTML = '';
   hideJumpToBottomPill();
 
@@ -189,6 +213,7 @@ function renderMessages(messages, isNewIncoming = false) {
       el('div', { class: 'gk-emoji' }, [icon('chatBubble', { size: 32 })]),
       el('div', {}, 'Nenhuma mensagem ainda. Diga oi!'),
     ]));
+    hasRenderedConversationOnce = true; // a próxima a chegar é nova de verdade
     return;
   }
 
@@ -196,10 +221,24 @@ function renderMessages(messages, isNewIncoming = false) {
   let lastGroup = null;
   const GROUP_WINDOW_MS = 5 * 60 * 1000;
   let lastTs = 0;
+  let lastDayKey = null;
 
   for (const msg of messages) {
     const ts = msg.createdAt?.toMillis ? msg.createdAt.toMillis() : Date.now();
-    const sameGroup = lastAuthor === msg.authorId && (ts - lastTs) < GROUP_WINDOW_MS;
+    const date = new Date(ts);
+    const dayKey = date.toDateString();
+
+    // Divisor de dia — também quebra o agrupamento, pra que a primeira
+    // mensagem depois da virada sempre mostre autor e horário.
+    const newDay = dayKey !== lastDayKey;
+    if (newDay) {
+      box.appendChild(el('div', { class: 'gk-date-divider' }, [
+        el('span', {}, formatDateLabel(date)),
+      ]));
+      lastDayKey = dayKey;
+    }
+
+    const sameGroup = !newDay && lastAuthor === msg.authorId && (ts - lastTs) < GROUP_WINDOW_MS;
     if (!sameGroup) {
       lastGroup = el('div', { class: 'gk-msg-group' }, [
         el('div', {
@@ -212,7 +251,7 @@ function renderMessages(messages, isNewIncoming = false) {
             el('span', { class: 'gk-author', onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
             msg.authorRole === 'prime' ? el('span', { class: 'gk-badge-prime', title: 'G.K.IO Prime' }, [icon('diamond', { size: 12 })]) : null,
             msg.authorTag ? el('span', { class: 'gk-author-tag' }, msg.authorTag) : null,
-            el('span', { class: 'gk-time' }, formatTime(msg.createdAt)),
+            el('span', { class: 'gk-time', title: formatFullDate(date) }, formatTime(msg.createdAt)),
           ]),
         ]),
       ]);
@@ -223,12 +262,28 @@ function renderMessages(messages, isNewIncoming = false) {
     const isEditingThis = editingMessageId === msg.id;
 
     const row = el('div', { class: 'gk-msg-row', 'data-msg-id': msg.id });
+    // Mensagem que acabou de chegar entra com um leve fade; as que já
+    // estavam na tela são redesenhadas sem animação nenhuma.
+    if (hasRenderedConversationOnce && !renderedMessageIds.has(msg.id)) {
+      row.classList.add('gk-msg-new');
+    }
+    renderedMessageIds.add(msg.id);
+
+    // Nas mensagens seguidas do mesmo autor o cabeçalho não se repete —
+    // o horário aparece na margem esquerda ao passar o mouse, como no Discord.
+    if (sameGroup) {
+      row.appendChild(el('span', { class: 'gk-msg-row-time', title: formatFullDate(date) }, formatTime(msg.createdAt)));
+    }
+
     if (isEditingThis) {
       row.appendChild(buildEditBox(msg));
     } else {
       if (msg.content) {
-        const line = el('div', { class: 'gk-msg-line' + (msg.authorRole === 'prime' ? ' gk-msg-line-prime' : '') }, renderMessageContent(msg.content));
-        if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag' }, '(editado)'));
+        const classes = ['gk-msg-line'];
+        if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
+        if (isEmojiOnly(msg.content)) classes.push('gk-msg-line-jumbo');
+        const line = el('div', { class: classes.join(' ') }, renderMessageContent(msg.content));
+        if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag', title: 'Mensagem editada' }, '(editado)'));
         row.appendChild(line);
       }
       const actionButtons = [
@@ -237,11 +292,27 @@ function renderMessages(messages, isNewIncoming = false) {
           onclick: (e) => openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)),
         }, [icon('emojiSmile', { size: 15 })]),
       ];
-      if (isOwn) {
+      if (msg.content) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn', type: 'button', title: 'Copiar texto',
+          onclick: () => copyMessageText(msg.content),
+        }, [icon('copy', { size: 14 })]));
+      }
+      // Editar é só do autor. Apagar segue a mesma régua das regras do
+      // Firestore: o autor sempre, e quem modera o canal apaga a de
+      // qualquer um (em DM não há moderação — só o autor).
+      if (isOwn && msg.content) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Editar mensagem',
           onclick: () => startEditMessage(msg.id, msg.content || ''),
         }, [icon('edit', { size: 14 })]));
+      }
+      if (isOwn || canModerateCurrentChannel()) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn gk-msg-action-danger', type: 'button',
+          title: isOwn ? 'Apagar mensagem' : 'Apagar mensagem (moderação)',
+          onclick: () => confirmDeleteMessage(msg, !isOwn),
+        }, [icon('trash', { size: 14 })]));
       }
       row.appendChild(el('div', { class: 'gk-msg-actions' }, actionButtons));
     }
@@ -275,9 +346,14 @@ function renderMessages(messages, isNewIncoming = false) {
 
   if (wasAtBottom) {
     box.scrollTop = box.scrollHeight;
-  } else if (isNewIncoming) {
-    showJumpToBottomPill(box);
+  } else {
+    // Mantém a mesma mensagem debaixo do olho da pessoa: se a lista cresceu
+    // (chegou algo novo acima ou abaixo), compensa a diferença de altura.
+    box.scrollTop = prevScrollTop + (box.scrollHeight - prevScrollHeight);
+    if (isNewIncoming) showJumpToBottomPill(box);
   }
+
+  hasRenderedConversationOnce = true;
 
   if (editingMessageId) {
     const ta = box.querySelector(`.gk-msg-row[data-msg-id="${editingMessageId}"] .gk-msg-edit-textarea`);
@@ -287,6 +363,76 @@ function renderMessages(messages, isNewIncoming = false) {
       ta.selectionStart = ta.selectionEnd = ta.value.length;
     }
   }
+}
+
+// ---------- Datas ----------
+// "Hoje" / "Ontem" pro que é recente, data por extenso pro resto — e o
+// ano só aparece quando a mensagem é de outro ano, senão vira ruído.
+function formatDateLabel(date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return 'Hoje';
+  if (date.toDateString() === yesterday.toDateString()) return 'Ontem';
+  const opts = { day: 'numeric', month: 'long' };
+  if (date.getFullYear() !== today.getFullYear()) opts.year = 'numeric';
+  return date.toLocaleDateString('pt-BR', opts);
+}
+
+function formatFullDate(date) {
+  return date.toLocaleString('pt-BR', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// ---------- Copiar / apagar ----------
+async function copyMessageText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Texto copiado.');
+  } catch (err) {
+    toast('Não foi possível copiar o texto.', 'danger');
+  }
+}
+
+// Só faz sentido em canal de servidor — DM não tem moderação.
+function canModerateCurrentChannel() {
+  if (!state.currentServerId || !state.currentChannelId) return false;
+  return canManageChannels(state.currentServerId);
+}
+
+function confirmDeleteMessage(msg, asModerator = false) {
+  const overlay = document.getElementById('gk-generic-modal-overlay');
+  const modal = document.getElementById('gk-generic-modal');
+  modal.innerHTML = '';
+
+  const preview = (msg.content || '').trim();
+  modal.appendChild(el('h2', {}, 'Apagar mensagem?'));
+  modal.appendChild(el('p', { class: 'gk-modal-sub' }, asModerator
+    ? `Você vai apagar a mensagem de ${msg.authorName || 'outra pessoa'}. Ela some para todo mundo no canal e não dá pra recuperar.`
+    : 'Ela some para todo mundo na conversa e não dá pra recuperar.'));
+  if (preview) {
+    modal.appendChild(el('div', { class: 'gk-delete-preview' }, preview.length > 220 ? preview.slice(0, 220) + '…' : preview));
+  }
+  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+    el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
+    el('button', {
+      class: 'gk-btn gk-btn-danger',
+      onclick: async () => {
+        overlay.classList.remove('gk-open');
+        const ref = getMessageRef(msg.id);
+        if (!ref) return;
+        try {
+          await deleteDoc(ref);
+          toast('Mensagem apagada.');
+        } catch (err) {
+          toast('Não foi possível apagar a mensagem.', 'danger');
+        }
+      },
+    }, [icon('trash', { size: 15 }), ' Apagar']),
+  ]));
+  overlay.classList.add('gk-open');
 }
 
 // ---------- Reações rápidas ----------
@@ -426,6 +572,7 @@ export async function sendCurrentMessage() {
   };
 
   if (pendingFile) {
+    setAttachmentUploading(true);
     try {
       const { url } = await uploadToCloudinary(pendingFile, `attachments/${uid}`);
       payload.attachmentUrl = url;
@@ -435,6 +582,7 @@ export async function sendCurrentMessage() {
     } catch (err) {
       toast(err.message || 'Falha ao enviar anexo.', 'danger');
     }
+    setAttachmentUploading(false);
     clearPendingFile();
   }
 
@@ -477,11 +625,61 @@ function otherServerMemberUids(serverId, exceptUid) {
   return [...membersMap.keys()].filter((uid) => uid !== exceptUid);
 }
 
+// O arquivo escolhido fica visível acima do composer até ser enviado —
+// antes ele virava só um toast, então dava pra esquecer que havia um
+// anexo engatilhado e não havia como desistir dele.
 export function setPendingFile(file) {
   pendingFile = file;
-  toast(`Anexo pronto: ${file.name}`);
+  renderPendingFile();
 }
-function clearPendingFile() { pendingFile = null; }
+
+function clearPendingFile() {
+  if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
+  pendingFile = null;
+  const box = document.getElementById('gk-composer-attachment');
+  if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+}
+
+function renderPendingFile() {
+  const box = document.getElementById('gk-composer-attachment');
+  if (!box || !pendingFile) return;
+  box.innerHTML = '';
+
+  const isImage = pendingFile.type.startsWith('image/');
+  let thumb;
+  if (isImage) {
+    pendingFile.previewUrl = URL.createObjectURL(pendingFile);
+    thumb = el('img', { class: 'gk-attach-thumb', src: pendingFile.previewUrl, alt: '' });
+  } else {
+    thumb = el('div', { class: 'gk-attach-thumb gk-attach-thumb-file' }, [icon('attach', { size: 18 })]);
+  }
+
+  box.appendChild(el('div', { class: 'gk-attach-chip', id: 'gk-attach-chip' }, [
+    thumb,
+    el('div', { class: 'gk-attach-meta' }, [
+      el('div', { class: 'gk-attach-name', title: pendingFile.name }, pendingFile.name),
+      el('div', { class: 'gk-attach-size' }, formatFileSize(pendingFile.size)),
+    ]),
+    el('button', {
+      class: 'gk-attach-remove', type: 'button', title: 'Remover anexo',
+      onclick: clearPendingFile,
+    }, [icon('close', { size: 14 })]),
+  ]));
+  box.style.display = 'block';
+}
+
+function setAttachmentUploading(on) {
+  const chip = document.getElementById('gk-attach-chip');
+  if (chip) chip.classList.toggle('gk-uploading', on);
+  const sendBtn = document.getElementById('gk-send-btn');
+  if (sendBtn) sendBtn.disabled = on;
+}
+
+function formatFileSize(bytes = 0) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // Envia um anexo direto (sem passar pelo textarea) — usado pelo picker de
 // GIFs, já que o GIF escolhido já tem uma URL pronta (GIPHY), sem precisar

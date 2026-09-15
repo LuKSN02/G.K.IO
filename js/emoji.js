@@ -15,6 +15,7 @@ import { state, el, toast } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { giphyConfig } from './gif-config.js';
 import { icon } from './icons.js';
+import { renderRichText } from './markdown.js';
 
 // ---------- Emojis nativos (curadoria por categoria) ----------
 const EMOJI_CATEGORIES = {
@@ -68,21 +69,10 @@ export function listenCustomEmojis() {
 // Troca ocorrências de :nome: (quando conhecido) por <img>. Usado por
 // chat.js ao montar cada linha de mensagem.
 export function renderMessageContent(text) {
-  if (!text) return [];
-  const regex = /:([a-z0-9_]{2,32}):/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(text))) {
-    const name = match[1];
-    const emoji = [...customEmojiCache.values()].find((e) => e.name === name);
-    if (!emoji) continue;
-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    parts.push(el('img', { class: 'gk-inline-emoji', src: emoji.url, title: `:${name}:`, alt: `:${name}:` }));
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
-  return parts.length ? parts : [text];
+  // A formatação em si (negrito, código, citação, links, spoiler) vive em
+  // markdown.js; aqui só entramos com o resolvedor de emoji personalizado,
+  // que depende do cache local desta module.
+  return renderRichText(text, getCustomEmojiByName);
 }
 
 // ---------- Inicialização / wiring do botão + painel ----------
