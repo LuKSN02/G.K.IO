@@ -1,0 +1,17 @@
+{
+  "name": "G.K.IO",
+  "short_name": "G.K.IO",
+  "description": "Comunicação em servidores com canais de texto/voz, mensagens diretas e chamadas de voz/vídeo.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F8F9",
+  "theme_color": "#5B6EE8",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "img/favicon-16.png", "sizes": "16x16", "type": "image/png" },
+    { "src": "img/favicon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "img/favicon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "img/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

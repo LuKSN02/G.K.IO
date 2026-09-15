@@ -17,7 +17,8 @@
 // *itálico* dentro**), exceto dentro de `código`, onde o texto é
 // sempre literal — igual ao Discord.
 // ============================================================
-import { el } from './state.js';
+import { el, state } from './state.js';
+import { openProfileCard } from './profile.js';
 
 // Mensagens curtas feitas só de emoji aparecem em tamanho grande, como
 // no Discord. Construído com try/catch porque \p{...} depende de
@@ -38,6 +39,11 @@ const JUMBO_LIMIT = 3; // até 3 emojis sozinhos = tamanho grande
 // de dois itálicos vazios.
 function inlineRules(parse) {
   return [
+    // Menção: @[Nome](uid) — formato interno gerado pelo composer ao
+    // escolher alguém no autocomplete de @. Não é markdown "de verdade",
+    // mas casa antes de tudo pra não ser comido por outra regra (ex: um
+    // uid com "_" virando sublinhado).
+    { re: /@\[([^\]]+)\]\(([\w-]+)\)/, build: (m) => buildMention(m[1], m[2]) },
     // Código inline: conteúdo literal, sem parse recursivo.
     { re: /`([^`\n]+)`/, build: (m) => el('code', { class: 'gk-md-code' }, m[1]) },
     { re: /\|\|([\s\S]+?)\|\|/, build: (m) => buildSpoiler(parse(m[1])) },
@@ -55,6 +61,19 @@ function inlineRules(parse) {
 // chamada de fora, prendendo o laço na mesma URL pra sempre. Cada chamada
 // cria a sua.
 const URL_SOURCE = 'https?:\\/\\/[^\\s<>"\'`]+';
+
+// Menção @Nome: fundo destacado (mais forte se for a própria pessoa
+// logada) e clique abre o cartão de perfil, igual ao Discord.
+function buildMention(name, uid) {
+  const isMe = uid === state.user?.uid;
+  return el('span', {
+    class: 'gk-mention' + (isMe ? ' gk-mention-me' : ''),
+    role: 'button', tabindex: '0',
+    title: 'Ver perfil',
+    onclick: () => openProfileCard(uid),
+    onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProfileCard(uid); } },
+  }, `@${name}`);
+}
 
 function buildSpoiler(children) {
   return el('span', {

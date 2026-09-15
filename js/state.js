@@ -43,6 +43,15 @@ export function el(tag, opts = {}, children = []) {
   if (tag === 'img') {
     if (opts.loading === undefined) opts.loading = 'lazy';
     if (opts.decoding === undefined) opts.decoding = 'async';
+    // Sem alt explícito, cai pra alt="" (decorativa) — melhor pra leitor de
+    // tela do que deixar sem o atributo, o que faz alguns lerem a URL do src.
+    if (opts.alt === undefined) opts.alt = '';
+  }
+  // Botão/link só com ícone (sem texto visível) mas com `title` — usa o
+  // título também como aria-label, já que nem todo leitor de tela anuncia
+  // `title`. Só entra se aria-label não foi passado explicitamente.
+  if ((tag === 'button' || tag === 'a') && opts.title !== undefined && opts['aria-label'] === undefined) {
+    opts['aria-label'] = opts.title;
   }
   for (const [k, v] of Object.entries(opts)) {
     if (k === 'class') node.className = v;

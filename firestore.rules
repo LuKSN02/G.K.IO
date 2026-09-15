@@ -58,6 +58,14 @@ service cloud.firestore {
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.createdAt == resource.data.createdAt;
     }
+    // Fixar/desafixar mensagem: igual à reação, qualquer pessoa que enxerga
+    // a conversa pode alternar SÓ o campo 'pinned' — nada mais da mensagem
+    // muda (autor, conteúdo, anexo, menções etc. continuam travados).
+    function isValidPinUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned'])
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
 
     // ---------- Usuários e perfil ----------
     // Campos de status Prime (role, primeSince, customBadges) NUNCA podem
@@ -124,7 +132,7 @@ service cloud.firestore {
           && request.resource.data.authorId == request.auth.uid;
         allow update: if signedIn()
           && (isValidMessageEdit()
-              || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds && isValidReactionUpdate()));
+              || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds && (isValidReactionUpdate() || isValidPinUpdate())));
         // Numa DM não existe moderação: só o próprio autor apaga o que escreveu.
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
       }
@@ -227,7 +235,7 @@ service cloud.firestore {
           allow read: if signedIn() && isServerMember(serverId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
           allow update: if signedIn() && isServerMember(serverId)
-            && (isValidMessageEdit() || isValidReactionUpdate());
+            && (isValidMessageEdit() || isValidReactionUpdate() || isValidPinUpdate());
           // O autor apaga a própria mensagem; quem modera o canal apaga a de
           // qualquer um (mesma régua usada para gerenciar canais).
           allow delete: if signedIn() && isServerMember(serverId)

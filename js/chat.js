@@ -49,6 +49,8 @@ let hasRenderedConversationOnce = false;
 export function selectChannel(serverId, channelId, name, readOnly = false) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideFriendsHome();
+  closeMentionAutocomplete();
+  closePinsPanel();
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = channelId;
@@ -58,10 +60,33 @@ export function selectChannel(serverId, channelId, name, readOnly = false) {
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
   setBaseSubtitle(readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto');
   document.getElementById('gk-call-btn').style.display = 'none';
+  document.getElementById('gk-pins-btn').style.display = 'inline-flex';
   applyComposerReadOnly(readOnly);
   attachMessagesListener(channelMessagesCol(serverId, channelId), channelId);
   listenTyping({ serverId, channelId }, applyTypingLabel);
+  refreshMentionCandidates(serverId);
   refreshSidebarActiveState();
+}
+
+// Recarrega a lista de "quem pode ser @mencionado" a partir do cache de
+// membros do servidor (já mantido por servers.js). Chamado ao trocar de
+// canal — se o cache ainda não chegou (servidor recém-aberto), tenta de
+// novo em breve em vez de deixar o autocomplete vazio pra sempre.
+function refreshMentionCandidates(serverId) {
+  const cache = state.serverMembersCache.get(serverId);
+  if (!cache || !cache.size) {
+    mentionCandidates = new Map();
+    setTimeout(() => {
+      if (state.currentServerId === serverId) refreshMentionCandidates(serverId);
+    }, 800);
+    return;
+  }
+  const map = new Map();
+  for (const m of cache.values()) {
+    const name = m.user?.displayName || m.user?.username;
+    if (name) map.set(name, { uid: m.uid, avatarUrl: m.user?.avatarUrl || '' });
+  }
+  mentionCandidates = map;
 }
 
 // O subtítulo do topbar é compartilhado com o indicador de "digitando..."
@@ -106,6 +131,8 @@ function applyComposerReadOnly(readOnly) {
 export function selectDm(dmId, title, subtitle, otherUid = null) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideFriendsHome();
+  closeMentionAutocomplete();
+  closePinsPanel();
   state.currentView = 'dms';
   state.currentDmId = dmId;
   state.currentChannelId = null;
@@ -114,9 +141,11 @@ export function selectDm(dmId, title, subtitle, otherUid = null) {
   document.getElementById('gk-topbar-title').textContent = title;
   setBaseSubtitle(subtitle || '');
   document.getElementById('gk-call-btn').style.display = 'inline-flex';
+  document.getElementById('gk-pins-btn').style.display = 'inline-flex';
   applyComposerReadOnly(false);
   attachMessagesListener(dmMessagesCol(dmId), dmId);
   listenTyping({ dmId }, applyTypingLabel);
+  mentionCandidates = otherUid && title ? new Map([[title, { uid: otherUid, avatarUrl: '' }]]) : new Map();
   refreshSidebarActiveState();
 }
 
@@ -278,6 +307,9 @@ function renderMessages(messages, isNewIncoming = false) {
     if (isEditingThis) {
       row.appendChild(buildEditBox(msg));
     } else {
+      if (msg.pinned) {
+        row.appendChild(el('div', { class: 'gk-pin-tag' }, [icon('pin', { size: 11 }), el('span', {}, 'Mensagem fixada')]));
+      }
       if (msg.content) {
         const classes = ['gk-msg-line'];
         if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
@@ -297,6 +329,13 @@ function renderMessages(messages, isNewIncoming = false) {
           class: 'gk-msg-action-btn', type: 'button', title: 'Copiar texto',
           onclick: () => copyMessageText(msg.content),
         }, [icon('copy', { size: 14 })]));
+      }
+      if (state.currentDmId || isOwn || canModerateCurrentChannel()) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn' + (msg.pinned ? ' gk-msg-action-pinned' : ''), type: 'button',
+          title: msg.pinned ? 'Desafixar mensagem' : 'Fixar mensagem',
+          onclick: () => togglePinMessage(msg),
+        }, [icon('pin', { size: 14 })]));
       }
       // Editar é só do autor. Apagar segue a mesma régua das regras do
       // Firestore: o autor sempre, e quem modera o canal apaga a de
@@ -468,6 +507,74 @@ function buildReactionsBar(msg) {
   return bar;
 }
 
+// ---------- Fixar / desafixar mensagens ----------
+async function togglePinMessage(msg) {
+  const ref = getMessageRef(msg.id);
+  if (!ref) return;
+  try {
+    await updateDoc(ref, { pinned: !msg.pinned });
+    toast(msg.pinned ? 'Mensagem desafixada.' : 'Mensagem fixada.');
+  } catch (err) {
+    toast('Não foi possível fixar a mensagem.', 'danger');
+  }
+}
+
+function closePinsPanel() {
+  document.getElementById('gk-pins-panel')?.remove();
+}
+
+// Painel simples com as mensagens fixadas da conversa aberta agora — usa
+// o que já está carregado em lastRenderedMessages (janela das últimas 200
+// mensagens, a mesma que o chat exibe), sem precisar de uma query extra.
+function togglePinsPanel() {
+  const existing = document.getElementById('gk-pins-panel');
+  if (existing) { existing.remove(); return; }
+
+  const pinned = lastRenderedMessages.filter((m) => m.pinned);
+  const panel = el('div', { id: 'gk-pins-panel', class: 'gk-pins-panel' });
+  panel.appendChild(el('h3', {}, `Mensagens fixadas — ${pinned.length}`));
+
+  if (!pinned.length) {
+    panel.appendChild(el('div', { class: 'gk-pins-empty' }, 'Nenhuma mensagem fixada nesta conversa ainda.'));
+  } else {
+    for (const msg of [...pinned].reverse()) {
+      const canUnpin = state.currentDmId || msg.authorId === state.user?.uid || canModerateCurrentChannel();
+      panel.appendChild(el('div', { class: 'gk-pin-item' }, [
+        el('div', { class: 'gk-pin-item-head' }, [
+          el('span', { class: 'gk-pin-item-author' }, msg.authorName || 'Usuário'),
+          canUnpin ? el('button', {
+            class: 'gk-pin-item-unpin', type: 'button',
+            onclick: () => { togglePinMessage(msg); closePinsPanel(); },
+          }, 'Desafixar') : null,
+        ]),
+        el('div', {
+          class: 'gk-pin-item-text', style: 'cursor:pointer;',
+          onclick: () => { jumpToMessage(msg.id); closePinsPanel(); },
+        }, (msg.content || '📎 Anexo').slice(0, 200)),
+      ]));
+    }
+  }
+
+  document.querySelector('.gk-main').appendChild(panel);
+  // Fecha ao clicar fora, sem interceptar o próprio clique que o abriu.
+  setTimeout(() => {
+    document.addEventListener('click', function onDocClick(e) {
+      if (!panel.contains(e.target) && e.target.id !== 'gk-pins-btn') {
+        panel.remove();
+        document.removeEventListener('click', onDocClick);
+      }
+    });
+  }, 0);
+}
+
+function jumpToMessage(msgId) {
+  const row = document.querySelector(`.gk-msg-row[data-msg-id="${msgId}"]`);
+  if (!row) { toast('Essa mensagem está fora do histórico carregado.'); return; }
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  row.classList.add('gk-msg-highlight');
+  setTimeout(() => row.classList.remove('gk-msg-highlight'), 1500);
+}
+
 async function toggleReaction(msg, key) {
   const uid = state.user?.uid;
   const ref = getMessageRef(msg.id);
@@ -554,10 +661,61 @@ async function saveEditMessage(msgId) {
   }
 }
 
+// ---------- Comandos de barra (/shrug, /tableflip, /unflip) ----------
+// Puramente textuais: interceptam antes do envio e substituem o texto
+// digitado pelo "kaomoji" correspondente, igual ao Discord faz pros
+// comandos nativos dele.
+const SLASH_COMMANDS = {
+  '/shrug': '¯\\_(ツ)_/¯',
+  '/tableflip': '(╯°□°）╯︵ ┻━┻',
+  '/unflip': '┬─┬ ノ( ゜-゜ノ)',
+};
+
+function applySlashCommand(text) {
+  const trimmed = text.trim();
+  const [cmd, ...rest] = trimmed.split(/\s+/);
+  const kaomoji = SLASH_COMMANDS[cmd?.toLowerCase()];
+  if (!kaomoji) return text;
+  const extra = rest.join(' ');
+  return extra ? `${extra} ${kaomoji}` : kaomoji;
+}
+
+// ---------- Menções (@Nome) ----------
+// O composer guarda em memória quem foi selecionado pelo autocomplete
+// (ver wireMentionAutocomplete). Na hora de enviar, cada ocorrência
+// literal de "@NomeExibido" no texto vira o formato interno
+// "@[Nome](uid)" que o markdown.js sabe renderizar como menção clicável.
+let mentionCandidates = new Map(); // displayName -> { uid, avatarUrl } (populado pelo autocomplete da conversa atual)
+
+function applyMentions(text) {
+  if (!mentionCandidates.size) return text;
+  let out = text;
+  // Nomes mais longos primeiro, pra "@Ana Paula" não virar "@[Ana](uid) Paula".
+  const names = [...mentionCandidates.keys()].sort((a, b) => b.length - a.length);
+  for (const name of names) {
+    const { uid } = mentionCandidates.get(name);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`@${escaped}(?!\\w)`, 'g'), `@[${name}](${uid})`);
+  }
+  return out;
+}
+
+// uids mencionados num texto já convertido (formato @[Nome](uid)) — usado
+// pra decidir quem recebe notificação de menção.
+function extractMentionedUids(text) {
+  const uids = new Set();
+  const re = /@\[[^\]]+\]\(([\w-]+)\)/g;
+  let m;
+  while ((m = re.exec(text))) uids.add(m[1]);
+  return [...uids];
+}
+
 export async function sendCurrentMessage() {
   const textarea = document.getElementById('gk-composer-input');
-  const text = textarea.value.trim();
+  let text = textarea.value.trim();
   if (!text && !pendingFile) return;
+  text = applyMentions(applySlashCommand(text));
+  const mentionedUids = extractMentionedUids(text);
 
   const uid = auth.currentUser.uid;
   const payload = {
@@ -570,6 +728,7 @@ export async function sendCurrentMessage() {
     content: text,
     createdAt: serverTimestamp(),
   };
+  if (mentionedUids.length) payload.mentionedUids = mentionedUids;
 
   if (pendingFile) {
     setAttachmentUploading(true);
@@ -733,6 +892,94 @@ export function autoResizeComposer() {
   textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
 }
 
+// ---------- Autocomplete de @menção no composer ----------
+let mentionActiveIndex = 0;
+let mentionCurrentMatches = [];
+
+function closeMentionAutocomplete() {
+  document.getElementById('gk-mention-autocomplete')?.remove();
+}
+
+// Acha o "@algumaCoisa" que está sendo digitado bem antes do cursor, se
+// houver — só conta como gatilho se o @ estiver no início da mensagem ou
+// depois de um espaço/quebra de linha, e sem espaço duplo depois (senão
+// qualquer "@" antigo no meio do texto reabriria o autocomplete).
+function findMentionTrigger(textarea) {
+  const value = textarea.value;
+  const cursor = textarea.selectionStart;
+  const uptoCursor = value.slice(0, cursor);
+  const m = uptoCursor.match(/(?:^|[\s\n])@([^\s\n@]{0,24})$/);
+  if (!m) return null;
+  return { query: m[1], start: cursor - m[1].length - 1, end: cursor };
+}
+
+function renderMentionAutocomplete(textarea, trigger) {
+  const queryLower = trigger.query.toLowerCase();
+  const matches = [...mentionCandidates.entries()]
+    .filter(([name]) => name.toLowerCase().includes(queryLower))
+    .slice(0, 6);
+
+  if (!matches.length) { closeMentionAutocomplete(); return; }
+  mentionCurrentMatches = matches;
+  mentionActiveIndex = 0;
+
+  let box = document.getElementById('gk-mention-autocomplete');
+  if (!box) {
+    box = el('div', { id: 'gk-mention-autocomplete', class: 'gk-mention-autocomplete' });
+    document.getElementById('gk-composer').appendChild(box);
+  }
+  box.innerHTML = '';
+  matches.forEach(([name, data], i) => {
+    box.appendChild(el('div', {
+      class: 'gk-mention-option' + (i === mentionActiveIndex ? ' gk-mention-option-active' : ''),
+      onmousedown: (e) => { e.preventDefault(); selectMentionOption(textarea, trigger, name); },
+    }, [
+      el('img', { src: data.avatarUrl || fallbackAvatar(name) }),
+      el('span', {}, name),
+    ]));
+  });
+}
+
+function selectMentionOption(textarea, trigger, name) {
+  const value = textarea.value;
+  const before = value.slice(0, trigger.start);
+  const after = value.slice(trigger.end);
+  const insertion = `@${name} `;
+  textarea.value = before + insertion + after;
+  const newCursor = (before + insertion).length;
+  textarea.focus();
+  textarea.setSelectionRange(newCursor, newCursor);
+  closeMentionAutocomplete();
+  autoResizeComposer();
+}
+
+// Retorna true se a tecla foi consumida pelo autocomplete (pra keydown do
+// composer não também tratar Enter como "enviar mensagem" nesse caso).
+function handleMentionAutocompleteKeydown(e, textarea) {
+  const box = document.getElementById('gk-mention-autocomplete');
+  if (!box || !mentionCurrentMatches.length) return false;
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionActiveIndex = e.key === 'ArrowDown'
+      ? (mentionActiveIndex + 1) % mentionCurrentMatches.length
+      : (mentionActiveIndex - 1 + mentionCurrentMatches.length) % mentionCurrentMatches.length;
+    [...box.children].forEach((child, i) => child.classList.toggle('gk-mention-option-active', i === mentionActiveIndex));
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    const trigger = findMentionTrigger(textarea);
+    if (trigger) selectMentionOption(textarea, trigger, mentionCurrentMatches[mentionActiveIndex][0]);
+    return true;
+  }
+  if (e.key === 'Escape') {
+    closeMentionAutocomplete();
+    return true;
+  }
+  return false;
+}
+
 export function wireComposer() {
   const textarea = document.getElementById('gk-composer-input');
   const sendBtn = document.getElementById('gk-send-btn');
@@ -741,8 +988,17 @@ export function wireComposer() {
   textarea.addEventListener('input', () => {
     autoResizeComposer();
     if (textarea.value.trim()) notifyTyping();
+    const trigger = findMentionTrigger(textarea);
+    if (trigger) renderMentionAutocomplete(textarea, trigger);
+    else closeMentionAutocomplete();
+  });
+  textarea.addEventListener('blur', () => {
+    // Pequeno atraso: o mousedown do onmousedown acima precisa disparar
+    // antes do autocomplete sumir, senão o clique nunca chega a selecionar.
+    setTimeout(closeMentionAutocomplete, 150);
   });
   textarea.addEventListener('keydown', (e) => {
+    if (handleMentionAutocompleteKeydown(e, textarea)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendCurrentMessage();
@@ -753,6 +1009,10 @@ export function wireComposer() {
   fileInput.addEventListener('change', () => {
     if (fileInput.files[0]) setPendingFile(fileInput.files[0]);
     fileInput.value = '';
+  });
+  document.getElementById('gk-pins-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePinsPanel();
   });
 
   // Se a pessoa rolar de volta pro fim por conta própria (sem clicar no

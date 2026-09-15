@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="description" content="G.K.IO — servidores com canais de texto/voz, mensagens diretas e chamadas de voz/vídeo, direto do navegador.">
+<meta name="theme-color" content="#5B6EE8" id="gk-theme-color-meta">
+<link rel="manifest" href="manifest.json">
 <title>G.K.IO</title>
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16.png">
@@ -37,6 +40,8 @@
     root.setProperty('--gk-accent-strong', acc.s);
     root.setProperty('--gk-accent-soft', acc.so);
     root.setProperty('--gk-accent-glow', acc.g);
+    var themeMeta = document.getElementById('gk-theme-color-meta');
+    if (themeMeta) themeMeta.setAttribute('content', acc.a);
   } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
 })();
 </script>
@@ -112,7 +117,7 @@
     <div class="gk-sidebar-body" id="gk-sidebar-body"></div>
     <div class="gk-mini-profile" id="gk-mini-profile">
       <div class="gk-avatar gk-sz-32" id="gk-mini-avatar-wrap" data-status="online">
-        <img id="gk-mini-avatar" src="">
+        <img id="gk-mini-avatar" src="" alt="">
       </div>
       <div class="gk-mini-info">
         <div class="gk-name" id="gk-mini-name">—</div>
@@ -139,6 +144,7 @@
       <span class="gk-title" id="gk-topbar-title">Selecione uma conversa</span>
       <span class="gk-subtitle" id="gk-topbar-subtitle"></span>
       <div class="gk-spacer"></div>
+      <button class="gk-icon-btn" id="gk-pins-btn" title="Mensagens fixadas" style="display:none;" data-icon="pin"></button>
       <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;" data-icon="phoneCall"></button>
       <button class="gk-icon-btn" id="gk-video-call-btn" title="Chamada de vídeo" style="display:none;" data-icon="videoCall"></button>
       <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;" data-icon="members"></button>

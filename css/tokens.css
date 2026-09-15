@@ -20,7 +20,7 @@
   --gk-gray-200: #D6DCE0;
   --gk-gray-300: #C1C9CE;
   --gk-gray-400: #9AA5AB;
-  --gk-gray-500: #77828A;
+  --gk-gray-500: #697279;  /* escurecido de #77828A — no branco batia ~3,9:1 (abaixo do AA 4,5:1); agora ~4,9:1 */
   --gk-gray-600: #565F66;
   --gk-gray-700: #3C4348;
   --gk-gray-800: #262B2E;

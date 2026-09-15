@@ -5,6 +5,17 @@
 #gk-app { display: none; height: 100vh; height: 100dvh; }
 #gk-app.gk-ready { display: flex; }
 
+/* Foco visível por teclado em qualquer botão/link clicável — antes só os
+   campos de formulário tinham um estilo de :focus próprio, então navegar
+   de Tab em botões de ícone (rail, topbar, controles de chamada) caía no
+   outline default do navegador, deslocado da identidade visual do app.
+   Some no clique do mouse (:focus-visible) e mantém acessível no teclado. */
+button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--gk-accent);
+  outline-offset: 2px;
+  border-radius: var(--gk-radius-sm);
+}
+
 /* Ícones SVG (ver js/icons.js) — alinhamento e tamanho consistentes
    em qualquer botão/rótulo onde aparecem. */
 .gk-icon { display: block; flex-shrink: 0; }
@@ -247,7 +258,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-avatar.gk-sz-96 img { width: 96px; height: 96px; border-radius: 20px; }
 
 /* ---------- Área central (chat) ---------- */
-.gk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--gk-bg); }
+.gk-main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--gk-bg); position: relative; }
 
 .gk-topbar {
   height: 56px; flex-shrink: 0;
@@ -517,7 +528,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   .gk-settings-avatar-edit { opacity: 1; background: rgba(22, 25, 27, 0.38); }
 }
 
-.gk-composer { flex-shrink: 0; padding: 14px 22px 20px; }
+.gk-composer { flex-shrink: 0; padding: 14px 22px 20px; position: relative; }
 
 /* ---------- Anexo engatilhado (antes de enviar) ---------- */
 .gk-composer-attachment { margin-bottom: 8px; }
@@ -582,6 +593,74 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
 /* ---------- Reações rápidas ---------- */
 .gk-reactions-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* ---------- Menções (@Nome) ---------- */
+.gk-mention {
+  display: inline;
+  padding: 0 2px;
+  border-radius: 4px;
+  color: var(--gk-accent-strong);
+  background: var(--gk-accent-soft);
+  font-weight: 600;
+  cursor: pointer;
+}
+.gk-mention:hover { background: var(--gk-accent-glow); }
+.gk-mention-me { background: var(--gk-accent); color: #fff; }
+.gk-mention-me:hover { background: var(--gk-accent-strong); }
+
+/* ---------- Autocomplete de @menção no composer ---------- */
+.gk-mention-autocomplete {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 12px;
+  right: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--gk-surface);
+  border: 1px solid var(--gk-gray-200);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 20;
+  padding: 6px;
+}
+.gk-mention-option {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  font-size: 14px; color: var(--gk-gray-800);
+}
+.gk-mention-option img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+.gk-mention-option:hover, .gk-mention-option.gk-mention-option-active { background: var(--gk-surface-sunken); }
+
+/* ---------- Mensagem fixada ---------- */
+.gk-msg-action-btn.gk-msg-action-pinned { color: var(--gk-accent-strong); }
+.gk-pin-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--gk-accent-strong); font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* ---------- Painel de mensagens fixadas ---------- */
+.gk-pins-panel {
+  position: absolute; top: 56px; right: 12px; width: 320px; max-height: 60vh;
+  overflow-y: auto; background: var(--gk-surface); border: 1px solid var(--gk-gray-200);
+  border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.16); z-index: 30; padding: 10px;
+}
+.gk-pins-panel h3 { margin: 4px 6px 8px; font-size: 14px; color: var(--gk-gray-800); }
+.gk-pins-empty { padding: 16px 8px; color: var(--gk-gray-500); font-size: 13px; text-align: center; }
+.gk-pin-item { padding: 8px; border-radius: 8px; margin-bottom: 4px; }
+.gk-pin-item:hover { background: var(--gk-surface-sunken); }
+.gk-pin-item-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.gk-pin-item-author { font-weight: 600; font-size: 13px; color: var(--gk-gray-800); }
+.gk-pin-item-unpin { background: none; border: none; color: var(--gk-gray-500); cursor: pointer; font-size: 12px; }
+.gk-pin-item-unpin:hover { color: var(--gk-danger); }
+.gk-pin-item-text { font-size: 13px; color: var(--gk-gray-700); white-space: pre-wrap; word-break: break-word; }
+
+/* ---------- Destaque ao "pular" para uma mensagem fixada ---------- */
+.gk-msg-row.gk-msg-highlight { animation: gk-msg-highlight-flash 1.5s ease; border-radius: 8px; }
+@keyframes gk-msg-highlight-flash {
+  0% { background: var(--gk-accent-glow); }
+  100% { background: transparent; }
+}
 .gk-reaction-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 999px;
