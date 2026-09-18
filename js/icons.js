@@ -29,7 +29,6 @@ const ICONS = {
   expand:       { path: '<path d="M4 14v6h6M20 10V4h-6M14 10l6-6M4 20l6-6"/>' },
 
   trash:        { path: '<path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/>' },
-  pin:          { path: '<path d="M9 4h6l-1 6 3 3v2h-5v5l-1 1-1-1v-5H5v-2l3-3-1-6z"/>' },
   copy:         { path: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M6 15H5a2 2 0 01-2-2V5a2 2 0 012-2h8a2 2 0 012 2v1"/>' },
 
   power:        { path: '<path d="M12 3v8M18.4 6.6a9 9 0 11-12.8 0"/>' },

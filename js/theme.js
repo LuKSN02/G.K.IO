@@ -60,10 +60,6 @@ export function applyTheme() {
   root.setProperty('--gk-accent-strong', a.strong);
   root.setProperty('--gk-accent-soft', a.soft);
   root.setProperty('--gk-accent-glow', a.glow);
-  // Cor da barra de status/navegador (PWA instalada, Android/iOS) segue
-  // o accent escolhido, igual o resto da UI.
-  const meta = document.getElementById('gk-theme-color-meta');
-  if (meta) meta.setAttribute('content', a.accent);
 }
 
 export function setThemeMode(mode) {

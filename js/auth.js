@@ -146,6 +146,7 @@ export function wireAuthForm() {
     e.preventDefault();
     errorBox.style.display = 'none';
     submitBtn.disabled = true;
+    submitBtn.classList.add('gk-btn-loading');
     const email = document.getElementById('gk-auth-email').value.trim();
     const password = document.getElementById('gk-auth-password').value;
     const username = document.getElementById('gk-auth-username').value.trim();
@@ -163,6 +164,7 @@ export function wireAuthForm() {
       errorBox.style.display = 'block';
     } finally {
       submitBtn.disabled = false;
+      submitBtn.classList.remove('gk-btn-loading');
     }
   });
 }

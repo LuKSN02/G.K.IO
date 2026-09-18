@@ -101,9 +101,6 @@ npx serve gkio
 - Canais de voz em servidor: conexao em malha (mesh) entre participantes, boa para grupos pequenos (2-5 pessoas).
 - Presenca: online / ausente / nao perturbe / offline, refletida no anel do avatar.
 - Notificacoes push (FCM) em builds APK via Capacitor, com deep-link pra DM ao tocar na notificacao (ver secao 2.2).
-- Mencoes (@Nome): autocomplete no composer, destaque visual na mensagem e clique abre o perfil da pessoa mencionada.
-- Mensagens fixadas: qualquer participante de DM (ou autor/moderador em canal de servidor) pode fixar/desafixar, com painel dedicado na topbar pra ver e pular ate elas.
-- Comandos de barra basicos: /shrug, /tableflip e /unflip convertem pro kaomoji correspondente antes de enviar.
 
 ## 5. Limitacoes conhecidas deste MVP (e como evoluir)
 
@@ -116,7 +113,6 @@ npx serve gkio
 | Regras do Firestore sao um ponto de partida | Priorizam simplicidade para o MVP | Validacao de schema por campo + Firebase App Check antes de um lancamento mais amplo |
 | Push de canal so abre o servidor, nao o canal exato | Selecionar canal depende do listener de canais (async) ja estar carregado | Guardar nome/id do canal direto no payload e aguardar o snapshot antes de chamar selectChannel |
 | Push so cobre DM e canal de texto | Escopo inicial | Notificar tambem em @mencoes, reacoes, chamada recebida |
-| Painel de fixadas so olha as ultimas 200 mensagens carregadas do canal/DM | Sem query dedicada por 'pinned', pra nao exigir indice composto extra | Se precisar de historico maior, trocar por uma query where('pinned','==',true) com indice proprio |
 
 ## 6. Identidade visual
 

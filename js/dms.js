@@ -199,7 +199,6 @@ export function goToDmsView() {
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
   document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens diretas';
   document.getElementById('gk-call-btn').style.display = 'none';
-  document.getElementById('gk-pins-btn').style.display = 'none';
   document.getElementById('gk-messages').innerHTML = '';
   renderDmSidebar();
   showFriendsHome();

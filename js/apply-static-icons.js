@@ -14,12 +14,6 @@ function applyIcons(root = document) {
     const name = elNode.getAttribute('data-icon');
     elNode.insertAdjacentHTML('afterbegin', iconHtml(name));
     elNode.dataset.iconApplied = 'true';
-    // Botão só-com-ícone: usa o title como aria-label, senão leitor de
-    // tela não tem como anunciar pra que serve (nem todos leem `title`).
-    const title = elNode.getAttribute('title');
-    if (title && !elNode.hasAttribute('aria-label')) {
-      elNode.setAttribute('aria-label', title);
-    }
   });
 }
 

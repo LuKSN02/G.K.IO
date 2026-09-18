@@ -20,7 +20,7 @@
   --gk-gray-200: #D6DCE0;
   --gk-gray-300: #C1C9CE;
   --gk-gray-400: #9AA5AB;
-  --gk-gray-500: #697279;  /* escurecido de #77828A — no branco batia ~3,9:1 (abaixo do AA 4,5:1); agora ~4,9:1 */
+  --gk-gray-500: #77828A;
   --gk-gray-600: #565F66;
   --gk-gray-700: #3C4348;
   --gk-gray-800: #262B2E;
@@ -69,9 +69,32 @@
   --gk-radius-hex: 28%; /* cantos do "ícone de servidor gelado" */
 
   /* --- Sombra (difusa, nunca "flat dark") --- */
+  --gk-shadow-xs: 0 1px 1px rgba(22, 25, 27, 0.05);
   --gk-shadow-sm: 0 1px 2px rgba(22, 25, 27, 0.06);
   --gk-shadow-md: 0 4px 16px rgba(22, 25, 27, 0.08);
   --gk-shadow-lg: 0 12px 32px rgba(22, 25, 27, 0.12);
+
+  /* --- Escala de espaçamento (base 4px) — usada nas peças reformuladas
+     no passe de redesign; o resto do arquivo ainda usa valores soltos,
+     escolhidos à mão com o tempo, e é por isso que às vezes o espaçamento
+     entre telas parece levemente inconsistente. --- */
+  --gk-space-1: 4px;
+  --gk-space-2: 8px;
+  --gk-space-3: 12px;
+  --gk-space-4: 16px;
+  --gk-space-5: 20px;
+  --gk-space-6: 24px;
+  --gk-space-7: 32px;
+  --gk-space-8: 40px;
+
+  /* --- Escala tipográfica --- */
+  --gk-text-xs: 11px;
+  --gk-text-sm: 12.5px;
+  --gk-text-base: 14px;
+  --gk-text-md: 15px;
+  --gk-text-lg: 17px;
+  --gk-text-xl: 20px;
+  --gk-text-2xl: 24px;
 
   --gk-transition: 160ms cubic-bezier(.2,.8,.2,1);
   --gk-transition-slow: 240ms cubic-bezier(.2,.8,.2,1);
@@ -117,6 +140,7 @@
 
   --gk-frost-pattern: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='130' height='130'><g fill='none' stroke='%23FFFFFF' stroke-width='1' opacity='0.05'><path d='M0 46 L46 0 M0 98 L98 0 M32 130 L130 32 M84 130 L130 84 M-10 20 L20 -10'/></g></svg>");
 
+  --gk-shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.22);
   --gk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
   --gk-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
   --gk-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.48);
