@@ -13,6 +13,7 @@ import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
 import { listenReadStates } from './unread.js';
 import { initPushNotifications, onPushNotificationTap } from './push.js';
+import { wireGlobalSearch } from './search.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -31,6 +32,7 @@ wireServerSettingsModal();
 wireFriendsHome();
 wireStaticUI();
 wireMobileNav();
+wireGlobalSearch();
 initEmojiPicker({
   textarea: document.getElementById('gk-composer-input'),
   triggerBtn: document.getElementById('gk-emoji-btn'),

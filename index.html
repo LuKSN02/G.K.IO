@@ -20,7 +20,7 @@
     if (mode === 'auto') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', mode);
     var accents = {
-      cosmic: { a: '#5B6EE8', s: '#4453C4', so: 'rgba(91,110,232,0.12)', g: 'rgba(91,110,232,0.25)' },
+      cosmic: { a: '#6C63FF', s: '#4F46D6', so: 'rgba(108,99,255,0.14)', g: 'rgba(108,99,255,0.28)' },
       teal: { a: '#1F6F78', s: '#16545C', so: 'rgba(31,111,120,0.12)', g: 'rgba(31,111,120,0.25)' },
       indigo: { a: '#4C5FD5', s: '#3945A8', so: 'rgba(76,95,213,0.12)', g: 'rgba(76,95,213,0.25)' },
       rose: { a: '#C24868', s: '#9C3550', so: 'rgba(194,72,104,0.12)', g: 'rgba(194,72,104,0.25)' },
@@ -47,6 +47,17 @@
 
 <!-- ======================= AUTENTICAÇÃO ======================= -->
 <div id="gk-auth">
+  <div class="gk-auth-hero" aria-hidden="true">
+    <div class="gk-auth-hero-glow"></div>
+    <div class="gk-auth-hero-mark">GK</div>
+    <div class="gk-auth-hero-title">G.K<span>.IO</span></div>
+    <p class="gk-auth-hero-tagline">Mais que um chat,<br>uma comunidade.</p>
+    <ul class="gk-auth-hero-features">
+      <li><span class="gk-auth-hero-feature-icon">💬</span>Bate-papo em tempo real</li>
+      <li><span class="gk-auth-hero-feature-icon">🧭</span>Comunidades para todos</li>
+      <li><span class="gk-auth-hero-feature-icon">🛡️</span>Segurança em primeiro lugar</li>
+    </ul>
+  </div>
   <div class="gk-auth-card">
     <div class="gk-auth-logo">
       <div class="gk-mark">GK</div>
@@ -139,6 +150,11 @@
       <span class="gk-title" id="gk-topbar-title">Selecione uma conversa</span>
       <span class="gk-subtitle" id="gk-topbar-subtitle"></span>
       <div class="gk-spacer"></div>
+      <div class="gk-global-search" id="gk-global-search">
+        <span class="gk-global-search-icon" data-icon="search"></span>
+        <input type="text" id="gk-global-search-input" placeholder="Buscar no G.K.IO..." autocomplete="off">
+        <div class="gk-global-search-results" id="gk-global-search-results"></div>
+      </div>
       <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;" data-icon="phoneCall"></button>
       <button class="gk-icon-btn" id="gk-video-call-btn" title="Chamada de vídeo" style="display:none;" data-icon="videoCall"></button>
       <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;" data-icon="members"></button>
@@ -209,6 +225,7 @@
   <div class="gk-settings-shell" id="gk-settings-shell">
     <div class="gk-settings-nav" id="gk-settings-nav"></div>
     <div class="gk-settings-content" id="gk-settings-content"></div>
+    <div class="gk-settings-preview" id="gk-settings-preview" style="display:none;"></div>
     <button class="gk-settings-close" id="gk-settings-close" title="Fechar" data-icon="close"></button>
   </div>
 </div>

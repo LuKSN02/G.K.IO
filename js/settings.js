@@ -71,6 +71,11 @@ function renderNav() {
 function renderSection() {
   const content = document.getElementById('gk-settings-content');
   content.innerHTML = '';
+  const shell = document.getElementById('gk-settings-shell');
+  const preview = document.getElementById('gk-settings-preview');
+  shell.classList.remove('gk-has-preview');
+  preview.style.display = 'none';
+  preview.innerHTML = '';
   if (activeSection === 'perfil') return renderPerfilSection(content);
   if (activeSection === 'audio-video') return renderAudioVideoSection(content);
   if (activeSection === 'aparencia') return renderAparenciaSection(content);
@@ -390,6 +395,60 @@ function renderAparenciaSection(content) {
       !isPrime ? el('span', { class: 'gk-settings-card-title-hint' }, [icon('diamond', { size: 12 }), ' cores exigem Prime']) : null,
     ]),
     swatchRow,
+  ]));
+
+  renderAppearancePreview(prefs);
+}
+
+// Painel "Prévia do visual" — uma miniatura real da interface (mesmas
+// classes/tokens do app de verdade), não uma imagem estática: como ela
+// vive no mesmo documento, herda --gk-accent/--gk-bg/etc ao vivo, então
+// reage instantaneamente a cada clique em modo/cor, igual o app inteiro
+// por trás do modal já reage (só que essa parte fica escondida atrás
+// do overlay de configurações enquanto ele está aberto).
+function renderAppearancePreview(prefs) {
+  const shell = document.getElementById('gk-settings-shell');
+  const preview = document.getElementById('gk-settings-preview');
+  shell.classList.add('gk-has-preview');
+  preview.style.display = 'flex';
+  preview.innerHTML = '';
+
+  const me = state.user || {};
+  const myInitials = (me.displayName || me.username || 'GK').slice(0, 2).toUpperCase();
+
+  const mockRail = el('div', { class: 'gk-mock-rail' }, [
+    el('div', { class: 'gk-mock-rail-item gk-mock-active' }, 'GK'),
+    el('div', { class: 'gk-mock-rail-item' }, 'RP'),
+    el('div', { class: 'gk-mock-rail-item' }, 'AM'),
+  ]);
+
+  const mockSidebar = el('div', { class: 'gk-mock-sidebar' }, [
+    el('div', { class: 'gk-mock-sidebar-row gk-mock-active' }, [icon('chatBubble', { size: 11 }), el('span', {}, 'geral')]),
+    el('div', { class: 'gk-mock-sidebar-row' }, [icon('chatBubble', { size: 11 }), el('span', {}, 'projetos')]),
+    el('div', { class: 'gk-mock-sidebar-row' }, [icon('chatBubble', { size: 11 }), el('span', {}, 'memes')]),
+  ]);
+
+  const mockChat = el('div', { class: 'gk-mock-chat' }, [
+    el('div', { class: 'gk-mock-msg' }, [
+      el('div', { class: 'gk-mock-avatar' }, myInitials),
+      el('div', { class: 'gk-mock-bubble' }, 'Bora testar o novo visual?'),
+    ]),
+    el('div', { class: 'gk-mock-msg gk-mock-msg-self' }, [
+      el('div', { class: 'gk-mock-bubble gk-mock-bubble-accent' }, 'Ficou top! 🔥'),
+    ]),
+    el('button', { class: 'gk-btn gk-btn-primary gk-mock-btn' }, 'Salvar alterações'),
+  ]);
+
+  preview.appendChild(el('div', { class: 'gk-settings-preview-label' }, [icon('sparkles', { size: 13 }), ' Prévia do visual']));
+  preview.appendChild(el('div', { class: 'gk-settings-preview-frame' }, [
+    mockRail,
+    el('div', { class: 'gk-mock-body' }, [mockSidebar, mockChat]),
+  ]));
+
+  const modeNames = { light: 'Claro', dark: 'Escuro', auto: 'Automático' };
+  preview.appendChild(el('div', { class: 'gk-settings-preview-note' }, [
+    el('strong', {}, `Modo ${modeNames[prefs.mode] || prefs.mode} selecionado`),
+    el('span', {}, 'As mudanças de modo e cor já valem pro app inteiro assim que você escolhe.'),
   ]));
 }
 
