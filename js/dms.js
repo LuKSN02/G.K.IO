@@ -6,7 +6,7 @@ import {
   collection, doc, addDoc, setDoc, updateDoc, getDoc, getDocs,
   query, where, onSnapshot, serverTimestamp,
 } from './db.js';
-import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername } from './state.js';
+import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername, effectiveStatus } from './state.js';
 import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
@@ -103,9 +103,9 @@ function renderDmSidebar() {
     const row = el('div', {
       class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
       'data-id': dm.id,
-      onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(dm.other.statusPresence), dm.other.uid),
+      onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(effectiveStatus(dm.other)), dm.other.uid),
     }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': dm.other.statusPresence || 'offline', 'data-frame': dm.other.frameStyle || 'none' }, [
+      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(dm.other), 'data-frame': dm.other.frameStyle || 'none' }, [
         el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.username) }),
       ]),
       el('div', {}, [
@@ -157,7 +157,7 @@ async function declineFriendRequest(friendshipId) {
 export async function openDmById(dmId) {
   const existing = state.dms.get(dmId);
   if (existing && existing.other) {
-    selectDm(dmId, existing.other.displayName || existing.other.username, statusLabel(existing.other.statusPresence), existing.other.uid);
+    selectDm(dmId, existing.other.displayName || existing.other.username, statusLabel(effectiveStatus(existing.other)), existing.other.uid);
     return;
   }
   const dmSnap = await getDoc(dmDoc(dmId));
@@ -168,14 +168,14 @@ export async function openDmById(dmId) {
   const otherSnap = await getDoc(userDoc(otherId));
   if (!otherSnap.exists()) return;
   const other = otherSnap.data();
-  selectDm(dmId, other.displayName || other.username, statusLabel(other.statusPresence), otherId);
+  selectDm(dmId, other.displayName || other.username, statusLabel(effectiveStatus(other)), otherId);
 }
 
 export async function openOrCreateDm(otherUid) {
   const uid = auth.currentUser.uid;
   const existing = [...state.dms.values()].find((dm) => dm.other && dm.other.uid === otherUid);
   if (existing) {
-    selectDm(existing.id, existing.other.displayName || existing.other.username, statusLabel(existing.other.statusPresence), existing.other.uid);
+    selectDm(existing.id, existing.other.displayName || existing.other.username, statusLabel(effectiveStatus(existing.other)), existing.other.uid);
     return;
   }
   const ref = await addDoc(dmsCol(), {
@@ -185,7 +185,7 @@ export async function openOrCreateDm(otherUid) {
     lastMessageAt: serverTimestamp(),
   });
   const otherSnap = await getDoc(userDoc(otherUid));
-  selectDm(ref.id, otherSnap.data().displayName || otherSnap.data().username, statusLabel(otherSnap.data().statusPresence), otherUid);
+  selectDm(ref.id, otherSnap.data().displayName || otherSnap.data().username, statusLabel(effectiveStatus(otherSnap.data())), otherUid);
 }
 
 export function goToDmsView() {
@@ -257,12 +257,12 @@ function renderFriendsTab(list) {
   friends.sort((a, b) => (a.displayName || a.username).localeCompare(b.displayName || b.username));
   friends.forEach((f, i) => {
     list.appendChild(el('div', { class: 'gk-friend-card', style: `animation-delay:${Math.min(i, 8) * 25}ms;` }, [
-      el('div', { class: 'gk-avatar gk-sz-40', 'data-status': f.statusPresence || 'offline', 'data-frame': f.frameStyle || 'none' }, [
+      el('div', { class: 'gk-avatar gk-sz-40', 'data-status': effectiveStatus(f), 'data-frame': f.frameStyle || 'none' }, [
         el('img', { src: f.avatarUrl || fallbackAvatar(f.username) }),
       ]),
       el('div', { class: 'gk-friend-info', onclick: () => openOrCreateDm(f.uid) }, [
         el('div', { class: 'gk-friend-name' }, f.displayName || f.username),
-        el('div', { class: 'gk-friend-sub' }, statusLabel(f.statusPresence)),
+        el('div', { class: 'gk-friend-sub' }, statusLabel(effectiveStatus(f))),
       ]),
       el('div', { class: 'gk-friend-actions' }, [
         el('button', { class: 'gk-friend-action-btn', title: 'Enviar mensagem', type: 'button', onclick: () => openOrCreateDm(f.uid) }, [icon('chatBubble', { size: 15 })]),

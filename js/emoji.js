@@ -70,9 +70,46 @@ export function listenCustomEmojis() {
 // chat.js ao montar cada linha de mensagem.
 export function renderMessageContent(text) {
   // A formatação em si (negrito, código, citação, links, spoiler) vive em
-  // markdown.js; aqui só entramos com o resolvedor de emoji personalizado,
-  // que depende do cache local desta module.
-  return renderRichText(text, getCustomEmojiByName);
+  // markdown.js; aqui só entramos com os resolvedores de emoji e @menção,
+  // que dependem do estado local (cache de emojis, membros, amigos).
+  return renderRichText(text, getCustomEmojiByName, resolveMentionByName);
+}
+
+// Junta quem está "à vista" no contexto atual (servidor aberto, DM aberta,
+// lista de amigos, a própria pessoa) — fonte única usada tanto pra resolver
+// um @nome já escrito quanto pra sugerir nomes enquanto a pessoa digita.
+function mentionCandidates() {
+  const seen = new Set();
+  const out = [];
+  const add = (u) => { if (u?.uid && !seen.has(u.uid)) { seen.add(u.uid); out.push(u); } };
+  if (state.user) add(state.user);
+  if (state.currentServerId) {
+    const cache = state.serverMembersCache.get(state.currentServerId);
+    if (cache) for (const m of cache.values()) if (m.user) add({ uid: m.uid, ...m.user });
+  }
+  if (state.currentDmId) {
+    const dm = state.dms.get(state.currentDmId);
+    if (dm?.other) add(dm.other);
+  }
+  for (const f of state.friends.values()) add(f);
+  return out;
+}
+
+function resolveMentionByName(name) {
+  const target = name.toLowerCase();
+  const hit = mentionCandidates().find((u) => (u.username || '').toLowerCase() === target);
+  if (!hit) return null;
+  return { uid: hit.uid, name: hit.displayName || hit.username, username: hit.username };
+}
+
+// Usado pelo autocomplete do composer (ver wireMentionAutocomplete em
+// chat.js) — retorna quem bate com o prefixo digitado depois do @, por
+// username ou nome de exibição, limitado a um punhado de sugestões.
+export function searchMentionCandidates(prefix) {
+  const p = prefix.toLowerCase();
+  return mentionCandidates()
+    .filter((u) => (u.username || '').toLowerCase().startsWith(p) || (u.displayName || '').toLowerCase().startsWith(p))
+    .slice(0, 6);
 }
 
 // ---------- Inicialização / wiring do botão + painel ----------

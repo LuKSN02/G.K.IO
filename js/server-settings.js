@@ -5,7 +5,7 @@
 // e edição condicionadas ao cargo de quem está olhando.
 // ============================================================
 import { auth } from './db.js';
-import { state, el, toast, fallbackAvatar } from './state.js';
+import { state, el, toast, fallbackAvatar, effectiveStatus } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import {
   canManageChannels, canManageServerInfo, canKickMembers, canManageRoles,
@@ -395,7 +395,7 @@ function renderMembrosSection(content) {
     }
 
     list.appendChild(el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': m.user.statusPresence || 'offline' }, [el('img', { src: m.user.avatarUrl || fallbackAvatar(m.user.username) })]),
+      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(m.user) }, [el('img', { src: m.user.avatarUrl || fallbackAvatar(m.user.username) })]),
       el('div', { style: 'flex:1;min-width:0;' }, [nameLine]),
       ...actions,
     ]));

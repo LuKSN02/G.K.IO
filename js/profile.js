@@ -2,7 +2,7 @@
 // G.K.IO — Perfil do usuário: edição e cartão público
 // ============================================================
 import { userDoc, socialLinksCol, getDoc, getDocs } from './db.js';
-import { state, el, fallbackAvatar } from './state.js';
+import { state, el, fallbackAvatar, effectiveStatus } from './state.js';
 import { openOrCreateDm } from './dms.js';
 import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
@@ -85,8 +85,8 @@ export async function openProfileCard(uid) {
     el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
     el('div', { class: 'gk-profile-handle' }, [
       el('span', {}, '@' + user.username),
-      el('span', { class: 'gk-profile-status-dot', 'data-status': user.statusPresence || 'offline' }),
-      el('span', {}, statusText(user.statusPresence)),
+      el('span', { class: 'gk-profile-status-dot', 'data-status': effectiveStatus(user) }),
+      el('span', {}, statusText(effectiveStatus(user))),
     ]),
   ]);
 

@@ -19,11 +19,14 @@ let justAuthenticatedViaForm = false;
 
 export function onAuthReady(cb) { onReadyCallback = cb; }
 
+let beforeunloadRegistered = false;
+
 export function initAuthListener() {
   onAuthStateChanged(auth, async (fbUser) => {
     if (!fbUser) {
       state.user = null;
       justAuthenticatedViaForm = false;
+      if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
       showAuthGate();
       return;
     }
@@ -39,13 +42,20 @@ export function initAuthListener() {
     const snap = await getDoc(userDoc(fbUser.uid));
     state.user = { uid: fbUser.uid, ...snap.data() };
     hideAuthGate();
+    startPresenceHeartbeat();
     // Sessão restaurada automaticamente (não veio de um submit do formulário)
     // = a pessoa já tinha feito cadastro + primeiro login antes -> mostra a
     // animação de abertura. No cadastro/login manual, pula direto pro app.
     if (!cameFromForm) showStartupSplash();
     onReadyCallback && onReadyCallback();
 
-    window.addEventListener('beforeunload', () => { setPresence('offline'); });
+    // Só registra uma vez: como esse callback do onAuthStateChanged pode
+    // disparar várias vezes numa mesma sessão (ex: relogin), sem esse
+    // guard cada disparo empilhava mais um listener de beforeunload.
+    if (!beforeunloadRegistered) {
+      beforeunloadRegistered = true;
+      window.addEventListener('beforeunload', () => { setPresence('offline'); });
+    }
   });
 }
 
@@ -60,6 +70,7 @@ async function bootstrapUserDoc(uid, username, email) {
     bannerType: 'image', // 'image' | 'video' — banner em vídeo é exclusivo Prime
     bio: '',
     statusPresence: 'online',
+    lastActiveAt: serverTimestamp(),
     createdAt: serverTimestamp(),
     // ---- G.K.IO Prime ----
     role: 'free',        // 'free' | 'prime' — só alterável via console/Cloud Function (ver firestore.rules)
@@ -75,9 +86,30 @@ async function bootstrapUserDoc(uid, username, email) {
 export async function setPresence(statusPresence) {
   if (!auth.currentUser) return;
   try {
-    await updateDoc(userDoc(auth.currentUser.uid), { statusPresence });
+    await updateDoc(userDoc(auth.currentUser.uid), { statusPresence, lastActiveAt: serverTimestamp() });
     if (state.user) state.user.statusPresence = statusPresence;
   } catch (e) { /* doc pode ainda não existir na primeira chamada — ignora */ }
+}
+
+let heartbeatInterval = null;
+
+// Só atualiza lastActiveAt — nunca statusPresence. Se mexesse no status,
+// brigaria com alguém que setou manualmente "ausente"/"não perturbe" na
+// mini-tela de perfil (profile.js), revertendo pra "online" a cada minuto.
+async function heartbeatTick() {
+  if (!auth.currentUser || document.hidden) return;
+  try { await updateDoc(userDoc(auth.currentUser.uid), { lastActiveAt: serverTimestamp() }); } catch (e) { /* noop */ }
+}
+
+// Chamado uma vez após o login. Continua rodando em segundo plano; se o
+// app for morto pelo sistema (comum no APK), o timer simplesmente para de
+// disparar e lastActiveAt vai envelhecendo — é isso que effectiveStatus()
+// (state.js) usa pra corrigir a presença de quem já não está mais por aqui.
+function startPresenceHeartbeat() {
+  if (heartbeatInterval) return;
+  heartbeatTick();
+  heartbeatInterval = setInterval(heartbeatTick, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeatTick(); });
 }
 
 export async function registerUser(username, email, password) {

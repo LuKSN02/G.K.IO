@@ -96,6 +96,26 @@ export function toast(msg, kind = 'default') {
   }, 3200);
 }
 
+// O app só sabia dizer "offline" através do evento beforeunload — que
+// praticamente nunca dispara quando alguém só fecha o app pelo Android
+// (a tela é derrubada pelo sistema, sem passar por nenhum evento de saída
+// da página), então statusPresence ficava "online" pra sempre depois da
+// primeira sessão. Em vez de confiar cegamente nesse campo, todo lugar
+// que mostra presença passa por aqui: se o último sinal de vida
+// (lastActiveAt, atualizado a cada minuto em auth.js enquanto o app está
+// em primeiro plano) está velho demais, trata como offline mesmo que o
+// campo ainda diga "online".
+const PRESENCE_STALE_MS = 3 * 60 * 1000;
+
+export function effectiveStatus(user) {
+  if (!user) return 'offline';
+  const raw = user.statusPresence || 'offline';
+  if (raw === 'offline') return 'offline';
+  const lastMs = user.lastActiveAt?.toMillis ? user.lastActiveAt.toMillis() : null;
+  if (lastMs && (Date.now() - lastMs) > PRESENCE_STALE_MS) return 'offline';
+  return raw;
+}
+
 export function genInviteCode(len = 8) {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let out = '';

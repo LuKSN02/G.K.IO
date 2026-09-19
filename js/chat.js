@@ -13,7 +13,7 @@ import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
-import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName } from './emoji.js';
+import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates } from './emoji.js';
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
@@ -136,6 +136,7 @@ function attachMessagesListener(colRef, conversationId) {
   renderedMessageIds.clear();
   hasRenderedConversationOnce = false;
   clearPendingFile(); // anexo escolhido e não enviado não "viaja" pra outra conversa
+  closeMentionAutocomplete();
   // Mostra um esqueleto na hora — sem isso, ao trocar de conversa a tela
   // fica com as mensagens da conversa anterior (ou em branco) até o
   // primeiro snapshot do Firestore chegar, o que parece travado.
@@ -245,7 +246,7 @@ function renderMessages(messages, isNewIncoming = false) {
           class: 'gk-avatar gk-sz-40', style: 'cursor:pointer;',
           'data-frame': msg.authorFrameStyle || 'none',
           onclick: () => openProfileCard(msg.authorId),
-        }, [el('img', { src: msg.authorAvatar || fallbackAvatar(msg.authorName) })]),
+        }, [el('img', { src: resolveAuthorAvatar(msg) || fallbackAvatar(msg.authorName) })]),
         el('div', { class: 'gk-msg-body' }, [
           el('div', { class: 'gk-msg-head' }, [
             el('span', { class: 'gk-author', onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
@@ -289,7 +290,11 @@ function renderMessages(messages, isNewIncoming = false) {
       const actionButtons = [
         el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Reagir',
-          onclick: (e) => openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)),
+          // O listener de "clique fora fecha o painel" (em emoji.js) roda no
+          // document durante o bubbling — sem isso, o mesmo clique que abre
+          // o painel também "vê" esse clique como um clique de fora e fecha
+          // na hora, fazendo o botão parecer travado/sem função.
+          onclick: (e) => { e.stopPropagation(); openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)); },
         }, [icon('emojiSmile', { size: 15 })]),
       ];
       if (msg.content) {
@@ -298,10 +303,12 @@ function renderMessages(messages, isNewIncoming = false) {
           onclick: () => copyMessageText(msg.content),
         }, [icon('copy', { size: 14 })]));
       }
-      // Editar é só do autor. Apagar segue a mesma régua das regras do
-      // Firestore: o autor sempre, e quem modera o canal apaga a de
-      // qualquer um (em DM não há moderação — só o autor).
-      if (isOwn && msg.content) {
+      // Editar é só do autor, e agora também quando a mensagem tem um
+      // anexo sem legenda (dava pra reagir/apagar mas nunca editar pra
+      // adicionar um texto). Apagar segue a régua do Firestore: o autor
+      // sempre, e quem modera o canal apaga a de qualquer um (em DM não
+      // há moderação — só o autor).
+      if (isOwn && (msg.content || msg.attachmentUrl)) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Editar mensagem',
           onclick: () => startEditMessage(msg.id, msg.content || ''),
@@ -316,24 +323,30 @@ function renderMessages(messages, isNewIncoming = false) {
       }
       row.appendChild(el('div', { class: 'gk-msg-actions' }, actionButtons));
     }
-    body.appendChild(row);
 
-    if (msg.attachmentUrl && !isEditingThis) {
+    // O anexo agora mora DENTRO de .gk-msg-row (antes era irmão dela, fora
+    // do hover): numa mensagem só de foto, sem nenhum texto, a row inteira
+    // colapsava pra altura zero (as ações são position:absolute, não geram
+    // altura), então passar o mouse sobre a foto nunca "tocava" a row e
+    // reagir/editar/apagar ficavam inacessíveis. Fica visível mesmo
+    // editando, pra dar pra ver o que está ganhando legenda.
+    if (msg.attachmentUrl) {
       if (msg.attachmentType === 'image' || msg.attachmentType === 'gif') {
-        body.appendChild(el('div', { class: 'gk-msg-attachment' }, [
+        row.appendChild(el('div', { class: 'gk-msg-attachment' + (msg.attachmentType === 'gif' ? ' gk-msg-attachment-gif' : '') }, [
           el('img', {
             src: msg.attachmentUrl, class: 'gk-msg-image-zoomable',
             onclick: () => openImageLightbox(msg.attachmentUrl),
           }),
         ]));
       } else if (msg.attachmentType === 'video') {
-        body.appendChild(el('div', { class: 'gk-msg-attachment' }, [el('video', { src: msg.attachmentUrl, controls: 'true' })]));
+        row.appendChild(el('div', { class: 'gk-msg-attachment' }, [el('video', { src: msg.attachmentUrl, controls: 'true' })]));
       } else {
-        body.appendChild(el('a', { class: 'gk-msg-file', href: msg.attachmentUrl, target: '_blank' }, [
+        row.appendChild(el('a', { class: 'gk-msg-file', href: msg.attachmentUrl, target: '_blank' }, [
           icon('attach', { size: 14 }), el('span', {}, msg.attachmentName || 'Arquivo anexado'),
         ]));
       }
     }
+    body.appendChild(row);
 
     if (!isEditingThis) {
       const reactionsBar = buildReactionsBar(msg);
@@ -363,6 +376,24 @@ function renderMessages(messages, isNewIncoming = false) {
       ta.selectionStart = ta.selectionEnd = ta.value.length;
     }
   }
+}
+
+// msg.authorAvatar é gravado no documento da mensagem na hora do envio —
+// funciona pra manter o histórico, mas nunca acompanha uma troca de foto
+// de perfil depois. Aqui a gente prefere o dado mais fresco que já estiver
+// em algum cache vivo do app (membros do servidor, a outra pessoa da DM,
+// ou a própria pessoa logada) e só cai pro valor congelado da mensagem
+// quando ninguém desses tem o autor carregado (ex: membro que já saiu).
+function resolveAuthorAvatar(msg) {
+  if (msg.authorId === state.user?.uid) return state.user.avatarUrl || msg.authorAvatar || '';
+  if (state.currentServerId) {
+    const member = state.serverMembersCache.get(state.currentServerId)?.get(msg.authorId);
+    if (member?.user?.avatarUrl) return member.user.avatarUrl;
+  } else if (state.currentDmId) {
+    const dm = state.dms.get(state.currentDmId);
+    if (dm?.other?.uid === msg.authorId && dm.other.avatarUrl) return dm.other.avatarUrl;
+  }
+  return msg.authorAvatar || '';
 }
 
 // ---------- Datas ----------
@@ -727,6 +758,113 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
   }
 }
 
+// ---------- Autocomplete de @menção ----------
+// O dropdown é um único elemento reaproveitado (como o picker de emoji em
+// emoji.js), criado sob demanda e reposicionado a cada abertura.
+let mentionPanelEl = null;
+let mentionMatches = [];
+let mentionActiveIndex = 0;
+let mentionTokenStart = -1; // posição do "@" no texto, pra saber o que substituir ao aceitar
+
+function ensureMentionPanel() {
+  if (mentionPanelEl) return mentionPanelEl;
+  mentionPanelEl = el('div', { class: 'gk-mention-dropdown' });
+  document.body.appendChild(mentionPanelEl);
+  return mentionPanelEl;
+}
+
+// Acha o "@parcial" sendo digitado bem antes do cursor — só conta se o @
+// estiver no início da linha ou depois de um espaço (assim "fulano@mail.com"
+// não dispara o autocomplete no meio de um e-mail).
+function currentMentionToken(textarea) {
+  const pos = textarea.selectionStart;
+  const upToCaret = textarea.value.slice(0, pos);
+  const m = upToCaret.match(/(?:^|\s)@([a-zA-Z0-9_-]{0,32})$/);
+  if (!m) return null;
+  return { query: m[1], start: pos - m[1].length - 1 };
+}
+
+function updateMentionAutocomplete(textarea) {
+  const token = currentMentionToken(textarea);
+  if (!token) { closeMentionAutocomplete(); return; }
+  const matches = searchMentionCandidates(token.query);
+  if (!matches.length) { closeMentionAutocomplete(); return; }
+
+  mentionMatches = matches;
+  mentionActiveIndex = 0;
+  mentionTokenStart = token.start;
+  renderMentionPanel(textarea);
+}
+
+function renderMentionPanel(textarea) {
+  const panel = ensureMentionPanel();
+  panel.innerHTML = '';
+  mentionMatches.forEach((u, i) => {
+    panel.appendChild(el('button', {
+      type: 'button', class: 'gk-mention-item' + (i === mentionActiveIndex ? ' gk-active' : ''),
+      onmousedown: (e) => e.preventDefault(), // não tira o foco do textarea antes do click disparar
+      onclick: () => applyMentionSelection(textarea, u),
+    }, [
+      el('img', { class: 'gk-mention-item-avatar', src: u.avatarUrl || fallbackAvatar(u.displayName || u.username) }),
+      el('span', {}, u.displayName || u.username),
+      el('span', { class: 'gk-mention-item-username' }, `@${u.username}`),
+    ]));
+  });
+
+  const rect = textarea.getBoundingClientRect();
+  panel.style.left = `${rect.left}px`;
+  panel.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+  panel.style.width = `${Math.min(280, rect.width)}px`;
+  panel.classList.add('gk-open');
+}
+
+function closeMentionAutocomplete() {
+  mentionMatches = [];
+  mentionTokenStart = -1;
+  if (mentionPanelEl) mentionPanelEl.classList.remove('gk-open');
+}
+
+// Retorna true quando consumiu a tecla (dropdown estava aberto) — o
+// keydown handler do composer então NÃO deve seguir pro comportamento padrão.
+function handleMentionKeydown(e, textarea) {
+  if (!mentionMatches.length) return false;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    mentionActiveIndex = (mentionActiveIndex + 1) % mentionMatches.length;
+    renderMentionPanel(textarea);
+    return true;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionActiveIndex = (mentionActiveIndex - 1 + mentionMatches.length) % mentionMatches.length;
+    renderMentionPanel(textarea);
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    applyMentionSelection(textarea, mentionMatches[mentionActiveIndex]);
+    return true;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeMentionAutocomplete();
+    return true;
+  }
+  return false;
+}
+
+function applyMentionSelection(textarea, user) {
+  const before = textarea.value.slice(0, mentionTokenStart);
+  const after = textarea.value.slice(textarea.selectionStart);
+  const insert = `@${user.username} `;
+  textarea.value = before + insert + after;
+  const caret = before.length + insert.length;
+  textarea.focus();
+  textarea.setSelectionRange(caret, caret);
+  closeMentionAutocomplete();
+  autoResizeComposer();
+}
+
 export function autoResizeComposer() {
   const textarea = document.getElementById('gk-composer-input');
   textarea.style.height = 'auto';
@@ -741,12 +879,21 @@ export function wireComposer() {
   textarea.addEventListener('input', () => {
     autoResizeComposer();
     if (textarea.value.trim()) notifyTyping();
+    updateMentionAutocomplete(textarea);
   });
   textarea.addEventListener('keydown', (e) => {
+    // Com o dropdown de @menção aberto, as setas/Enter/Esc pertencem a
+    // ele — só cai pro comportamento normal (enviar mensagem) quando não
+    // há nenhuma sugestão em exibição.
+    if (handleMentionKeydown(e, textarea)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendCurrentMessage();
     }
+  });
+  textarea.addEventListener('blur', () => {
+    // Pequeno atraso pra não fechar antes do clique num item do dropdown registrar.
+    setTimeout(closeMentionAutocomplete, 150);
   });
   sendBtn.addEventListener('click', sendCurrentMessage);
   document.getElementById('gk-attach-btn').addEventListener('click', () => fileInput.click());

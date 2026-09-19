@@ -405,6 +405,12 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   max-width: 320px; max-height: 260px; border-radius: var(--gk-radius-md);
   margin-top: 6px; border: 1px solid var(--gk-gray-100); display: block;
 }
+/* GIFs vêm do Giphy em resoluções bem variadas — muitas são pequenas
+   (pensadas pra rolar rápido numa grade de busca), e sem um piso elas
+   apareciam minúsculas na conversa em vez do tamanho de um anexo normal.
+   Fotos de verdade (attachmentType 'image') não ganham esse piso: forçar
+   um mínimo ali distorceria enquadramentos legítimos. */
+.gk-msg-attachment-gif img { min-width: 160px; }
 .gk-msg-image-zoomable { cursor: zoom-in; transition: filter var(--gk-transition); }
 .gk-msg-image-zoomable:hover { filter: brightness(0.92); }
 .gk-msg-file {
@@ -445,6 +451,30 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
 .gk-md-link { color: var(--gk-accent); text-decoration: none; word-break: break-word; }
 .gk-md-link:hover { text-decoration: underline; }
+
+.gk-mention {
+  color: var(--gk-accent-strong); background: var(--gk-accent-soft);
+  border-radius: 4px; padding: 0 4px; font-weight: 600; cursor: default;
+}
+
+/* ---------- Autocomplete de @menção no composer ---------- */
+.gk-mention-dropdown {
+  position: fixed; z-index: 300; background: var(--gk-surface);
+  border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md);
+  box-shadow: var(--gk-shadow-lg); padding: 4px; max-height: 220px; overflow-y: auto;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform: translateY(4px); transform-origin: bottom left;
+  transition: opacity 120ms cubic-bezier(.2,.8,.2,1), transform 120ms cubic-bezier(.2,.8,.2,1), visibility 120ms;
+}
+.gk-mention-dropdown.gk-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+.gk-mention-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; border-radius: var(--gk-radius-sm); background: none; border: none;
+  text-align: left; cursor: pointer; font-size: 13px; color: var(--gk-gray-700);
+}
+.gk-mention-item.gk-active, .gk-mention-item:hover { background: var(--gk-surface-sunken); }
+.gk-mention-item-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.gk-mention-item-username { margin-left: auto; font-size: 11px; color: var(--gk-gray-400); font-family: var(--gk-font-mono); }
 
 .gk-md-code {
   font-family: var(--gk-font-mono); font-size: 0.88em;

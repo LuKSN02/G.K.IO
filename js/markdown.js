@@ -6,7 +6,7 @@
 //
 //   **negrito**      *itálico*      __sublinhado__     ~~riscado~~
 //   `código`         ```bloco```    ||spoiler||        > citação
-//   https://link     :emoji_custom:
+//   https://link     :emoji_custom:     @menção
 //
 // Nada aqui usa innerHTML: cada trecho vira um nó de texto ou um
 // elemento criado por el(), então o conteúdo escrito pela pessoa nunca
@@ -109,26 +109,27 @@ function prettyUrl(url) {
 // URLs saem primeiro, antes de qualquer regra de markdown: sem isso, um
 // link como https://site.com/a_b_c teria o "_b_" comido como itálico e
 // chegaria quebrado no href.
-function parseInline(text, resolveEmoji) {
+function parseInline(text, resolveEmoji, resolveMention) {
   const out = [];
   const urlRe = new RegExp(URL_SOURCE, 'g');
   let last = 0;
   let m;
   while ((m = urlRe.exec(text))) {
-    if (m.index > last) out.push(...parseMarkup(text.slice(last, m.index), resolveEmoji));
+    if (m.index > last) out.push(...parseMarkup(text.slice(last, m.index), resolveEmoji, resolveMention));
     const built = buildLink(m[0]);
     if (Array.isArray(built)) out.push(...built);
     else out.push(built);
     last = urlRe.lastIndex;
   }
-  if (last < text.length) out.push(...parseMarkup(text.slice(last), resolveEmoji));
+  if (last < text.length) out.push(...parseMarkup(text.slice(last), resolveEmoji, resolveMention));
   return out;
 }
 
-function parseMarkup(text, resolveEmoji) {
-  const parse = (inner) => parseInline(inner, resolveEmoji);
+function parseMarkup(text, resolveEmoji, resolveMention) {
+  const parse = (inner) => parseInline(inner, resolveEmoji, resolveMention);
   const rules = inlineRules(parse);
   const emojiRe = /:([a-z0-9_]{2,32}):/;
+  const mentionRe = /@([a-zA-Z0-9_-]{2,32})/;
   const out = [];
   let rest = text;
 
@@ -157,6 +158,21 @@ function parseMarkup(text, resolveEmoji) {
       }
     }
 
+    // @menção — mesma lógica: só vira chip destacado se o nome bater com
+    // alguém que o resolvedor conhece (membro do servidor, amigo, ou a
+    // outra pessoa da DM aberta); senão "@algo" fica como texto puro.
+    const men = mentionRe.exec(rest);
+    if (men) {
+      const hit = resolveMention(men[1]);
+      if (hit && (best === null || men.index < best.index)) {
+        best = {
+          index: men.index,
+          length: men[0].length,
+          node: () => el('span', { class: 'gk-mention', title: `@${hit.username}` }, `@${hit.name}`),
+        };
+      }
+    }
+
     if (!best) { out.push(rest); break; }
     if (best.index > 0) out.push(rest.slice(0, best.index));
     const built = best.node();
@@ -169,7 +185,7 @@ function parseMarkup(text, resolveEmoji) {
 }
 
 // ---------- Citações (> texto), agrupando linhas seguidas ----------
-function parseLines(segment, resolveEmoji) {
+function parseLines(segment, resolveEmoji, resolveMention) {
   const lines = segment.split('\n');
   const out = [];
   let buffer = [];   // linhas normais acumuladas
@@ -177,12 +193,12 @@ function parseLines(segment, resolveEmoji) {
 
   const flushText = () => {
     if (!buffer.length) return;
-    out.push(...parseInline(buffer.join('\n'), resolveEmoji));
+    out.push(...parseInline(buffer.join('\n'), resolveEmoji, resolveMention));
     buffer = [];
   };
   const flushQuote = () => {
     if (!quote.length) return;
-    out.push(el('blockquote', { class: 'gk-md-quote' }, parseInline(quote.join('\n'), resolveEmoji)));
+    out.push(el('blockquote', { class: 'gk-md-quote' }, parseInline(quote.join('\n'), resolveEmoji, resolveMention)));
     quote = [];
   };
 
@@ -209,9 +225,10 @@ function buildCodeBlock(code, lang) {
  * Converte o texto de uma mensagem em nós do DOM prontos pra inserir.
  * @param {string} text
  * @param {(name: string) => {url: string}|null} resolveEmoji busca um emoji personalizado pelo nome
+ * @param {(username: string) => {uid: string, name: string, username: string}|null} resolveMention busca quem é @username no contexto atual (servidor/DM)
  * @returns {Array<Node|string>}
  */
-export function renderRichText(text, resolveEmoji = () => null) {
+export function renderRichText(text, resolveEmoji = () => null, resolveMention = () => null) {
   if (!text) return [];
 
   const nodes = [];
@@ -219,11 +236,11 @@ export function renderRichText(text, resolveEmoji = () => null) {
   let last = 0;
   let m;
   while ((m = blockRe.exec(text))) {
-    if (m.index > last) nodes.push(...parseLines(text.slice(last, m.index), resolveEmoji));
+    if (m.index > last) nodes.push(...parseLines(text.slice(last, m.index), resolveEmoji, resolveMention));
     nodes.push(buildCodeBlock(m[2], m[1]));
     last = blockRe.lastIndex;
   }
-  if (last < text.length) nodes.push(...parseLines(text.slice(last), resolveEmoji));
+  if (last < text.length) nodes.push(...parseLines(text.slice(last), resolveEmoji, resolveMention));
 
   return nodes.length ? nodes : [text];
 }
