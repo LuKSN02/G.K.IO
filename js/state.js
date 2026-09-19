@@ -112,7 +112,12 @@ export function effectiveStatus(user) {
   const raw = user.statusPresence || 'offline';
   if (raw === 'offline') return 'offline';
   const lastMs = user.lastActiveAt?.toMillis ? user.lastActiveAt.toMillis() : null;
-  if (lastMs && (Date.now() - lastMs) > PRESENCE_STALE_MS) return 'offline';
+  // Sem carimbo NENHUM (conta antiga, de antes desse campo existir, ou que
+  // nunca mais logou com este código) conta como velho demais, não como
+  // "sem informação, então confia". Só um lastActiveAt de verdade recente
+  // prova atividade — e quem está online agora com o código novo sempre
+  // tem um (setPresence/heartbeat gravam na hora do login).
+  if (!lastMs || (Date.now() - lastMs) > PRESENCE_STALE_MS) return 'offline';
   return raw;
 }
 
