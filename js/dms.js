@@ -194,6 +194,7 @@ export function goToDmsView() {
   state.currentServerId = null;
   state.currentChannelId = null;
   state.currentDmId = null;
+  document.getElementById('gk-home-view').style.display = 'none';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
   document.getElementById('gk-members-toggle-btn').style.display = 'none';

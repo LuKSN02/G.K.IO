@@ -55,7 +55,7 @@
       <span>Conecte pessoas</span><span class="gk-dot">•</span><span>Compartilhe ideias</span><span class="gk-dot">•</span><span>Viva suas histórias</span>
     </div>
     <div class="gk-auth-hero-center">
-      <div class="gk-auth-hero-mark">GK</div>
+      <img src="img/logo.png" alt="G.K.IO" class="gk-auth-hero-mark">
       <div class="gk-auth-hero-wordmark">G.K<span>.IO</span></div>
       <p class="gk-auth-hero-tagline">Mais que um chat,<br>uma comunidade.</p>
     </div>
@@ -70,7 +70,7 @@
     <p class="gk-auth-panel-topline">Junte-se a milhares<br>de pessoas agora mesmo.</p>
     <div class="gk-auth-card">
       <div class="gk-auth-logo">
-        <div class="gk-mark">GK</div>
+        <img src="img/logo.png" alt="G.K.IO" class="gk-mark">
         <div class="gk-wordmark">G.K<span>.IO</span></div>
       </div>
       <h2 id="gk-auth-title">Entrar no G.K.IO</h2>
@@ -120,22 +120,40 @@
        de menu (☰) no topbar. -->
   <div class="gk-nav-drawer" id="gk-nav-drawer">
 
-  <!-- Rail de servidores -->
+  <!-- Rail de navegação principal — agora são SEÇÕES fixas do app
+       (Início/Mensagens/Amigos/Servidor/Configurações), não mais uma
+       lista de servidores. A lista de servidores em si (nomeada, não só
+       ícones) mora dentro da sidebar quando a seção "Servidor" está
+       ativa — ver renderServerPicker() em js/servers.js. -->
   <div class="gk-rail">
-    <div class="gk-rail-item gk-active" id="gk-dm-rail-item" title="Mensagens diretas">
-      <div class="gk-rail-pill"></div>
-      <span class="gk-rail-item-badge" id="gk-dm-rail-badge"></span>
+    <div class="gk-rail-brand" title="G.K.IO">
       <img src="img/logo.png" alt="G.K.IO">
     </div>
-    <div class="gk-rail-divider"></div>
-    <div id="gk-rail-servers"></div>
-    <div class="gk-server-menu-wrap">
-      <div class="gk-rail-item gk-add" id="gk-add-server-btn" title="Adicionar servidor">+</div>
-      <div class="gk-server-menu" id="gk-server-menu">
-        <button id="gk-create-server-btn"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
-        <button id="gk-join-server-btn"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
-      </div>
-    </div>
+
+    <button class="gk-rail-item gk-rail-nav-item gk-active" id="gk-nav-home" title="Início">
+      <span class="gk-rail-nav-icon" data-icon="sparkles"></span>
+      <span class="gk-rail-nav-label">Início</span>
+    </button>
+    <button class="gk-rail-item gk-rail-nav-item" id="gk-dm-rail-item" title="Mensagens diretas">
+      <span class="gk-rail-nav-icon" data-icon="chatBubble"></span>
+      <span class="gk-rail-nav-badge" id="gk-dm-rail-badge"></span>
+      <span class="gk-rail-nav-label">Mensagens</span>
+    </button>
+    <button class="gk-rail-item gk-rail-nav-item" id="gk-nav-friends" title="Amigos">
+      <span class="gk-rail-nav-icon" data-icon="members"></span>
+      <span class="gk-rail-nav-label">Amigos</span>
+    </button>
+    <button class="gk-rail-item gk-rail-nav-item" id="gk-nav-servers" title="Servidores">
+      <span class="gk-rail-nav-icon" data-icon="gamepad"></span>
+      <span class="gk-rail-nav-label">Servidor</span>
+    </button>
+
+    <div class="gk-rail-spacer"></div>
+
+    <button class="gk-rail-item gk-rail-nav-item" id="gk-nav-settings" title="Configurações">
+      <span class="gk-rail-nav-icon" data-icon="settings"></span>
+      <span class="gk-rail-nav-label">Config.</span>
+    </button>
   </div>
 
   <!-- Sidebar (canais ou DMs) -->
@@ -148,6 +166,21 @@
       </div>
     </div>
     <div class="gk-sidebar-body" id="gk-sidebar-body"></div>
+    <!-- Botão de adicionar servidor — só aparece quando a seção "Servidor"
+         está mostrando a lista nomeada (ver goToServerPickerView em
+         js/servers.js). O #gk-server-menu em si é movido pro <body> no
+         boot (js/app.js), pra escapar do overflow:hidden da sidebar. -->
+    <div class="gk-server-picker-add" id="gk-server-picker-add" style="display:none;">
+      <div class="gk-server-menu-wrap">
+        <button class="gk-btn gk-btn-ghost gk-btn-block" id="gk-add-server-btn">
+          <span data-icon="plus" class="gk-inline-icon"></span> Adicionar servidor
+        </button>
+        <div class="gk-server-menu" id="gk-server-menu">
+          <button id="gk-create-server-btn"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
+          <button id="gk-join-server-btn"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
+        </div>
+      </div>
+    </div>
     <div class="gk-mini-profile" id="gk-mini-profile">
       <div class="gk-avatar gk-sz-32" id="gk-mini-avatar-wrap" data-status="online">
         <img id="gk-mini-avatar" src="">
@@ -182,6 +215,32 @@
       <button class="gk-icon-btn gk-members-toggle-btn" id="gk-members-toggle-btn" title="Membros" style="display:none;" data-icon="members"></button>
     </div>
     <div class="gk-messages" id="gk-messages"></div>
+
+    <!-- ======================= TELA "INÍCIO" =======================
+         Painel de boas-vindas simples, mostrado ao clicar em "Início" no
+         rail — ver goToHomeView() em js/app.js. Sem dado inventado: só
+         atalhos pras seções que já existem. -->
+    <div class="gk-home-view" id="gk-home-view" style="display:none;">
+      <div class="gk-home-view-inner">
+        <img src="img/logo.png" alt="" class="gk-home-mark">
+        <h2 id="gk-home-greeting">Olá!</h2>
+        <p class="gk-modal-sub">O que você quer fazer agora?</p>
+        <div class="gk-home-shortcuts">
+          <button class="gk-home-shortcut" id="gk-home-go-messages">
+            <span data-icon="chatBubble" class="gk-inline-icon"></span>
+            <b>Mensagens</b><small>Suas conversas diretas</small>
+          </button>
+          <button class="gk-home-shortcut" id="gk-home-go-friends">
+            <span data-icon="members" class="gk-inline-icon"></span>
+            <b>Amigos</b><small>Veja quem está por aqui</small>
+          </button>
+          <button class="gk-home-shortcut" id="gk-home-go-servers">
+            <span data-icon="gamepad" class="gk-inline-icon"></span>
+            <b>Servidores</b><small>Suas comunidades</small>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- ======================= TELA "AMIGOS" (home das DMs) =======================
          Exibida em vez do chat quando nenhuma conversa está selecionada — ver
@@ -231,7 +290,7 @@
     <div class="gk-splash-ring gk-ring-1"></div>
     <div class="gk-splash-ring gk-ring-2"></div>
     <div class="gk-splash-ring gk-ring-3"></div>
-    <div class="gk-splash-mark">GK</div>
+    <img src="img/logo.png" alt="G.K.IO" class="gk-splash-mark">
   </div>
   <div class="gk-splash-wordmark">G.K<span>.IO</span></div>
   <div class="gk-splash-bar"><div class="gk-splash-bar-fill"></div></div>

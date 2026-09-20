@@ -15,6 +15,7 @@ import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { icon, iconHtml } from './icons.js';
+import { hideFriendsHome } from './dms.js';
 
 // Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
 // do servidor atualmente aberto pra atualizar os indicadores de não lida.
@@ -399,27 +400,75 @@ export function listenUserServers() {
   unsubServers = onSnapshot(q, (snap) => {
     state.servers.clear();
     snap.forEach((d) => state.servers.set(d.id, { id: d.id, ...d.data() }));
-    renderRail();
+    if (state.currentView === 'server-picker') renderServerPicker();
   });
   state.unsubscribers._servers = () => unsubServers && unsubServers();
 }
 
-function renderRail() {
-  const rail = document.getElementById('gk-rail-servers');
-  rail.innerHTML = '';
+// Lista nomeada de servidores — mostrada na sidebar quando a seção
+// "Servidor" do rail está ativa e nenhum servidor específico foi
+// escolhido ainda (ver goToServerPickerView). Substituiu o rail de
+// ícones que existia antes: agora o rail principal é fixo (seções do
+// app), e trocar de servidor acontece aqui dentro.
+function renderServerPicker() {
+  const body = document.getElementById('gk-sidebar-body');
+  if (!body) return;
+  body.innerHTML = '';
+  if (!state.servers.size) {
+    body.appendChild(el('div', { class: 'gk-empty-state' }, [
+      el('div', { class: 'gk-emoji' }, [icon('gamepad', { size: 32 })]),
+      el('div', {}, 'Você ainda não está em nenhum servidor. Crie um ou entre com um convite.'),
+    ]));
+    return;
+  }
+  const list = el('div', { class: 'gk-server-picker-list' });
   for (const server of state.servers.values()) {
-    const item = el('div', {
-      class: 'gk-rail-item' + (state.currentServerId === server.id ? ' gk-active' : ''),
-      title: server.name,
+    list.appendChild(el('div', {
+      class: 'gk-server-picker-row',
       onclick: () => selectServer(server.id),
     }, [
-      el('div', { class: 'gk-rail-pill' }),
-      server.iconUrl
-        ? el('img', { src: server.iconUrl })
-        : document.createTextNode((server.name || '?').slice(0, 2).toUpperCase()),
-    ]);
-    rail.appendChild(item);
+      el('div', { class: 'gk-avatar gk-sz-40' }, [
+        server.iconUrl
+          ? el('img', { src: server.iconUrl })
+          : el('div', { class: 'gk-server-picker-fallback' }, (server.name || '?').slice(0, 2).toUpperCase()),
+      ]),
+      el('div', { class: 'gk-server-picker-info' }, [
+        el('div', { class: 'gk-server-picker-name' }, server.name || 'Servidor'),
+        el('div', { class: 'gk-server-picker-sub' }, `${(server.memberIds || []).length} membro(s)`),
+      ]),
+    ]));
   }
+  body.appendChild(list);
+}
+
+// Chamado quando a pessoa clica em "Servidor" no rail principal — mostra
+// a lista acima em vez de pular direto pro último servidor aberto, pra
+// combinar com a navegação por seções fixas.
+export function goToServerPickerView() {
+  hideFriendsHome();
+  cleanupListener('categories');
+  cleanupListener('channels');
+  cleanupListener('members');
+  cleanupListener('roles');
+  state.currentView = 'server-picker';
+  state.currentServerId = null;
+  state.currentChannelId = null;
+  document.getElementById('gk-messages').style.display = 'none';
+  document.getElementById('gk-messages').innerHTML = '';
+  document.getElementById('gk-composer').style.display = 'none';
+  document.getElementById('gk-home-view').style.display = 'none';
+  document.getElementById('gk-members').style.display = 'none';
+  document.getElementById('gk-server-settings-btn').style.display = 'none';
+  document.getElementById('gk-members-toggle-btn').style.display = 'none';
+  document.getElementById('gk-call-btn').style.display = 'none';
+  document.getElementById('gk-video-call-btn').style.display = 'none';
+  document.getElementById('gk-topbar-title').textContent = 'Servidores';
+  document.getElementById('gk-topbar-subtitle').textContent = '';
+  document.getElementById('gk-sidebar-header-title').textContent = 'Servidores';
+  document.getElementById('gk-server-picker-add').style.display = 'block';
+  document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
+  document.getElementById('gk-nav-servers')?.classList.add('gk-active');
+  renderServerPicker();
 }
 
 // ---------- Selecionar servidor ----------
@@ -427,8 +476,13 @@ export function selectServer(serverId) {
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = null;
-  document.getElementById('gk-dm-rail-item')?.classList.remove('gk-active');
-  renderRail();
+  hideFriendsHome();
+  document.getElementById('gk-home-view').style.display = 'none';
+  document.getElementById('gk-messages').style.display = 'flex';
+  document.getElementById('gk-composer').style.display = 'block';
+  document.getElementById('gk-server-picker-add').style.display = 'none';
+  document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
+  document.getElementById('gk-nav-servers')?.classList.add('gk-active');
   listenCategoriesAndChannels(serverId);
   listenMembers(serverId);
   listenRoles(serverId);
