@@ -86,6 +86,9 @@ export const voicePresenceCol = (serverId, channelId) =>
 export const customEmojisCol = () => collection(db, 'customEmojis');
 export const customEmojiDoc = (emojiId) => doc(db, 'customEmojis', emojiId);
 
+export const attachmentsCol = () => collection(db, 'attachments');
+export const attachmentDoc = (id) => doc(db, 'attachments', id);
+
 // "Digitando..." — doc efêmero por pessoa, dentro do canal/DM em que ela
 // está digitando agora (ver js/typing.js). id do doc = uid de quem digita,
 // assim cada pessoa só pode escrever no próprio.

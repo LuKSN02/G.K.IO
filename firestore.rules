@@ -295,5 +295,16 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
       allow update: if signedIn() && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid;
     }
+    // ---------- Índice de anexos ("Arquivos" no rail) ----------
+    // Um doc leve por anexo enviado, espelhando o que já foi gravado na
+    // mensagem em si (channelMessages/dmMessages) — sem isso, listar "meus
+    // arquivos" exigiria varrer toda conversa que a pessoa já participou.
+    // Só o próprio remetente lê/escreve o seu; nunca dá pra reescrever um
+    // registro existente, só criar ou apagar (tirar da lista).
+    match /attachments/{attachmentId} {
+      allow read: if signedIn() && resource.data.uid == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
   }
 }

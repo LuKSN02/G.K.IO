@@ -13,6 +13,8 @@ import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
 import { listenReadStates } from './unread.js';
 import { initPushNotifications, onPushNotificationTap } from './push.js';
+import { goToFilesView, hideFilesView } from './files.js';
+import { goToCommunitiesView, hideCommunitiesView } from './communities.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -61,6 +63,8 @@ onAuthReady(() => {
 // ============================================================
 function goToHomeView() {
   hideFriendsHome();
+  hideFilesView();
+  hideCommunitiesView();
   document.getElementById('gk-messages').style.display = 'none';
   document.getElementById('gk-messages').innerHTML = '';
   document.getElementById('gk-composer').style.display = 'none';
@@ -87,6 +91,8 @@ function goToHomeView() {
 function goToFriendsView() {
   goToDmsView();
   showFriendsHome();
+  hideFilesView();
+  hideCommunitiesView();
   document.getElementById('gk-home-view').style.display = 'none';
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
   document.getElementById('gk-nav-friends').classList.add('gk-active');
@@ -118,6 +124,8 @@ function wireStaticUI() {
   document.getElementById('gk-nav-home').addEventListener('click', goToHomeView);
   document.getElementById('gk-nav-friends').addEventListener('click', goToFriendsView);
   document.getElementById('gk-nav-servers').addEventListener('click', goToServerPickerView);
+  document.getElementById('gk-nav-communities').addEventListener('click', goToCommunitiesView);
+  document.getElementById('gk-nav-files').addEventListener('click', goToFilesView);
   document.getElementById('gk-nav-settings').addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal('perfil'); });
   document.getElementById('gk-home-go-messages').addEventListener('click', goToDmsView);
   document.getElementById('gk-home-go-friends').addEventListener('click', goToFriendsView);

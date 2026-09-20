@@ -3,7 +3,7 @@
 // ============================================================
 import {
   auth,
-  channelMessagesCol, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc,
+  channelMessagesCol, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc, attachmentsCol,
   addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   query, orderBy, limit, onSnapshot, serverTimestamp,
 } from './db.js';
@@ -585,6 +585,26 @@ async function saveEditMessage(msgId) {
   }
 }
 
+// Espelha o anexo num índice pessoal e leve (coleção attachments/), a
+// base da seção "Arquivos" no rail — sem isso, listar "meus arquivos"
+// exigiria varrer toda conversa que a pessoa já participou. Best-effort:
+// uma falha aqui nunca derruba o envio da mensagem em si, que já saiu.
+async function indexAttachment(payload, context) {
+  if (!payload.attachmentUrl) return;
+  try {
+    await addDoc(attachmentsCol(), {
+      uid: payload.authorId,
+      url: payload.attachmentUrl,
+      name: payload.attachmentName || '',
+      type: payload.attachmentType || 'file',
+      ...context,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('[attachments] Falhou ao indexar anexo:', err.message);
+  }
+}
+
 export async function sendCurrentMessage() {
   const textarea = document.getElementById('gk-composer-input');
   const text = textarea.value.trim();
@@ -633,6 +653,7 @@ export async function sendCurrentMessage() {
         authorName: payload.authorName, preview: text || (payload.attachmentUrl ? 'Enviou um anexo.' : ''),
         serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
       });
+      indexAttachment(payload, { serverId: state.currentServerId, channelId: state.currentChannelId });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
       await updateDoc(dmDoc(state.currentDmId), {
@@ -641,6 +662,7 @@ export async function sendCurrentMessage() {
       if (currentDmOtherUid) {
         notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: text || 'Enviou um anexo.', dmId: state.currentDmId });
       }
+      indexAttachment(payload, { dmId: state.currentDmId });
     }
   } catch (err) {
     toast('Não foi possível enviar a mensagem.', 'danger');
@@ -744,6 +766,7 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
         authorName: payload.authorName, preview: 'Enviou um GIF.',
         serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
       });
+      indexAttachment(payload, { serverId: state.currentServerId, channelId: state.currentChannelId });
     } else if (state.currentDmId) {
       await addDoc(dmMessagesCol(state.currentDmId), payload);
       await updateDoc(dmDoc(state.currentDmId), {
@@ -752,6 +775,7 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
       if (currentDmOtherUid) {
         notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: 'Enviou um GIF.', dmId: state.currentDmId });
       }
+      indexAttachment(payload, { dmId: state.currentDmId });
     }
   } catch (err) {
     toast('Não foi possível enviar o GIF.', 'danger');

@@ -92,7 +92,7 @@ function computePermissions(roleIds = [], rolesMap = lastRoles) {
 }
 
 // ---------- Criar / entrar em servidor ----------
-export async function createServer(name, description = '', iconUrl = '', bannerUrl = '', templateKey = 'custom') {
+export async function createServer(name, description = '', iconUrl = '', bannerUrl = '', templateKey = 'custom', visibility = 'private') {
   const uid = auth.currentUser.uid;
   const template = SERVER_TEMPLATES[templateKey] || SERVER_TEMPLATES.custom;
 
@@ -104,6 +104,10 @@ export async function createServer(name, description = '', iconUrl = '', bannerU
     ownerId: uid,
     memberIds: [uid],
     template: templateKey,
+    // 'public' aparece pra qualquer pessoa em "Comunidades" (ver
+    // js/communities.js) e pode ser entrado sem convite; 'private'
+    // (padrão) só é alcançável por convite, como sempre foi.
+    visibility: visibility === 'public' ? 'public' : 'private',
     createdAt: serverTimestamp(),
   });
   // Quem cria o servidor nasce com o cargo 'owner' — só ele (ou quem ele
@@ -141,16 +145,21 @@ export async function createInvite(serverId) {
   return code;
 }
 
+// Vira membro de um servidor — mesmo passo usado tanto ao entrar por
+// convite quanto ao entrar direto por uma comunidade pública (ver
+// js/communities.js). Sempre nasce como 'member' comum, nunca 'owner'.
+export async function joinServerAsMember(serverId) {
+  const uid = auth.currentUser.uid;
+  await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
+  await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
+}
+
 export async function joinServerByInviteCode(code) {
   code = code.trim().toUpperCase();
   const snap = await getDoc(inviteDoc(code));
   if (!snap.exists()) throw new Error('Convite inválido ou expirado.');
   const { serverId } = snap.data();
-  const uid = auth.currentUser.uid;
-  await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
-  // Quem entra por convite começa como 'member' comum — sem permissão para
-  // criar canais, a menos que o dono promova depois (ver setMemberRole).
-  await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
+  await joinServerAsMember(serverId);
   await updateDoc(inviteDoc(code), { uses: (snap.data().uses || 0) + 1 });
   const serverSnap = await getDoc(serverDoc(serverId));
   toast(`Você entrou em "${serverSnap.data().name}".`);
@@ -457,6 +466,8 @@ export function goToServerPickerView() {
   document.getElementById('gk-messages').innerHTML = '';
   document.getElementById('gk-composer').style.display = 'none';
   document.getElementById('gk-home-view').style.display = 'none';
+  document.getElementById('gk-files-view').style.display = 'none';
+  document.getElementById('gk-communities-view').style.display = 'none';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
@@ -478,6 +489,8 @@ export function selectServer(serverId) {
   state.currentChannelId = null;
   hideFriendsHome();
   document.getElementById('gk-home-view').style.display = 'none';
+  document.getElementById('gk-files-view').style.display = 'none';
+  document.getElementById('gk-communities-view').style.display = 'none';
   document.getElementById('gk-messages').style.display = 'flex';
   document.getElementById('gk-composer').style.display = 'block';
   document.getElementById('gk-server-picker-add').style.display = 'none';
@@ -891,10 +904,34 @@ export function openCreateServerModal() {
       ]),
     ]));
     modal.appendChild(el('div', { class: 'gk-field', style: 'display:flex;justify-content:center;margin-bottom:18px;' }, [iconPicker, iconInput]));
-    modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
+    modal.appendChild(el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Nome do servidor'), nameInput]));
     modal.appendChild(el('div', { class: 'gk-field' }, [
       el('label', {}, 'Descrição'), descInput,
       el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel Membros.'),
+    ]));
+
+    // Público = qualquer pessoa vê e entra direto em "Comunidades", sem
+    // precisar de convite; Privado (padrão) só é alcançável por convite.
+    let visibility = 'private';
+    const visPublicBtn = el('button', { type: 'button', class: 'gk-type-option gk-visibility-option' }, [
+      el('span', { class: 'gk-type-icon' }, [icon('tray', { size: 16 })]),
+      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Público'), el('div', { class: 'gk-type-desc' }, 'Qualquer pessoa pode encontrar e entrar.')]),
+    ]);
+    const visPrivateBtn = el('button', { type: 'button', class: 'gk-type-option gk-visibility-option gk-active' }, [
+      el('span', { class: 'gk-type-icon' }, [icon('lock', { size: 16 })]),
+      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Privado'), el('div', { class: 'gk-type-desc' }, 'Só entra quem tiver um convite.')]),
+    ]);
+    const setVisibility = (v) => {
+      visibility = v;
+      visPublicBtn.classList.toggle('gk-active', v === 'public');
+      visPrivateBtn.classList.toggle('gk-active', v === 'private');
+    };
+    visPublicBtn.addEventListener('click', () => setVisibility('public'));
+    visPrivateBtn.addEventListener('click', () => setVisibility('private'));
+    modal.appendChild(el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Tipo de servidor'),
+      el('div', { class: 'gk-type-picker gk-visibility-picker' }, [visPublicBtn, visPrivateBtn]),
     ]));
 
     const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
@@ -910,7 +947,7 @@ export function openCreateServerModal() {
           iconUrl = uploaded.url;
         }
         createBtn.textContent = 'Criando servidor...';
-        const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl, '', chosenTemplate);
+        const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl, '', chosenTemplate, visibility);
         closeGenericModal();
         selectServer(id);
       } catch (err) {
