@@ -89,7 +89,6 @@ const ICONS = {
   tiktok:       { path: '<path d="M14 3v10.5a3.5 3.5 0 11-3.5-3.5c.3 0 .7 0 1 .1V7.5c-.3 0-.7-.1-1-.1A6 6 0 1016.5 13V8.8A6.5 6.5 0 0021 10V7a4 4 0 01-4-4h-3z"/>' },
 
   dot:          { path: '<circle cx="12" cy="12" r="7"/>', fill: true },
-  search:       { path: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>' },
 };
 
 // Retorna só o markup interno (para usar dentro de outro <svg>/template).

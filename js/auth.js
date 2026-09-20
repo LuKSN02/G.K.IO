@@ -4,6 +4,7 @@
 import {
   auth, db, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
+  setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
 } from './db.js';
 import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { showStartupSplash } from './splash.js';
@@ -121,7 +122,10 @@ export async function registerUser(username, email, password) {
   return cred.user;
 }
 
-export async function loginUser(email, password) {
+export async function loginUser(email, password, keepSignedIn = true) {
+  // "Manter-me conectado" desmarcado = sessão morre ao fechar a aba/app
+  // (browserSessionPersistence); marcado (padrão) = sobrevive, como hoje.
+  await setPersistence(auth, keepSignedIn ? browserLocalPersistence : browserSessionPersistence);
   return signInWithEmailAndPassword(auth, email, password);
 }
 
@@ -148,6 +152,8 @@ export function wireAuthForm() {
   const usernameField = document.getElementById('gk-auth-username-field');
   const submitBtn = document.getElementById('gk-auth-submit');
   const errorBox = document.getElementById('gk-auth-error');
+  const keepSignedInBox = document.getElementById('gk-auth-keep-signed-in');
+  const forgotLink = document.getElementById('gk-auth-forgot');
 
   let mode = 'login'; // 'login' | 'register'
 
@@ -188,7 +194,7 @@ export function wireAuthForm() {
         await registerUser(username, email, password);
         toast('Conta criada! Bem-vindo(a) ao G.K.IO.');
       } else {
-        await loginUser(email, password);
+        await loginUser(email, password, !keepSignedInBox || keepSignedInBox.checked);
       }
     } catch (err) {
       justAuthenticatedViaForm = false; // a autenticação não mudou de fato — desfaz a marcação
@@ -199,6 +205,25 @@ export function wireAuthForm() {
       submitBtn.classList.remove('gk-btn-loading');
     }
   });
+
+  if (forgotLink) {
+    forgotLink.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('gk-auth-email').value.trim();
+      if (!email) {
+        errorBox.textContent = 'Digite seu e-mail no campo acima primeiro.';
+        errorBox.style.display = 'block';
+        return;
+      }
+      try {
+        await sendPasswordResetEmail(auth, email);
+        toast(`Enviamos um link de redefinição pra ${email}.`);
+      } catch (err) {
+        errorBox.textContent = friendlyAuthError(err);
+        errorBox.style.display = 'block';
+      }
+    });
+  }
 }
 
 function friendlyAuthError(err) {

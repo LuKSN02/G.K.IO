@@ -7,6 +7,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
   signInWithEmailAndPassword, signOut, updateProfile as fbUpdateProfile, getIdToken,
+  setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
@@ -25,6 +26,7 @@ export const db = getFirestore(app);
 export {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, fbUpdateProfile, getIdToken,
+  setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
   collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch,
 };

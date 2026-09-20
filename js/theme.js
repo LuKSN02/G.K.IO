@@ -13,7 +13,7 @@ import { state } from './state.js';
 const STORAGE_KEY = 'gkio-theme-prefs';
 
 export const ACCENTS = {
-  cosmic:  { name: 'Nebula Indigo', accent: '#6C63FF', strong: '#4F46D6', soft: 'rgba(108,99,255,0.14)',  glow: 'rgba(108,99,255,0.28)' },
+  cosmic:  { name: 'Cosmic Violet', accent: '#6C63F5', strong: '#837AFF', soft: 'rgba(108,99,245,0.16)', glow: 'rgba(108,99,245,0.45)' },
   teal:    { name: 'Glacial Teal', accent: '#1F6F78', strong: '#16545C', soft: 'rgba(31,111,120,0.12)',  glow: 'rgba(31,111,120,0.25)' },
   indigo:  { name: 'Índigo',       accent: '#4C5FD5', strong: '#3945A8', soft: 'rgba(76,95,213,0.12)',   glow: 'rgba(76,95,213,0.25)' },
   rose:    { name: 'Rosé',         accent: '#C24868', strong: '#9C3550', soft: 'rgba(194,72,104,0.12)',  glow: 'rgba(194,72,104,0.25)' },
@@ -31,7 +31,7 @@ export const PREMIUM_ACCENTS = {
 
 const ALL_ACCENTS = { ...ACCENTS, ...PREMIUM_ACCENTS };
 
-const DEFAULTS = { mode: 'light', accent: 'cosmic' };
+const DEFAULTS = { mode: 'dark', accent: 'cosmic' };
 
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 let prefs = loadPrefs();

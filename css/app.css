@@ -68,9 +68,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   color: var(--gk-accent-strong);
 }
 .gk-rail-item.gk-active {
-  background: var(--gk-accent-gradient);
-  color: #fff;
-  box-shadow: 0 0 0 2px var(--gk-accent) inset, 0 0 18px -2px var(--gk-accent-glow);
+  box-shadow: 0 0 0 2px var(--gk-accent) inset, 0 0 14px -3px var(--gk-accent-glow);
 }
 .gk-rail-pill {
   position: absolute; left: -12px; top: 50%; transform: translateY(-50%);
@@ -282,70 +280,6 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   padding: 8px; border-radius: var(--gk-radius-sm);
 }
 .gk-topbar button.gk-icon-btn:hover { background: var(--gk-surface-sunken); color: var(--gk-accent-strong); }
-
-/* ---------- Busca global (topbar) ---------- */
-.gk-global-search {
-  position: relative; width: 260px; max-width: 34vw; flex-shrink: 1;
-}
-.gk-global-search-icon {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  color: var(--gk-gray-400); display: flex; pointer-events: none;
-}
-.gk-global-search-icon .gk-icon { width: 15px; height: 15px; }
-#gk-global-search-input {
-  width: 100%; padding: 8px 12px 8px 34px; border-radius: 999px;
-  border: 1px solid var(--gk-gray-100); background: var(--gk-surface-sunken);
-  color: var(--gk-gray-800); font-size: 13px; font-family: var(--gk-font-body);
-  transition: border-color var(--gk-transition), box-shadow var(--gk-transition), background var(--gk-transition);
-}
-#gk-global-search-input::placeholder { color: var(--gk-gray-500); }
-#gk-global-search-input:focus {
-  outline: none; border-color: var(--gk-accent);
-  box-shadow: 0 0 0 3px var(--gk-accent-glow); background: var(--gk-surface);
-}
-.gk-global-search-results {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
-  width: 320px; max-width: 80vw; max-height: 60vh; overflow-y: auto;
-  background: var(--gk-surface); border: 1px solid var(--gk-gray-100);
-  border-radius: var(--gk-radius-md); box-shadow: var(--gk-shadow-glow);
-  padding: 8px;
-  opacity: 0; visibility: hidden; pointer-events: none;
-  transform: translateY(-4px) scale(0.98); transform-origin: top right;
-  transition: opacity 140ms cubic-bezier(.2,.8,.2,1), transform 140ms cubic-bezier(.2,.8,.2,1), visibility 140ms;
-}
-.gk-global-search-results.gk-open { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
-.gk-global-search-group { margin-bottom: 6px; }
-.gk-global-search-group:last-child { margin-bottom: 0; }
-.gk-global-search-group-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--gk-gray-500); padding: 6px 8px 4px;
-}
-.gk-global-search-item {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 8px; border: none; background: none; border-radius: var(--gk-radius-sm);
-  text-align: left; transition: background var(--gk-transition);
-}
-.gk-global-search-item:hover { background: var(--gk-surface-sunken); }
-.gk-global-search-item-avatar {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
-  background: var(--gk-accent-gradient); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--gk-font-display); font-weight: 700; font-size: 11px;
-}
-.gk-global-search-item-avatar-square { border-radius: var(--gk-radius-sm); }
-.gk-global-search-item-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.gk-global-search-item-info { display: flex; flex-direction: column; min-width: 0; }
-.gk-global-search-item-title {
-  font-size: 13px; font-weight: 600; color: var(--gk-gray-800);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.gk-global-search-item-subtitle {
-  font-size: 11.5px; color: var(--gk-gray-500);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.gk-global-search-empty {
-  padding: 18px 10px; text-align: center; font-size: 12.5px; color: var(--gk-gray-500);
-}
 
 .gk-messages { flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 6px; position: relative; }
 .gk-empty-state {
@@ -878,7 +812,6 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 @keyframes gk-pop-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 .gk-modal {
   background: var(--gk-surface); border-radius: var(--gk-radius-lg);
-  border: 1px solid var(--gk-gray-100);
   box-shadow: var(--gk-shadow-lg); width: 420px; max-width: 92vw;
   max-height: 88vh; overflow-y: auto; padding: 24px;
   animation: gk-pop-in var(--gk-transition-slow) both;
@@ -974,10 +907,9 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-btn:active { transform: translateY(1px) scale(0.98); }
 .gk-btn-primary {
   position: relative; overflow: hidden;
-  background: var(--gk-accent-gradient); color: #fff;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 6px 18px -8px var(--gk-accent-glow);
+  background: var(--gk-accent); color: #fff; box-shadow: 0 1px 0 rgba(0,0,0,0.04);
 }
-.gk-btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); box-shadow: 0 10px 24px -8px var(--gk-accent-glow); }
+.gk-btn-primary:hover { background: var(--gk-accent-strong); transform: translateY(-1px); box-shadow: var(--gk-shadow-sm); }
 .gk-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
 /* Luz cruzando o gelo — um brilho diagonal que atravessa o botão ao
    passar o mouse, o mesmo princípio da rachadura de luz usada no
@@ -1081,76 +1013,67 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 @keyframes gk-splash-bar-fill { from { width: 0%; } to { width: 100%; } }
 
-/* ---------- Auth gate ---------- */
+/* ---------- Auth gate ----------
+   Duas colunas: hero de marca à esquerda (sempre escuro, independente
+   do tema — é a "vitrine"), cartão de login/cadastro à direita. */
 #gk-auth {
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  gap: 0;
-  background-color: var(--gk-bg);
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(124,79,224,0.10), transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(62,166,245,0.10), transparent 45%),
-    var(--gk-frost-pattern);
-  z-index: 300;
-  overflow: auto;
-  padding: 24px;
+  position: fixed; inset: 0; display: flex; z-index: 300;
+  background: #05070E;
 }
-
-/* Painel de "vitrine" à esquerda — mesma ideia dos mockups de tela
-   cheia (hero escuro com o mark do lobo e um glow radial atrás),
-   só visível a partir de telas largas; em mobile o app cai direto
-   no cartão de login. Puramente decorativo (aria-hidden). */
 .gk-auth-hero {
-  position: relative; display: none; flex-direction: column; align-items: flex-start;
-  justify-content: center; width: 420px; max-width: 40vw; padding: 48px;
-  overflow: hidden;
-}
-.gk-auth-hero-glow {
-  position: absolute; inset: -20%; z-index: 0; pointer-events: none;
+  position: relative; flex: 1.15; min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 36px 48px;
   background:
-    radial-gradient(circle at 30% 25%, rgba(138,92,246,0.35), transparent 55%),
-    radial-gradient(circle at 75% 70%, rgba(76,140,245,0.28), transparent 50%);
-  filter: blur(4px);
+    radial-gradient(circle at 20% 15%, rgba(139,92,246,0.30), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(79,125,247,0.25), transparent 50%),
+    linear-gradient(180deg, #0A0D18, #05070E);
+}
+.gk-auth-hero-topline {
+  font-size: 12.5px; color: rgba(255,255,255,0.55); font-family: var(--gk-font-mono);
+  display: flex; gap: 8px; align-items: center;
+}
+.gk-auth-hero-topline .gk-dot { opacity: 0.4; }
+.gk-auth-hero-center {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px;
+  margin: auto 0;
 }
 .gk-auth-hero-mark {
-  position: relative; z-index: 1; width: 72px; height: 72px; margin-bottom: 24px;
-  clip-path: var(--gk-clip-facet); background: var(--gk-brand-gradient);
+  width: 84px; height: 84px; font-size: 30px; margin-bottom: 6px;
+  position: relative; border-radius: 0; clip-path: var(--gk-clip-facet);
+  background: var(--gk-brand-gradient);
   color: #fff; display: flex; align-items: center; justify-content: center;
-  font-family: var(--gk-font-display); font-weight: 700; font-size: 24px;
-  box-shadow: 0 0 40px -8px rgba(124,116,255,0.55);
+  font-family: var(--gk-font-display); font-weight: 700;
+  filter: drop-shadow(0 0 28px var(--gk-accent-glow, rgba(108,99,245,0.5)));
 }
-.gk-auth-hero-title {
-  position: relative; z-index: 1; font-family: var(--gk-font-display);
-  font-weight: 700; font-size: 34px; letter-spacing: -0.02em; color: var(--gk-gray-900);
-  margin-bottom: 10px;
+.gk-auth-hero-wordmark {
+  font-family: var(--gk-font-display); font-weight: 700; font-size: 34px; color: #fff; letter-spacing: -0.01em;
 }
-.gk-auth-hero-title span { color: var(--gk-accent); }
-.gk-auth-hero-tagline {
-  position: relative; z-index: 1; font-size: 15px; line-height: 1.5;
-  color: var(--gk-gray-600); margin: 0 0 32px;
+.gk-auth-hero-wordmark span { color: var(--gk-brand-end, #4F7DF7); }
+.gk-auth-hero-tagline { color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.5; margin: 4px 0 0; }
+.gk-auth-hero-features { display: flex; gap: 28px; flex-wrap: wrap; }
+.gk-auth-feature { display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,0.75); }
+.gk-auth-feature .gk-inline-icon { width: 18px; height: 18px; color: var(--gk-brand-end, #4F7DF7); flex-shrink: 0; }
+.gk-auth-feature b { display: block; font-size: 13px; font-weight: 600; color: #fff; }
+.gk-auth-feature small { font-size: 11.5px; color: rgba(255,255,255,0.45); }
+
+.gk-auth-panel-wrap {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 32px; position: relative; background: var(--gk-bg);
 }
-.gk-auth-hero-features {
-  position: relative; z-index: 1; list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 14px;
+.gk-auth-panel-topline {
+  position: absolute; top: 28px; right: 40px; margin: 0; text-align: right;
+  font-size: 12px; line-height: 1.4; color: var(--gk-gray-500);
 }
-.gk-auth-hero-features li {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 13.5px; font-weight: 600; color: var(--gk-gray-700);
+.gk-auth-panel-bottomline {
+  margin: 0; font-size: 12.5px; font-weight: 700; color: var(--gk-gray-400); font-family: var(--gk-font-display);
 }
-.gk-auth-hero-feature-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: var(--gk-radius-sm);
-  background: var(--gk-surface); border: 1px solid var(--gk-gray-100);
-  font-size: 14px; flex-shrink: 0;
-}
-@media (min-width: 860px) {
-  .gk-auth-hero { display: flex; }
-}
+.gk-auth-panel-bottomline span { font-weight: 400; color: var(--gk-gray-400); font-family: var(--gk-font-body); }
 
 .gk-auth-card {
-  position: relative; width: 380px; max-width: 90vw; flex-shrink: 0;
-  background: var(--gk-surface); border: 1px solid var(--gk-gray-100);
-  border-radius: var(--gk-radius-lg);
-  box-shadow: var(--gk-shadow-glow); padding: 32px 28px;
+  position: relative; width: 380px; max-width: 90vw;
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-lg);
+  box-shadow: var(--gk-shadow-lg); padding: 32px 28px;
   overflow: hidden;
 }
 /* Aresta lascada no canto — um detalhe físico, como um fragmento de
@@ -1167,10 +1090,28 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-family: var(--gk-font-display); font-weight: 700;
 }
-.gk-auth-logo .gk-wordmark { font-family: var(--gk-font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; }
+.gk-auth-logo .gk-wordmark { font-family: var(--gk-font-display); font-weight: 700; font-size: 19px; letter-spacing: -0.02em; color: var(--gk-gray-900); }
 .gk-auth-logo .gk-wordmark span { color: var(--gk-accent); }
-#gk-auth-title { font-size: 20px; margin: 0 0 6px; } /* estava sem tamanho/margem definidos, herdando o default do navegador */
-.gk-auth-card .gk-modal-sub { font-size: 13px; color: var(--gk-gray-500); margin: 0 0 20px; } /* .gk-modal-sub só era estilizado dentro de .gk-modal — aqui não pegava nada */
+#gk-auth-title { font-size: 20px; margin: 0 0 6px; }
+.gk-auth-card .gk-modal-sub { font-size: 13px; color: var(--gk-gray-500); margin: 0 0 20px; }
+
+/* Campo com ícone dentro do input, como nos cartões de auth/perfil de referência */
+.gk-field-icon-input { position: relative; display: flex; align-items: center; }
+.gk-field-icon-input .gk-inline-icon {
+  position: absolute; left: 12px; width: 15px; height: 15px; color: var(--gk-gray-400); pointer-events: none;
+}
+.gk-field-icon-input input { padding-left: 36px !important; }
+.gk-field-icon-at input { padding-left: 30px !important; }
+.gk-field-icon-at::before {
+  content: '@'; position: absolute; left: 13px; color: var(--gk-gray-400); font-weight: 600; font-size: 13px; pointer-events: none;
+}
+
+.gk-auth-row { display: flex; align-items: center; justify-content: space-between; margin: -6px 0 16px; }
+.gk-auth-checkbox { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--gk-gray-500); cursor: pointer; user-select: none; }
+.gk-auth-checkbox input { accent-color: var(--gk-accent); width: 14px; height: 14px; cursor: pointer; }
+#gk-auth-forgot { font-size: 12.5px; color: var(--gk-accent); text-decoration: none; }
+#gk-auth-forgot:hover { text-decoration: underline; }
+
 .gk-auth-toggle {
   text-align: center; margin-top: 16px; font-size: 13px;
   color: var(--gk-gray-500); cursor: pointer;
@@ -1180,6 +1121,12 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   transition: color var(--gk-transition);
 }
 .gk-auth-toggle:hover .gk-auth-toggle-action { color: var(--gk-accent-strong); text-decoration: underline; }
+
+@media (max-width: 860px) {
+  .gk-auth-hero { display: none; } /* sem espaço pra duas colunas — mostra só o cartão */
+  .gk-auth-panel-topline, .gk-auth-panel-bottomline { display: none; }
+  .gk-auth-panel-wrap { padding: 20px; }
+}
 
 /* ---------- Cartão / modal de perfil público ---------- */
 .gk-profile-modal {
@@ -1291,7 +1238,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-call-screen {
   position: fixed; inset: 0; z-index: 300; display: none;
   flex-direction: column; align-items: center; justify-content: center;
-  background: #14171A; overflow: hidden;
+  background: #0A0D16; overflow: hidden;
 }
 .gk-call-screen.gk-open { display: flex; }
 .gk-call-screen-bg {
@@ -1386,7 +1333,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-call-tile {
   position: relative; aspect-ratio: 16/10; border-radius: var(--gk-radius-lg);
-  background: #1F2427; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  background: #161B2C; overflow: hidden; display: flex; align-items: center; justify-content: center;
   border: 2px solid transparent; transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .gk-call-tile.gk-speaking {
@@ -1465,7 +1412,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-incoming-call-overlay.gk-open { display: block; }
 .gk-incoming-call-card {
   display: flex; align-items: center; gap: 14px;
-  background: #1B1F22; color: #fff; padding: 12px 16px 12px 12px;
+  background: #141A2C; color: #fff; padding: 12px 16px 12px 12px;
   border-radius: 999px; box-shadow: var(--gk-shadow-lg);
   border: 1px solid rgba(255,255,255,0.08);
   animation: gk-pop-in var(--gk-transition-slow) both;
@@ -1495,7 +1442,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 /* ---------- Barra minimizada (chamada em 2º plano / canal de voz) ---------- */
 .gk-call-bar {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
-  background: #1B1F22; color: #fff; border-radius: 999px;
+  background: #141A2C; color: #fff; border-radius: 999px;
   padding: 10px 10px 10px 18px; display: none; align-items: center; gap: 14px;
   box-shadow: var(--gk-shadow-lg); z-index: 250;
   border: 1px solid rgba(255,255,255,0.06);
@@ -1515,7 +1462,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 #gk-toast-stack { position: fixed; top: 16px; right: 16px; z-index: 400; display: flex; flex-direction: column; gap: 8px; }
 .gk-toast {
   position: relative;
-  background: #1B1F22; color: #fff; padding: 11px 16px 11px 40px; border-radius: var(--gk-radius-md);
+  background: #141A2C; color: #fff; padding: 11px 16px 11px 40px; border-radius: var(--gk-radius-md);
   font-size: 13px; line-height: 1.4; box-shadow: var(--gk-shadow-lg);
   opacity: 0; transform: translateY(-6px) scale(0.98);
   transition: opacity 180ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1);
@@ -1563,71 +1510,6 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-settings-content { flex: 1; overflow-y: auto; padding: 26px 30px; }
 .gk-settings-section-header { margin-bottom: 18px; }
 .gk-settings-section-header h2 { margin: 0 0 4px; font-size: 19px; }
-
-/* ---------- Prévia do visual (painel à direita, só na seção Aparência) ---------- */
-.gk-settings-shell.gk-has-preview { width: 1080px; }
-.gk-settings-preview {
-  width: 260px; flex-shrink: 0; display: none; flex-direction: column; gap: 14px;
-  padding: 20px 18px; background: var(--gk-surface-sunken); border-left: 1px solid var(--gk-gray-100);
-  overflow-y: auto;
-}
-.gk-settings-preview-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 700; color: var(--gk-gray-600);
-  text-transform: uppercase; letter-spacing: 0.03em;
-}
-.gk-settings-preview-frame {
-  display: flex; border-radius: var(--gk-radius-md); overflow: hidden;
-  border: 1px solid var(--gk-gray-100); box-shadow: var(--gk-shadow-glow);
-  background: var(--gk-bg); height: 220px;
-}
-.gk-mock-rail {
-  width: 40px; flex-shrink: 0; background: var(--gk-rail);
-  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0;
-}
-.gk-mock-rail-item {
-  width: 26px; height: 26px; border-radius: 40%; background: var(--gk-surface);
-  border: 1px solid var(--gk-gray-100); display: flex; align-items: center; justify-content: center;
-  font-family: var(--gk-font-display); font-weight: 700; font-size: 8.5px; color: var(--gk-gray-500);
-}
-.gk-mock-rail-item.gk-mock-active {
-  border-radius: 30%; background: var(--gk-accent-gradient); color: #fff; border-color: transparent;
-  box-shadow: 0 0 10px -2px var(--gk-accent-glow);
-}
-.gk-mock-body { flex: 1; display: flex; min-width: 0; }
-.gk-mock-sidebar {
-  width: 74px; flex-shrink: 0; background: var(--gk-surface); border-right: 1px solid var(--gk-gray-100);
-  padding: 8px 5px; display: flex; flex-direction: column; gap: 3px;
-}
-.gk-mock-sidebar-row {
-  display: flex; align-items: center; gap: 4px; padding: 4px 5px; border-radius: 5px;
-  font-size: 8px; color: var(--gk-gray-500);
-}
-.gk-mock-sidebar-row .gk-icon { width: 10px; height: 10px; }
-.gk-mock-sidebar-row.gk-mock-active { background: var(--gk-accent-soft); color: var(--gk-accent-strong); font-weight: 600; }
-.gk-mock-chat {
-  flex: 1; min-width: 0; padding: 10px 8px; display: flex; flex-direction: column;
-  gap: 6px; justify-content: flex-end; background: var(--gk-bg);
-}
-.gk-mock-msg { display: flex; align-items: flex-end; gap: 5px; }
-.gk-mock-msg-self { justify-content: flex-end; }
-.gk-mock-avatar {
-  width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
-  background: var(--gk-accent-gradient); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 6px; font-weight: 700; font-family: var(--gk-font-display);
-}
-.gk-mock-bubble {
-  max-width: 110px; padding: 5px 8px; border-radius: 10px; font-size: 8.5px; line-height: 1.3;
-  background: var(--gk-surface); border: 1px solid var(--gk-gray-100); color: var(--gk-gray-700);
-}
-.gk-mock-bubble-accent { background: var(--gk-accent-gradient); color: #fff; border: none; }
-.gk-mock-btn { width: 100%; margin-top: 4px; padding: 6px 8px; font-size: 9px; border-radius: 8px; }
-.gk-settings-preview-note {
-  display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--gk-gray-500);
-  padding: 12px; background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-sm);
-}
-.gk-settings-preview-note strong { font-size: 12.5px; color: var(--gk-gray-800); }
 .gk-settings-section-header .gk-modal-sub { margin: 0; }
 
 .gk-settings-close {
@@ -1688,10 +1570,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   border-radius: 50%; background: #fff; box-shadow: var(--gk-shadow-sm);
   transition: transform var(--gk-transition);
 }
-.gk-toggle.gk-on {
-  background: var(--gk-accent-gradient);
-  box-shadow: 0 0 0 1px var(--gk-accent-glow), 0 0 12px -2px var(--gk-accent-glow);
-}
+.gk-toggle.gk-on { background: var(--gk-accent); }
 .gk-toggle.gk-on::after { transform: translateX(18px); }
 
 /* ---------- Aparência: modos e cores de destaque ---------- */
@@ -1874,8 +1753,6 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   .gk-mobile-menu-btn { display: inline-flex !important; }
 
   .gk-settings-shell { flex-direction: column; width: 94vw; height: 88vh; }
-  .gk-settings-shell.gk-has-preview { width: 94vw; }
-  .gk-settings-preview { display: none !important; }
   .gk-settings-nav { width: 100%; border-right: none; border-bottom: 1px solid var(--gk-gray-100); display: flex; gap: 4px; padding: 10px; overflow-x: auto; }
   .gk-settings-nav-title { display: none; }
   .gk-settings-nav-item { flex-shrink: 0; }
@@ -1887,19 +1764,6 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   .gk-topbar { padding: 0 10px; gap: 6px; }
   .gk-topbar .gk-title { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gk-topbar .gk-subtitle { display: none; }
-  /* Busca global vira só o ícone em telas estreitas — o campo de
-     texto ocuparia espaço demais ao lado do título e dos botões de
-     chamada; toca no ícone pra abrir o campo por cima do topbar. */
-  .gk-global-search { width: auto; max-width: none; }
-  .gk-global-search #gk-global-search-input {
-    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-    width: 0; padding: 0; border: none; opacity: 0; pointer-events: none;
-  }
-  .gk-global-search.gk-mobile-open #gk-global-search-input {
-    width: 55vw; padding: 8px 12px 8px 34px; opacity: 1; pointer-events: auto; border: 1px solid var(--gk-gray-100);
-  }
-  .gk-global-search.gk-mobile-open .gk-global-search-icon { pointer-events: auto; cursor: pointer; }
-  .gk-global-search-results { width: 80vw; }
   .gk-topbar button.gk-icon-btn { padding: 10px; }
 
   /* Mensagens e composer com respiro menor nas laterais */
@@ -2039,7 +1903,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-avatar[data-frame="aurora"]::before,
 .gk-profile-avatar-wrap[data-frame="aurora"]::before {
-  background: conic-gradient(from 0deg, var(--gk-accent), #7C4FC2, var(--gk-status-online), var(--gk-accent));
+  background: conic-gradient(from 0deg, var(--gk-accent), #8B5CF6, var(--gk-status-online), var(--gk-accent));
 }
 .gk-avatar[data-frame]::before { border-radius: inherit; }
 .gk-profile-avatar-wrap[data-frame]::before { border-radius: 25px; }
