@@ -1999,14 +1999,27 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   .gk-settings-shell { flex-direction: column; width: 94vw; height: 88vh; }
   .gk-settings-nav { width: 100%; border-right: none; border-bottom: 1px solid var(--gk-gray-100); display: flex; gap: 4px; padding: 10px; overflow-x: auto; }
   .gk-settings-nav-title { display: none; }
+  .gk-settings-nav-footer { display: none; }
   .gk-settings-nav-item { flex-shrink: 0; }
   .gk-settings-content { padding: 20px 18px; }
   .gk-screenshare-tile { width: 220px; }
   .gk-emoji-picker { width: min(92vw, 340px); max-height: 68vh; }
 
-  /* Topbar mais compacta: título pode truncar, subtítulo some */
-  .gk-topbar { padding: 0 10px; gap: 6px; }
-  .gk-topbar .gk-title { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Duas barras empilhadas (global + da conversa) custam espaço vertical
+     precioso no celular — encolhe as duas e tira o que não cabe: a busca
+     rápida do topbar (ela segue existindo em telas maiores) e o
+     nome/status do perfil somem, sobrando só o essencial: menu, marca,
+     sino e avatar. */
+  .gk-topbar-global { height: 48px; padding: 0 10px; gap: 8px; }
+  .gk-topbar-global-search-wrap { display: none; }
+  .gk-topbar-global-actions .gk-icon-btn:not(#gk-notif-btn) { display: none; }
+  .gk-topbar-global-profile { padding: 2px; margin-left: 2px; }
+  .gk-topbar-global-profile > .gk-inline-icon { display: none; }
+  .gk-notif-panel { right: 10px; width: min(300px, 88vw); }
+
+  /* Topbar da conversa mais compacta: título pode truncar, subtítulo some */
+  .gk-topbar { height: 46px; padding: 0 10px; gap: 6px; }
+  .gk-topbar .gk-title { max-width: 55vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gk-topbar .gk-subtitle { display: none; }
   .gk-topbar button.gk-icon-btn { padding: 10px; }
 
