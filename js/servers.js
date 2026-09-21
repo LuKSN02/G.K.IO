@@ -468,6 +468,7 @@ export function goToServerPickerView() {
   document.getElementById('gk-home-view').style.display = 'none';
   document.getElementById('gk-files-view').style.display = 'none';
   document.getElementById('gk-communities-view').style.display = 'none';
+  document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
@@ -494,6 +495,7 @@ export function selectServer(serverId) {
   document.getElementById('gk-messages').style.display = 'flex';
   document.getElementById('gk-composer').style.display = 'block';
   document.getElementById('gk-server-picker-add').style.display = 'none';
+  document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
   document.getElementById('gk-nav-servers')?.classList.add('gk-active');
   listenCategoriesAndChannels(serverId);

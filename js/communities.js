@@ -9,7 +9,7 @@
 import { serversCol, query, where, onSnapshot, auth } from './db.js';
 import { state, el, cleanupListener, toast } from './state.js';
 import { icon } from './icons.js';
-import { selectServer, joinServerAsMember } from './servers.js';
+import { selectServer, joinServerAsMember, openCreateServerModal } from './servers.js';
 import { hideFriendsHome } from './dms.js';
 
 let unsubCommunities = null;
@@ -29,16 +29,32 @@ export function goToCommunitiesView() {
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-video-call-btn').style.display = 'none';
   document.getElementById('gk-server-picker-add').style.display = 'none';
+  document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.getElementById('gk-topbar-title').textContent = 'Comunidades';
   document.getElementById('gk-topbar-subtitle').textContent = '';
   document.getElementById('gk-sidebar-header-title').textContent = 'Comunidades';
-  document.getElementById('gk-sidebar-body').innerHTML = '';
+  renderSidebarExplainer();
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
   document.getElementById('gk-nav-communities')?.classList.add('gk-active');
 
   searchTerm = '';
   document.getElementById('gk-communities-view').style.display = 'flex';
   listenCommunities();
+}
+
+// A sidebar ficava em branco aqui (nada de conversa/servidor pra listar
+// nessa seção) — em vez de deixar vazia, um cartão curto explicando o
+// que é isso e um atalho direto pra criar uma comunidade.
+function renderSidebarExplainer() {
+  const body = document.getElementById('gk-sidebar-body');
+  body.innerHTML = '';
+  body.appendChild(el('div', { class: 'gk-sidebar-explainer' }, [
+    el('span', { class: 'gk-sidebar-explainer-icon' }, [icon('tray', { size: 18 })]),
+    el('p', {}, 'Comunidades são servidores marcados como públicos — qualquer pessoa encontra e entra sem precisar de convite.'),
+    el('button', { class: 'gk-btn gk-btn-primary gk-btn-block', onclick: openCreateServerModal }, [
+      icon('plus', { size: 14 }), ' Criar comunidade',
+    ]),
+  ]));
 }
 
 export function hideCommunitiesView() {
@@ -86,7 +102,10 @@ function renderCommunityList() {
   if (!list.length) {
     grid.appendChild(el('div', { class: 'gk-empty-state' }, [
       el('div', { class: 'gk-emoji' }, [icon('tray', { size: 32 })]),
-      el('div', {}, lastCommunities.length ? 'Nenhuma comunidade com esse nome.' : 'Nenhuma comunidade pública ainda. Crie um servidor e marque "Público" pra ele aparecer aqui.'),
+      el('div', {}, lastCommunities.length ? 'Nenhuma comunidade com esse nome.' : 'Nenhuma comunidade pública ainda.'),
+      !lastCommunities.length
+        ? el('button', { class: 'gk-btn gk-btn-primary', onclick: openCreateServerModal }, [icon('plus', { size: 14 }), ' Criar a primeira'])
+        : null,
     ]));
     return;
   }

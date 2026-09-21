@@ -67,6 +67,7 @@ function goToHomeView() {
   hideFriendsHome();
   hideFilesView();
   hideCommunitiesView();
+  document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.getElementById('gk-messages').style.display = 'none';
   document.getElementById('gk-messages').innerHTML = '';
   document.getElementById('gk-composer').style.display = 'none';

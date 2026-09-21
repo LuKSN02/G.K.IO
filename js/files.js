@@ -31,10 +31,11 @@ export function goToFilesView() {
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-video-call-btn').style.display = 'none';
   document.getElementById('gk-server-picker-add').style.display = 'none';
+  document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.getElementById('gk-topbar-title').textContent = 'Arquivos';
   document.getElementById('gk-topbar-subtitle').textContent = '';
   document.getElementById('gk-sidebar-header-title').textContent = 'Arquivos';
-  document.getElementById('gk-sidebar-body').innerHTML = '';
+  renderSidebarExplainer();
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
   document.getElementById('gk-nav-files')?.classList.add('gk-active');
 
@@ -46,6 +47,18 @@ export function goToFilesView() {
 export function hideFilesView() {
   const main = document.getElementById('gk-files-view');
   if (main) main.style.display = 'none';
+}
+
+// Mesma ideia do explicador em communities.js — sidebar não tem nada de
+// conversa/servidor pra listar aqui, então em vez de ficar em branco,
+// um lembrete curto do que essa seção mostra.
+function renderSidebarExplainer() {
+  const body = document.getElementById('gk-sidebar-body');
+  body.innerHTML = '';
+  body.appendChild(el('div', { class: 'gk-sidebar-explainer' }, [
+    el('span', { class: 'gk-sidebar-explainer-icon' }, [icon('attach', { size: 18 })]),
+    el('p', {}, 'Tudo que você já enviou — imagens, GIFs e arquivos — em qualquer conversa ou servidor, num só lugar.'),
+  ]));
 }
 
 function listenFiles() {
