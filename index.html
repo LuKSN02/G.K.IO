@@ -115,6 +115,44 @@
 <!-- ======================= APP SHELL ======================= -->
 <div id="gk-app">
 
+  <!-- ======================= TOPBAR GLOBAL =======================
+       Faixa fixa no topo do app inteiro (acima do rail/sidebar/main) —
+       marca, busca rápida, notificações, adicionar amigo, tema e o
+       chip de perfil. Ver js/topbar.js. -->
+  <div class="gk-topbar-global">
+    <div class="gk-topbar-global-brand">
+      <img src="img/logo.png" alt="">
+      <span>G.K.IO</span>
+    </div>
+    <div class="gk-topbar-global-search-wrap">
+      <span data-icon="search" class="gk-inline-icon gk-topbar-global-search-icon"></span>
+      <input type="text" id="gk-global-search" class="gk-topbar-global-search" placeholder="Buscar no G.K.IO...">
+      <div class="gk-global-search-results" id="gk-global-search-results"></div>
+    </div>
+    <div class="gk-topbar-global-actions">
+      <button class="gk-icon-btn" id="gk-notif-btn" title="Notificações">
+        <span data-icon="bell" class="gk-inline-icon"></span>
+        <span class="gk-topbar-global-dot" id="gk-notif-dot" style="display:none;"></span>
+      </button>
+      <div class="gk-notif-panel" id="gk-notif-panel"></div>
+      <button class="gk-icon-btn" id="gk-topbar-add-friend-btn" title="Adicionar amigo">
+        <span data-icon="personPlus" class="gk-inline-icon"></span>
+      </button>
+      <button class="gk-icon-btn" id="gk-topbar-theme-btn" title="Alternar tema">
+        <span data-icon="moon" class="gk-inline-icon"></span>
+      </button>
+      <button class="gk-topbar-global-profile" id="gk-topbar-profile-chip">
+        <img id="gk-topbar-profile-avatar" src="">
+        <span class="gk-topbar-global-profile-info">
+          <b id="gk-topbar-profile-name"></b>
+          <small><span class="gk-status-dot-inline" id="gk-topbar-profile-dot"></span><span id="gk-topbar-profile-status"></span></small>
+        </span>
+        <span data-icon="chevronDown" class="gk-inline-icon"></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="gk-app-body">
   <!-- Painel de navegação (rail de servidores + sidebar) — em telas
        de smartphone vira uma gaveta deslizante, aberta pelo botão
        de menu (☰) no topbar. -->
@@ -295,6 +333,8 @@
 
   <!-- Painel de membros -->
   <div class="gk-members" id="gk-members" style="display:none;"></div>
+
+  </div><!-- /.gk-app-body -->
 </div>
 
 <!-- ======================= SPLASH DE INICIALIZAÇÃO ======================= -->

@@ -15,6 +15,7 @@ import { listenReadStates } from './unread.js';
 import { initPushNotifications, onPushNotificationTap } from './push.js';
 import { goToFilesView, hideFilesView } from './files.js';
 import { goToCommunitiesView, hideCommunitiesView } from './communities.js';
+import { wireGlobalTopbar } from './topbar.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -31,6 +32,7 @@ wireCallBar();
 wireSettingsModal();
 wireServerSettingsModal();
 wireFriendsHome();
+wireGlobalTopbar();
 wireStaticUI();
 wireMobileNav();
 initEmojiPicker({

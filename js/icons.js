@@ -61,6 +61,7 @@ const ICONS = {
   shield:       { path: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/>' },
   lock:         { path: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>' },
   link:         { path: '<path d="M9 15l6-6M8 12l-2 2a4 4 0 105.6 5.6l2-2M16 12l2-2a4 4 0 10-5.6-5.6l-2 2"/>' },
+  search:       { path: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>' },
   snowflake:    { path: '<path d="M12 2v20M4.2 7l15.6 10M19.8 7L4.2 17M12 2l-2 2M12 2l2 2M12 22l-2-2M12 22l2-2M4.2 7l2.7.4M4.2 7l.4 2.7M19.8 17l-2.7-.4M19.8 17l-.4-2.7M19.8 7l-2.7.4M19.8 7l-.4 2.7M4.2 17l2.7-.4M4.2 17l.4-2.7"/>' },
 
   diamond:      { path: '<path d="M12 2.5l4.5 6h-9l4.5-6zM3.2 8.5h17.6L12 21.5 3.2 8.5z"/>', fill: true },

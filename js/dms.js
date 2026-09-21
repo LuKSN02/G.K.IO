@@ -12,6 +12,7 @@ import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { icon } from './icons.js';
+import { refreshNotifDot } from './topbar.js';
 
 // Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
 // lida), re-renderiza a lista pra atualizar os indicadores de não lida.
@@ -81,9 +82,11 @@ function refreshPendingBadge() {
   const badge = document.getElementById('gk-dm-rail-badge');
   if (!badge) return;
   const count = (state.incomingFriendRequests || []).length;
-  if (count === 0) { badge.style.display = 'none'; return; }
-  badge.textContent = count > 9 ? '9+' : String(count);
-  badge.style.display = 'flex';
+  if (count === 0) { badge.style.display = 'none'; } else {
+    badge.textContent = count > 9 ? '9+' : String(count);
+    badge.style.display = 'flex';
+  }
+  refreshNotifDot();
 }
 
 function renderDmSidebar() {
@@ -143,11 +146,11 @@ export async function sendFriendRequestByUsername(username) {
   });
 }
 
-async function acceptFriendRequest(friendshipId) {
+export async function acceptFriendRequest(friendshipId) {
   await updateDoc(doc(db, 'friendships', friendshipId), { status: 'accepted' });
   toast('Pedido de amizade aceito.');
 }
-async function declineFriendRequest(friendshipId) {
+export async function declineFriendRequest(friendshipId) {
   await updateDoc(doc(db, 'friendships', friendshipId), { status: 'declined' });
 }
 

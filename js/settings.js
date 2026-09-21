@@ -5,7 +5,7 @@
 // ============================================================
 import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc, query, where, serverTimestamp } from './db.js';
 import { state, el, toast, fallbackAvatar, normalizeUsername } from './state.js';
-import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage } from './profile.js';
+import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage, applyWallpaper } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
@@ -66,6 +66,10 @@ function renderNav() {
       onclick: () => { stopMicTest(); stopCamTest(); activeSection = s.id; renderNav(); renderSection(); },
     }, [el('span', { class: 'gk-settings-nav-icon' }, [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
+  nav.appendChild(el('div', { class: 'gk-settings-nav-footer' }, [
+    el('img', { src: 'img/logo.png', alt: '' }),
+    el('p', {}, ['Mais que um chat,', el('br'), 'uma comunidade.']),
+  ]));
 }
 
 function renderSection() {
@@ -391,6 +395,79 @@ function renderAparenciaSection(content) {
     ]),
     swatchRow,
   ]));
+  content.appendChild(buildWallpaperCard());
+}
+
+// Papel de parede — atrás das mensagens/composer, não no rail/sidebar
+// (eles continuam sólidos pra manter o texto sempre legível). A escolha
+// grava direto no doc do usuário (ver isValidSelfProfileEdit no
+// firestore.rules) e aplica na hora, sem precisar de "Salvar alterações".
+const WALLPAPER_PRESETS = [
+  { id: 'none', label: 'Nenhum' },
+  { id: 'aurora', label: 'Aurora' },
+  { id: 'nebula', label: 'Nebulosa' },
+  { id: 'mountains', label: 'Montanhas' },
+  { id: 'mascot', label: 'Mascote' },
+  { id: 'waves', label: 'Ondas' },
+];
+
+function buildWallpaperCard() {
+  const current = state.user.wallpaper || 'none';
+  const grid = el('div', { class: 'gk-wallpaper-grid' });
+
+  const choose = async (id, url) => {
+    try {
+      const payload = { wallpaper: id };
+      if (id === 'custom') payload.wallpaperUrl = url;
+      await updateDoc(userDoc(state.user.uid), payload);
+      state.user.wallpaper = id;
+      if (url) state.user.wallpaperUrl = url;
+      applyWallpaper();
+      renderSection();
+    } catch (err) {
+      toast('Não foi possível salvar o papel de parede.', 'danger');
+    }
+  };
+
+  for (const w of WALLPAPER_PRESETS) {
+    grid.appendChild(el('button', {
+      type: 'button', class: 'gk-wallpaper-tile' + (current === w.id ? ' gk-active' : ''),
+      'data-wallpaper-preview': w.id,
+      onclick: () => choose(w.id),
+    }, [
+      current === w.id ? el('span', { class: 'gk-wallpaper-check' }, [icon('check', { size: 13 })]) : null,
+      el('span', { class: 'gk-wallpaper-tile-label' }, w.label),
+    ]));
+  }
+
+  // Papel de parede próprio — mesma engrenagem de upload do avatar/banner.
+  const customInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
+  customInput.addEventListener('change', async () => {
+    const file = customInput.files[0];
+    if (!file) return;
+    try {
+      const url = await uploadProfileImage(file, 'wallpapers');
+      await choose('custom', url);
+    } catch (err) {
+      toast('Falha ao enviar a imagem.', 'danger');
+    }
+  });
+  grid.appendChild(el('button', {
+    type: 'button',
+    class: 'gk-wallpaper-tile gk-wallpaper-tile-add' + (current === 'custom' ? ' gk-active' : ''),
+    'data-wallpaper-preview': current === 'custom' ? 'custom' : null,
+    style: current === 'custom' && state.user.wallpaperUrl ? `background-image:url('${state.user.wallpaperUrl}');` : '',
+    onclick: () => customInput.click(),
+  }, [
+    current === 'custom' ? el('span', { class: 'gk-wallpaper-check' }, [icon('check', { size: 13 })]) : el('span', {}, [icon('plus', { size: 16 })]),
+    el('span', { class: 'gk-wallpaper-tile-label' }, current === 'custom' ? 'Personalizado' : 'Enviar imagem'),
+  ]));
+
+  return el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Papéis de parede'),
+    el('p', { class: 'gk-modal-sub', style: 'margin:-6px 0 12px;' }, 'Altere o fundo da área de conversa. A escolha é salva na sua conta.'),
+    grid,
+  ]);
 }
 
 function buildAccentSwatch(key, a, prefs, locked) {

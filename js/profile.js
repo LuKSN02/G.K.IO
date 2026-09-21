@@ -8,6 +8,7 @@ import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { openSettingsModal } from './settings.js';
 import { icon } from './icons.js';
+import { refreshTopbarProfile } from './topbar.js';
 
 export const SOCIAL_ICONS = {
   instagram: 'instagram', twitter: 'x', x: 'x', github: 'github', youtube: 'youtube',
@@ -49,6 +50,22 @@ export function refreshMiniProfile() {
   document.getElementById('gk-mini-avatar-wrap').setAttribute('data-frame', state.user.frameStyle || 'none');
   document.getElementById('gk-mini-name').textContent = state.user.displayName || state.user.username;
   document.getElementById('gk-mini-status').textContent = state.user.bio || '@' + state.user.username;
+  applyWallpaper();
+  refreshTopbarProfile();
+}
+
+// Papel de parede da conta — persiste no doc do usuário (ver
+// renderAparenciaSection em settings.js), então acompanha entre
+// dispositivos como avatar/banner. 'custom' usa a URL enviada pela
+// própria pessoa; os demais são só CSS (ver css/app.css).
+export function applyWallpaper() {
+  const app = document.getElementById('gk-app');
+  if (!app) return;
+  const wallpaper = state.user?.wallpaper || 'none';
+  app.dataset.wallpaper = wallpaper;
+  if (wallpaper === 'custom' && state.user?.wallpaperUrl) {
+    app.style.setProperty('--gk-wallpaper-custom-url', `url('${state.user.wallpaperUrl}')`);
+  }
 }
 
 // ---------- Cartão de perfil público ----------
