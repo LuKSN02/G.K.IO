@@ -45,11 +45,6 @@ export async function uploadProfileImage(file, folder) {
 }
 
 export function refreshMiniProfile() {
-  document.getElementById('gk-mini-avatar').src = state.user.avatarUrl || fallbackAvatar(state.user.username);
-  document.getElementById('gk-mini-avatar-wrap').setAttribute('data-status', state.user.statusPresence || 'online');
-  document.getElementById('gk-mini-avatar-wrap').setAttribute('data-frame', state.user.frameStyle || 'none');
-  document.getElementById('gk-mini-name').textContent = state.user.displayName || state.user.username;
-  document.getElementById('gk-mini-status').textContent = state.user.bio || '@' + state.user.username;
   applyWallpaper();
   refreshTopbarProfile();
 }

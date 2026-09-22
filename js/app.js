@@ -15,7 +15,7 @@ import { listenReadStates } from './unread.js';
 import { initPushNotifications, onPushNotificationTap } from './push.js';
 import { goToFilesView, hideFilesView } from './files.js';
 import { goToCommunitiesView, hideCommunitiesView } from './communities.js';
-import { wireGlobalTopbar } from './topbar.js';
+import { wireGlobalTopbar, closeProfileMenu } from './topbar.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -134,9 +134,8 @@ function wireStaticUI() {
   document.getElementById('gk-home-go-friends').addEventListener('click', goToFriendsView);
   document.getElementById('gk-home-go-servers').addEventListener('click', goToServerPickerView);
   document.getElementById('gk-add-friend-btn').addEventListener('click', openAddFriendModal);
-  document.getElementById('gk-mini-profile').addEventListener('click', () => openSettingsModal('perfil'));
-  document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal('perfil'); });
-  document.getElementById('gk-logout-btn').addEventListener('click', (e) => { e.stopPropagation(); logoutUser(); });
+  document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); closeProfileMenu(); openSettingsModal('perfil'); });
+  document.getElementById('gk-logout-btn').addEventListener('click', (e) => { e.stopPropagation(); closeProfileMenu(); logoutUser(); });
   document.getElementById('gk-server-settings-btn').addEventListener('click', () => {
     if (state.currentServerId) openServerSettingsModal(state.currentServerId);
   });
@@ -153,6 +152,7 @@ function wireStaticUI() {
 async function setStatusAndClose(status) {
   await setPresence(status);
   refreshMiniProfile();
+  closeProfileMenu();
 }
 
 // ============================================================

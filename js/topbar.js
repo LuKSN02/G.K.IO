@@ -17,12 +17,30 @@ export function wireGlobalTopbar() {
     setThemeMode(resolvedMode() === 'dark' ? 'light' : 'dark');
   });
   document.getElementById('gk-topbar-add-friend-btn').addEventListener('click', openAddFriendModal);
-  document.getElementById('gk-topbar-profile-chip').addEventListener('click', () => {
-    document.getElementById('gk-settings-btn').click();
-  });
-
+  wireProfileMenu();
   wireNotifBell();
   wireGlobalSearch();
+}
+
+// ---------- Menu suspenso do perfil (status / configurações / sair) ----------
+// Substituiu a barra inferior da sidebar, que duplicava exatamente essas
+// mesmas ações — agora moram só aqui, junto do chip de perfil no topo.
+function wireProfileMenu() {
+  const chip = document.getElementById('gk-topbar-profile-chip');
+  const menu = document.getElementById('gk-profile-menu');
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.getElementById('gk-notif-panel').classList.remove('gk-open'); // só um popover aberto por vez
+    menu.classList.toggle('gk-open');
+  });
+  document.addEventListener('click', (e) => {
+    if (menu.classList.contains('gk-open') && !menu.contains(e.target) && !chip.contains(e.target)) {
+      menu.classList.remove('gk-open');
+    }
+  });
+}
+export function closeProfileMenu() {
+  document.getElementById('gk-profile-menu')?.classList.remove('gk-open');
 }
 
 // ---------- Chip de perfil no topo ----------
@@ -31,9 +49,15 @@ export function wireGlobalTopbar() {
 export function refreshTopbarProfile() {
   if (!state.user) return;
   document.getElementById('gk-topbar-profile-avatar').src = state.user.avatarUrl || fallbackAvatar(state.user.username);
+  document.getElementById('gk-topbar-profile-avatar-wrap').setAttribute('data-status', state.user.statusPresence || 'online');
+  document.getElementById('gk-topbar-profile-avatar-wrap').setAttribute('data-frame', state.user.frameStyle || 'none');
   document.getElementById('gk-topbar-profile-name').textContent = state.user.displayName || state.user.username;
   document.getElementById('gk-topbar-profile-status').textContent = statusLabelShort(state.user.statusPresence);
   document.getElementById('gk-topbar-profile-dot').setAttribute('data-status', state.user.statusPresence || 'online');
+  const current = state.user.statusPresence || 'online';
+  for (const id of ['online', 'idle', 'dnd']) {
+    document.getElementById(`gk-status-${id}`)?.classList.toggle('gk-active', id === current);
+  }
 }
 function statusLabelShort(s) {
   return { online: 'Online', idle: 'Ausente', dnd: 'Não perturbe', offline: 'Offline' }[s] || 'Online';

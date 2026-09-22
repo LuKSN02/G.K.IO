@@ -143,13 +143,24 @@
         <span data-icon="moon" class="gk-inline-icon"></span>
       </button>
       <button class="gk-topbar-global-profile" id="gk-topbar-profile-chip">
-        <img id="gk-topbar-profile-avatar" src="">
+        <div class="gk-avatar gk-sz-32" id="gk-topbar-profile-avatar-wrap">
+          <img id="gk-topbar-profile-avatar" src="">
+        </div>
         <span class="gk-topbar-global-profile-info">
           <b id="gk-topbar-profile-name"></b>
           <small><span class="gk-status-dot-inline" id="gk-topbar-profile-dot"></span><span id="gk-topbar-profile-status"></span></small>
         </span>
         <span data-icon="chevronDown" class="gk-inline-icon"></span>
       </button>
+      <div class="gk-profile-menu" id="gk-profile-menu">
+        <div class="gk-profile-menu-label">Definir status</div>
+        <button id="gk-status-online" class="gk-profile-menu-status-row" data-icon="dot" title="Online">Online</button>
+        <button id="gk-status-idle" class="gk-profile-menu-status-row" data-icon="dot" title="Ausente">Ausente</button>
+        <button id="gk-status-dnd" class="gk-profile-menu-status-row" data-icon="dot" title="Não perturbe">Não perturbe</button>
+        <div class="gk-profile-menu-divider"></div>
+        <button id="gk-settings-btn" class="gk-profile-menu-row" data-icon="settings">Configurações</button>
+        <button id="gk-logout-btn" class="gk-profile-menu-row gk-profile-menu-row-danger" data-icon="power">Sair</button>
+      </div>
     </div>
   </div>
 
@@ -226,22 +237,6 @@
           <button id="gk-create-server-btn"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
           <button id="gk-join-server-btn"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
         </div>
-      </div>
-    </div>
-    <div class="gk-mini-profile" id="gk-mini-profile">
-      <div class="gk-avatar gk-sz-32" id="gk-mini-avatar-wrap" data-status="online">
-        <img id="gk-mini-avatar" src="">
-      </div>
-      <div class="gk-mini-info">
-        <div class="gk-name" id="gk-mini-name">—</div>
-        <div class="gk-status-text" id="gk-mini-status">—</div>
-      </div>
-      <div class="gk-mini-actions">
-        <button id="gk-status-online" class="gk-status-dot-btn gk-status-dot-online" title="Online" data-icon="dot"></button>
-        <button id="gk-status-idle" class="gk-status-dot-btn gk-status-dot-idle" title="Ausente" data-icon="dot"></button>
-        <button id="gk-status-dnd" class="gk-status-dot-btn gk-status-dot-dnd" title="Não perturbe" data-icon="dot"></button>
-        <button id="gk-settings-btn" title="Configurações" data-icon="settings"></button>
-        <button id="gk-logout-btn" title="Sair" data-icon="power"></button>
       </div>
     </div>
   </div>
