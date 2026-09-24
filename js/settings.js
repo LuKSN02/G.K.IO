@@ -9,6 +9,7 @@ import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage, ap
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
+import { openImageCropper } from './cropper.js';
 
 const SECTIONS = [
   { id: 'perfil', label: 'Perfil', icon: 'user' },
@@ -87,7 +88,7 @@ function renderSection() {
 // Seção: Perfil
 // ============================================================
 async function renderPerfilSection(content) {
-  content.appendChild(sectionHeader('Perfil', 'Como você aparece para as outras pessoas no G.K.IO.'));
+  content.appendChild(sectionHeader('Perfil', 'Como você aparece para as outras pessoas no G.K.IO.', 'user'));
 
   const linksSnap = await getDocs(socialLinksCol(state.user.uid));
   const links = linksSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -109,20 +110,24 @@ async function renderPerfilSection(content) {
   }
   const bannerInput = el('input', { type: 'file', accept: isPrime ? 'image/*,video/*' : 'image/*', style: 'display:none;' });
   bannerPreview.addEventListener('click', () => bannerInput.click());
-  bannerInput.addEventListener('change', () => {
+  bannerInput.addEventListener('change', async () => {
     const file = bannerInput.files[0];
     if (!file) return;
-    pendingBanner = file;
-    bannerPreview.innerHTML = '';
-    bannerPreview.style.backgroundImage = '';
     if (file.type.startsWith('video/')) {
+      pendingBanner = file;
+      bannerPreview.innerHTML = '';
+      bannerPreview.style.backgroundImage = '';
       bannerPreview.appendChild(el('video', {
         src: URL.createObjectURL(file), class: 'gk-settings-banner-video',
         autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
       }));
-    } else {
-      bannerPreview.style.backgroundImage = `url(${URL.createObjectURL(file)})`;
+      return;
     }
+    const cropped = await openImageCropper(file, 3, { title: 'Ajustar banner', outputWidth: 1200 });
+    if (!cropped) return;
+    pendingBanner = cropped;
+    bannerPreview.innerHTML = '';
+    bannerPreview.style.backgroundImage = `url(${URL.createObjectURL(cropped)})`;
   });
 
   const avatarPreview = el('img', {
@@ -131,11 +136,13 @@ async function renderPerfilSection(content) {
   });
   const avatarInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
   const avatarWrap = el('div', { class: 'gk-settings-avatar-wrap', onclick: () => avatarInput.click() }, [avatarPreview, el('div', { class: 'gk-settings-avatar-edit' }, [icon('edit', { size: 13 })])]);
-  avatarInput.addEventListener('change', () => {
-    if (avatarInput.files[0]) {
-      pendingAvatar = avatarInput.files[0];
-      avatarPreview.src = URL.createObjectURL(pendingAvatar);
-    }
+  avatarInput.addEventListener('change', async () => {
+    const file = avatarInput.files[0];
+    if (!file) return;
+    const cropped = await openImageCropper(file, 1, { title: 'Ajustar avatar', outputWidth: 512 });
+    if (!cropped) return;
+    pendingAvatar = cropped;
+    avatarPreview.src = URL.createObjectURL(cropped);
   });
 
   const displayNameInput = el('input', { type: 'text', value: state.user.displayName || state.user.username });
@@ -260,7 +267,7 @@ async function renderPerfilSection(content) {
 // Seção: Áudio & Vídeo
 // ============================================================
 async function renderAudioVideoSection(content) {
-  content.appendChild(sectionHeader('Áudio & Vídeo', 'Escolha os dispositivos usados nas suas chamadas e canais de voz.'));
+  content.appendChild(sectionHeader('Áudio & Vídeo', 'Escolha os dispositivos usados nas suas chamadas e canais de voz.', 'mic'));
   const mediaPrefs = getMediaPrefs();
 
   const micSelect = el('select', { class: 'gk-select' }, [el('option', { value: '' }, 'Carregando dispositivos...')]);
@@ -363,7 +370,7 @@ function stopCamTest() {
 // Seção: Aparência
 // ============================================================
 function renderAparenciaSection(content) {
-  content.appendChild(sectionHeader('Aparência', 'Personalize o visual do G.K.IO em tempo real.'));
+  content.appendChild(sectionHeader('Aparência', 'Personalize o visual do G.K.IO em tempo real.', 'palette'));
   const prefs = getThemePrefs();
 
   const modes = [
@@ -486,7 +493,7 @@ function buildAccentSwatch(key, a, prefs, locked) {
 // Seção: Notificações
 // ============================================================
 function renderNotificacoesSection(content) {
-  content.appendChild(sectionHeader('Notificações', 'Controle como o G.K.IO te avisa sobre novidades.'));
+  content.appendChild(sectionHeader('Notificações', 'Controle como o G.K.IO te avisa sobre novidades.', 'bell'));
   const prefs = getNotifPrefs();
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
@@ -510,7 +517,7 @@ function renderNotificacoesSection(content) {
 // Seção: G.K.IO Prime
 // ============================================================
 function renderPrimeSection(content) {
-  content.appendChild(sectionHeader('G.K.IO Prime', 'Customizações e vantagens exclusivas de assinante.'));
+  content.appendChild(sectionHeader('G.K.IO Prime', 'Customizações e vantagens exclusivas de assinante.', 'diamond'));
 
   if (state.user.role !== 'prime') {
     renderPrimeLockedView(content);
@@ -609,7 +616,7 @@ function primeSinceLabel(ts) {
 // Seção: Administração (só visível com isAdmin: true)
 // ============================================================
 function renderAdminSection(content) {
-  content.appendChild(sectionHeader('Administração', 'Gerencie assinaturas Prime e insígnias de qualquer usuário.'));
+  content.appendChild(sectionHeader('Administração', 'Gerencie assinaturas Prime e insígnias de qualquer usuário.', 'shield'));
 
   const searchInput = el('input', { type: 'text', placeholder: 'nome-de-usuario' });
   const searchBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button' }, 'Buscar');
@@ -703,10 +710,13 @@ function renderAdminUserCard(container, target) {
 // ============================================================
 // Helpers de UI
 // ============================================================
-function sectionHeader(title, sub) {
+function sectionHeader(title, sub, iconName) {
   return el('div', { class: 'gk-settings-section-header' }, [
-    el('h2', {}, title),
-    el('p', { class: 'gk-modal-sub' }, sub),
+    iconName ? el('div', { class: 'gk-settings-header-icon' }, [icon(iconName, { size: 20 })]) : null,
+    el('div', {}, [
+      el('h2', {}, title),
+      el('p', { class: 'gk-modal-sub' }, sub),
+    ]),
   ]);
 }
 

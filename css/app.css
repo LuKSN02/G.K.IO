@@ -268,7 +268,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-home-shortcut small { font-size: 12px; color: var(--gk-gray-500); }
 
 /* ---------- Tela "Arquivos" ---------- */
-.gk-files-view { flex: 1; overflow-y: auto; padding: 24px; }
+.gk-files-view { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 24px; }
 .gk-files-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-width: 980px; margin: 0 auto; }
 .gk-file-card {
   cursor: pointer; border-radius: var(--gk-radius-md); overflow: hidden;
@@ -283,7 +283,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-file-card-date { font-size: 11px; color: var(--gk-gray-500); font-family: var(--gk-font-mono); margin-top: 2px; }
 
 /* ---------- Tela "Comunidades" ---------- */
-.gk-communities-view { flex: 1; overflow-y: auto; padding: 24px; }
+.gk-communities-view { flex: 1; display: flex; flex-direction: column; overflow-y: auto; padding: 24px; }
 .gk-communities-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 20px; max-width: 980px; }
 .gk-communities-header h2 { margin: 0; }
 .gk-communities-search {
@@ -1039,6 +1039,18 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-modal .gk-modal-sub { font-size: 13px; color: var(--gk-gray-500); margin: 0 0 18px; }
 .gk-modal .gk-close { position: absolute; }
 
+/* ---------- Recorte de imagem (avatar/banner) ---------- */
+.gk-cropper-modal { width: auto; text-align: center; }
+.gk-cropper-stage {
+  margin: 14px auto; border-radius: var(--gk-radius-md); overflow: hidden;
+  border: 1px solid var(--gk-gray-200); background: var(--gk-surface-sunken);
+  cursor: grab; touch-action: none;
+}
+.gk-cropper-stage:active { cursor: grabbing; }
+.gk-cropper-canvas { display: block; width: 100%; height: 100%; }
+.gk-cropper-zoom-row { display: flex; align-items: center; gap: 10px; padding: 0 4px; color: var(--gk-gray-400); font-size: 16px; }
+.gk-cropper-zoom { flex: 1; accent-color: var(--gk-accent); }
+
 .gk-field { margin-bottom: 14px; }
 .gk-field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--gk-gray-600); margin-bottom: 6px; }
 .gk-field input[type=text], .gk-field input[type=email], .gk-field input[type=password], .gk-field textarea {
@@ -1775,9 +1787,15 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-settings-nav-footer p { margin: 0; font-size: 11px; line-height: 1.4; color: var(--gk-gray-400); }
 
 .gk-settings-content { flex: 1; overflow-y: auto; padding: 26px 30px; }
-.gk-settings-section-header { margin-bottom: 18px; }
+.gk-settings-section-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 22px; }
 .gk-settings-section-header h2 { margin: 0 0 4px; font-size: 19px; }
 .gk-settings-section-header .gk-modal-sub { margin: 0; }
+.gk-settings-header-icon {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: var(--gk-radius-md);
+  background: var(--gk-brand-gradient); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--gk-shadow-sm);
+}
 
 .gk-settings-close {
   position: absolute; top: 14px; right: 14px;
