@@ -729,8 +729,20 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   position: relative; border-radius: 4px; cursor: pointer;
   background: var(--gk-gray-300); color: transparent;
   transition: background var(--gk-transition), color var(--gk-transition);
+  min-width: 1.6em; min-height: 1em; display: inline-block;
 }
 .gk-md-spoiler > * { visibility: hidden; }
+/* Sem isso, um spoiler cobrindo só uma imagem/emoji virava uma bolha
+   cinza lisa, fácil de confundir com uma imagem que falhou ao carregar.
+   O ícone de olho deixa claro que tem algo escondido ali, de propósito. */
+.gk-md-spoiler::after {
+  content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 40%; height: 40%; min-width: 14px; min-height: 14px; max-width: 22px; max-height: 22px;
+  background-color: var(--gk-gray-500);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'><path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/></svg>") center/contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'><path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z'/><circle cx='12' cy='12' r='3'/></svg>") center/contain no-repeat;
+}
+.gk-md-spoiler.gk-revealed::after { display: none; }
 .gk-md-spoiler:hover { background: var(--gk-gray-400); }
 .gk-md-spoiler.gk-revealed {
   background: var(--gk-accent-soft); color: inherit; cursor: auto;
