@@ -13,6 +13,7 @@ import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
+import { openImageCropper } from './cropper.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
@@ -824,146 +825,256 @@ function closeGenericModal() {
   document.getElementById('gk-generic-modal-overlay').classList.remove('gk-open');
 }
 
+const ICON_PRESETS = [
+  { id: 'brand', label: 'G.K.IO', kind: 'logo' },
+  { id: 'gamepad', label: 'Jogos', icon: 'gamepad' },
+  { id: 'book', label: 'Estudos', icon: 'book' },
+  { id: 'sparkles', label: 'Geral', icon: 'sparkles' },
+];
+
 export function openCreateServerModal() {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
+  modal.classList.add('gk-modal-wizard');
 
-  let step = 'template'; // 'template' -> 'details'
+  const STEPS = [
+    { id: 1, label: 'Informações básicas', hint: 'Nome, ícone e descrição' },
+    { id: 2, label: 'Configurações', hint: 'Estrutura inicial e privacidade' },
+    { id: 3, label: 'Finalizar', hint: 'Revisar e criar servidor' },
+  ];
+
+  let step = 1;
+  let name = '';
+  let description = '';
   let chosenTemplate = 'custom';
-  let iconFile = null;
+  let visibility = 'private';
+  let iconMode = 'brand';   // um dos ICON_PRESETS.id, ou 'custom'
+  let iconFile = null;      // File já recortado (ver cropper.js), só quando iconMode === 'custom'
 
-  renderStep();
+  renderAll();
   overlay.classList.add('gk-open');
 
-  function renderStep() {
-    modal.innerHTML = '';
-    if (step === 'template') renderTemplateStep();
-    else renderDetailsStep();
+  overlay.addEventListener('click', onOverlayClick);
+  function onOverlayClick(e) { if (e.target === overlay) close(); }
+  function close() {
+    overlay.classList.remove('gk-open');
+    overlay.removeEventListener('click', onOverlayClick);
+    modal.classList.remove('gk-modal-wizard');
   }
 
-  // ---------- Etapa 1: escolher um template ----------
-  function renderTemplateStep() {
-    modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
-      el('div', { class: 'gk-modal-icon' }, 'SV'),
-      el('div', {}, [
-        el('h2', {}, 'Criar servidor'),
-        el('p', { class: 'gk-modal-sub' }, 'Escolha um ponto de partida. Dá pra reorganizar tudo depois.'),
-      ]),
-    ]));
+  function renderAll() {
+    modal.innerHTML = '';
+    modal.appendChild(buildStepList());
+    modal.appendChild(buildStepBody());
+    modal.appendChild(buildPreview());
+  }
 
-    // Reaproveita o mesmo padrão visual do seletor de tipo de canal
-    // (.gk-type-picker/.gk-type-option), só que empilhado em coluna e
-    // com mais de duas opções.
-    const picker = el('div', { class: 'gk-type-picker gk-template-picker' });
+  // ---------- Coluna 1: indicador de etapas ----------
+  function buildStepList() {
+    const col = el('div', { class: 'gk-wizard-steps' }, [
+      el('h3', {}, 'Criar servidor'),
+    ]);
+    STEPS.forEach((s) => {
+      col.appendChild(el('div', {
+        class: 'gk-wizard-step' + (step === s.id ? ' gk-active' : '') + (step > s.id ? ' gk-done' : ''),
+      }, [
+        el('span', { class: 'gk-wizard-step-num' }, step > s.id ? [icon('check', { size: 12 })] : String(s.id)),
+        el('div', {}, [el('b', {}, s.label), el('small', {}, s.hint)]),
+      ]));
+    });
+    return col;
+  }
+
+  // ---------- Coluna 2: o formulário da etapa atual ----------
+  function buildStepBody() {
+    const body = el('div', { class: 'gk-wizard-body' });
+    if (step === 1) body.appendChild(buildStep1());
+    else if (step === 2) body.appendChild(buildStep2());
+    else body.appendChild(buildStep3());
+    return body;
+  }
+
+  function refreshLive() {
+    // Reconstrói só o preview + a lista de etapas (pra marcar concluídas),
+    // sem perder o foco de quem está digitando no formulário.
+    const oldPreview = modal.querySelector('.gk-wizard-preview');
+    const newPreview = buildPreview();
+    oldPreview.replaceWith(newPreview);
+    const oldSteps = modal.querySelector('.gk-wizard-steps');
+    const newSteps = buildStepList();
+    oldSteps.replaceWith(newSteps);
+  }
+
+  // ---------- Etapa 1: identidade ----------
+  function buildStep1() {
+    const wrap = el('div', {});
+    wrap.appendChild(el('h2', {}, 'Informações básicas'));
+    wrap.appendChild(el('p', { class: 'gk-modal-sub' }, 'Nome, ícone e descrição do seu servidor.'));
+
+    const nameInput = el('input', { type: 'text', placeholder: 'ex: Clã Fênix', maxlength: '60', value: name });
+    nameInput.addEventListener('input', () => { name = nameInput.value; refreshLive(); });
+    wrap.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]));
+
+    const descInput = el('textarea', { rows: '2', placeholder: 'Do que se trata o servidor? (opcional)', maxlength: '200' }, description);
+    descInput.addEventListener('input', () => { description = descInput.value; refreshLive(); });
+    wrap.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Descrição'), descInput]));
+
+    const iconField = el('div', { class: 'gk-field' }, [el('label', {}, 'Ícone do servidor')]);
+    const grid = el('div', { class: 'gk-server-icon-grid' });
+    for (const preset of ICON_PRESETS) {
+      grid.appendChild(el('button', {
+        type: 'button', class: 'gk-server-icon-option' + (iconMode === preset.id ? ' gk-active' : ''),
+        title: preset.label,
+        onclick: () => { iconMode = preset.id; iconFile = null; renderAll(); },
+      }, [preset.kind === 'logo' ? el('img', { src: 'img/logo.png' }) : icon(preset.icon, { size: 20 })]));
+    }
+    const fileInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const cropped = await openImageCropper(file, 1, { title: 'Ajustar ícone do servidor', outputWidth: 400 });
+      if (!cropped) return;
+      iconFile = cropped;
+      iconMode = 'custom';
+      renderAll();
+    });
+    grid.appendChild(el('button', {
+      type: 'button', class: 'gk-server-icon-option gk-server-icon-option-add' + (iconMode === 'custom' ? ' gk-active' : ''),
+      title: 'Enviar imagem', onclick: () => fileInput.click(),
+    }, [iconMode === 'custom' && iconFile ? el('img', { src: URL.createObjectURL(iconFile) }) : icon('plus', { size: 18 })]));
+    iconField.appendChild(grid);
+    iconField.appendChild(fileInput);
+    wrap.appendChild(iconField);
+
+    wrap.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: close }, 'Cancelar'),
+      el('button', {
+        class: 'gk-btn gk-btn-primary',
+        onclick: () => { if (!name.trim()) { toast('Dá um nome pro servidor primeiro.', 'danger'); return; } step = 2; renderAll(); },
+      }, ['Próximo ', icon('chevronLeft', { size: 14, className: 'gk-icon-flip' })]),
+    ]));
+    setTimeout(() => nameInput.focus(), 0);
+    return wrap;
+  }
+
+  // ---------- Etapa 2: estrutura inicial + privacidade ----------
+  function buildStep2() {
+    const wrap = el('div', {});
+    wrap.appendChild(el('h2', {}, 'Configurações'));
+    wrap.appendChild(el('p', { class: 'gk-modal-sub' }, 'Estrutura inicial de canais e quem pode entrar. Tudo isso dá pra mudar depois.'));
+
+    const tplField = el('div', { class: 'gk-field' }, [el('label', {}, 'Estrutura inicial de canais')]);
+    const tplPicker = el('div', { class: 'gk-type-picker gk-template-picker' });
     for (const [key, tpl] of Object.entries(SERVER_TEMPLATES)) {
-      picker.appendChild(el('button', {
-        type: 'button', class: 'gk-type-option',
-        onclick: () => { chosenTemplate = key; step = 'details'; renderStep(); },
+      tplPicker.appendChild(el('button', {
+        type: 'button', class: 'gk-type-option' + (chosenTemplate === key ? ' gk-active' : ''),
+        onclick: () => { chosenTemplate = key; renderAll(); },
       }, [
         el('span', { class: 'gk-type-icon' }, [icon(tpl.icon, { size: 18 })]),
-        el('div', {}, [
-          el('div', { class: 'gk-type-name' }, tpl.label),
-          el('div', { class: 'gk-type-desc' }, tpl.desc),
-        ]),
+        el('div', {}, [el('div', { class: 'gk-type-name' }, tpl.label), el('div', { class: 'gk-type-desc' }, tpl.desc)]),
       ]));
     }
-    modal.appendChild(picker);
+    tplField.appendChild(tplPicker);
+    wrap.appendChild(tplField);
 
-    modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
-    ]));
-  }
-
-  // ---------- Etapa 2: ícone, nome e descrição ----------
-  function renderDetailsStep() {
-    // Ícone do servidor (opcional) — clique abre o seletor de arquivo,
-    // preview local imediato via object URL, upload real só ao criar.
-    const iconImg = el('img', { style: 'display:none;' });
-    const iconPlaceholder = el('span', {}, '+');
-    const iconInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
-    const iconPicker = el('div', {
-      class: 'gk-server-icon-picker', title: 'Ícone do servidor (opcional)',
-      onclick: () => iconInput.click(),
-    }, [iconImg, iconPlaceholder]);
-    iconInput.addEventListener('change', () => {
-      const file = iconInput.files[0];
-      if (!file) return;
-      iconFile = file;
-      iconImg.src = URL.createObjectURL(file);
-      iconImg.style.display = 'block';
-      iconPlaceholder.style.display = 'none';
-    });
-
-    const nameInput = el('input', { type: 'text', placeholder: 'ex: Clã Fênix', maxlength: '60' });
-    const descInput = el('textarea', { rows: '2', placeholder: 'Do que se trata o servidor? (opcional)', maxlength: '200' });
-
-    const tpl = SERVER_TEMPLATES[chosenTemplate] || SERVER_TEMPLATES.custom;
-    modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
-      el('div', { class: 'gk-modal-icon' }, [icon(tpl.icon, { size: 20 })]),
-      el('div', {}, [
-        el('h2', {}, 'Personalize seu servidor'),
-        el('p', { class: 'gk-modal-sub' }, `Template: ${tpl.label}.`),
-      ]),
-    ]));
-    modal.appendChild(el('div', { class: 'gk-field', style: 'display:flex;justify-content:center;margin-bottom:18px;' }, [iconPicker, iconInput]));
-    modal.appendChild(el('div', { class: 'gk-field' }, [
-      el('label', {}, 'Nome do servidor'), nameInput]));
-    modal.appendChild(el('div', { class: 'gk-field' }, [
-      el('label', {}, 'Descrição'), descInput,
-      el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel Membros.'),
-    ]));
-
-    // Público = qualquer pessoa vê e entra direto em "Comunidades", sem
-    // precisar de convite; Privado (padrão) só é alcançável por convite.
-    let visibility = 'private';
-    const visPublicBtn = el('button', { type: 'button', class: 'gk-type-option gk-visibility-option' }, [
-      el('span', { class: 'gk-type-icon' }, [icon('tray', { size: 16 })]),
-      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Público'), el('div', { class: 'gk-type-desc' }, 'Qualquer pessoa pode encontrar e entrar.')]),
-    ]);
-    const visPrivateBtn = el('button', { type: 'button', class: 'gk-type-option gk-visibility-option gk-active' }, [
-      el('span', { class: 'gk-type-icon' }, [icon('lock', { size: 16 })]),
-      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Privado'), el('div', { class: 'gk-type-desc' }, 'Só entra quem tiver um convite.')]),
-    ]);
-    const setVisibility = (v) => {
-      visibility = v;
-      visPublicBtn.classList.toggle('gk-active', v === 'public');
-      visPrivateBtn.classList.toggle('gk-active', v === 'private');
-    };
-    visPublicBtn.addEventListener('click', () => setVisibility('public'));
-    visPrivateBtn.addEventListener('click', () => setVisibility('private'));
-    modal.appendChild(el('div', { class: 'gk-field' }, [
-      el('label', {}, 'Tipo de servidor'),
+    const visPublicBtn = el('button', {
+      type: 'button', class: 'gk-type-option gk-visibility-option' + (visibility === 'public' ? ' gk-active' : ''),
+      onclick: () => { visibility = 'public'; renderAll(); },
+    }, [el('span', { class: 'gk-type-icon' }, [icon('tray', { size: 16 })]),
+      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Público'), el('div', { class: 'gk-type-desc' }, 'Aparece em Comunidades — qualquer pessoa encontra e entra.')])]);
+    const visPrivateBtn = el('button', {
+      type: 'button', class: 'gk-type-option gk-visibility-option' + (visibility === 'private' ? ' gk-active' : ''),
+      onclick: () => { visibility = 'private'; renderAll(); },
+    }, [el('span', { class: 'gk-type-icon' }, [icon('lock', { size: 16 })]),
+      el('div', {}, [el('div', { class: 'gk-type-name' }, 'Privado'), el('div', { class: 'gk-type-desc' }, 'Só entra quem tiver um convite.')])]);
+    wrap.appendChild(el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Quem pode entrar'),
       el('div', { class: 'gk-type-picker gk-visibility-picker' }, [visPublicBtn, visPrivateBtn]),
     ]));
 
-    const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Criar servidor');
+    wrap.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 1; renderAll(); } }, [icon('chevronLeft', { size: 14 }), ' Voltar']),
+      el('button', { class: 'gk-btn gk-btn-primary', onclick: () => { step = 3; renderAll(); } }, 'Próximo'),
+    ]));
+    return wrap;
+  }
+
+  // ---------- Etapa 3: revisar e criar ----------
+  function buildStep3() {
+    const wrap = el('div', {});
+    wrap.appendChild(el('h2', {}, 'Finalizar'));
+    wrap.appendChild(el('p', { class: 'gk-modal-sub' }, 'Confira antes de criar — dá pra editar qualquer coisa depois nas configurações do servidor.'));
+
+    const tpl = SERVER_TEMPLATES[chosenTemplate] || SERVER_TEMPLATES.custom;
+    const totalChannels = tpl.categories.reduce((n, c) => n + c.channels.length, 0);
+    wrap.appendChild(el('div', { class: 'gk-wizard-summary' }, [
+      el('div', { class: 'gk-wizard-summary-row' }, [el('span', {}, 'Nome'), el('b', {}, name || '—')]),
+      el('div', { class: 'gk-wizard-summary-row' }, [el('span', {}, 'Descrição'), el('b', {}, description.trim() || 'Sem descrição')]),
+      el('div', { class: 'gk-wizard-summary-row' }, [el('span', {}, 'Estrutura'), el('b', {}, `${tpl.label} (${totalChannels} canais)`)]),
+      el('div', { class: 'gk-wizard-summary-row' }, [el('span', {}, 'Privacidade'), el('b', {}, visibility === 'public' ? 'Público' : 'Privado')]),
+    ]));
+    wrap.appendChild(el('div', { class: 'gk-hint' }, 'Só você começa como dono — dá pra promover outros membros a administrador depois, no painel Membros.'));
+
+    const createBtn = el('button', { class: 'gk-btn gk-btn-primary' }, [icon('check', { size: 14 }), ' Criar servidor']);
     createBtn.addEventListener('click', async () => {
-      if (!nameInput.value.trim()) return;
       createBtn.disabled = true;
-      const originalLabel = createBtn.textContent;
+      const original = createBtn.innerHTML;
       try {
         let iconUrl = '';
-        if (iconFile) {
+        if (iconMode === 'custom' && iconFile) {
           createBtn.textContent = 'Enviando ícone...';
           const uploaded = await uploadToCloudinary(iconFile, `server-icons/${auth.currentUser.uid}`);
           iconUrl = uploaded.url;
         }
         createBtn.textContent = 'Criando servidor...';
-        const id = await createServer(nameInput.value.trim(), descInput.value, iconUrl, '', chosenTemplate, visibility);
-        closeGenericModal();
+        const id = await createServer(name.trim(), description, iconUrl, '', chosenTemplate, visibility);
+        close();
         selectServer(id);
       } catch (err) {
         toast(err.message || 'Não foi possível criar o servidor.', 'danger');
         createBtn.disabled = false;
-        createBtn.textContent = originalLabel;
+        createBtn.innerHTML = original;
       }
     });
-
-    modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 'template'; renderStep(); } }, [icon('chevronLeft', { size: 14 }), ' Voltar']),
+    wrap.appendChild(el('div', { class: 'gk-modal-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => { step = 2; renderAll(); } }, [icon('chevronLeft', { size: 14 }), ' Voltar']),
       createBtn,
     ]));
-    nameInput.focus();
+    return wrap;
+  }
+
+  // ---------- Coluna 3: preview ao vivo ----------
+  function buildPreview() {
+    const tpl = SERVER_TEMPLATES[chosenTemplate] || SERVER_TEMPLATES.custom;
+    const iconEl = iconMode === 'custom' && iconFile
+      ? el('img', { src: URL.createObjectURL(iconFile) })
+      : iconMode === 'brand'
+        ? el('img', { src: 'img/logo.png' })
+        : el('div', { class: 'gk-wizard-preview-icon-glyph' }, [icon(ICON_PRESETS.find((p) => p.id === iconMode)?.icon || 'sparkles', { size: 24 })]);
+
+    const chanList = el('div', { class: 'gk-wizard-preview-channels' });
+    for (const cat of tpl.categories) {
+      chanList.appendChild(el('div', { class: 'gk-wizard-preview-cat' }, cat.name));
+      for (const ch of cat.channels) {
+        chanList.appendChild(el('div', { class: 'gk-wizard-preview-chan' }, [
+          icon(ch.type === 'voice' ? 'speaker' : 'chatBubble', { size: 13 }), ' ', ch.name,
+        ]));
+      }
+    }
+
+    return el('div', { class: 'gk-wizard-preview' }, [
+      el('div', { class: 'gk-wizard-preview-label' }, 'Prévia'),
+      el('div', { class: 'gk-wizard-preview-card' }, [
+        el('div', { class: 'gk-wizard-preview-icon' }, [iconEl]),
+        el('div', { class: 'gk-wizard-preview-name' }, name.trim() || 'Seu servidor'),
+        el('div', { class: 'gk-wizard-preview-sub' }, [
+          el('span', { class: 'gk-status-dot-inline', 'data-status': 'online' }), ' Online • 1 membro',
+        ]),
+        description.trim() ? el('div', { class: 'gk-wizard-preview-desc' }, description) : null,
+        visibility === 'public' ? el('div', { class: 'gk-wizard-preview-badge' }, [icon('tray', { size: 11 }), ' Público']) : null,
+      ]),
+      chanList,
+    ]);
   }
 }
 
