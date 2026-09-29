@@ -996,7 +996,6 @@ function updateDeafenButtons(deafened) {
     const btn = document.getElementById(id);
     if (!btn) return;
     btn.innerHTML = html;
-    btn.classList.toggle('gk-active', deafened);
     btn.title = deafened ? 'Parar de ensurdecer' : 'Ensurdecer (silencia tudo)';
   });
 }
@@ -1075,6 +1074,8 @@ export function wireCallBar() {
 
   document.getElementById('gk-call-mute-btn').addEventListener('click', toggleMute);
   document.getElementById('gk-call-bar-mute-btn').addEventListener('click', toggleMute);
+  document.getElementById('gk-call-deafen-btn').addEventListener('click', toggleDeafen);
+  document.getElementById('gk-call-bar-deafen-btn').addEventListener('click', toggleDeafen);
   document.getElementById('gk-call-deafen-btn').addEventListener('click', toggleDeafen);
   document.getElementById('gk-call-bar-deafen-btn').addEventListener('click', toggleDeafen);
 
