@@ -37,6 +37,8 @@ const ICONS = {
   wrench:       { path: '<path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.6 2.6-2-2z"/>' },
 
   mic:          { path: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8"/>' },
+  headphones:   { path: '<path d="M3 14v-2a9 9 0 0118 0v2"/><rect x="1" y="14" width="6" height="8" rx="2"/><rect x="17" y="14" width="6" height="8" rx="2"/>' },
+  headphonesOff:{ path: '<path d="M3 14v-2a9 9 0 0118 0v2"/><rect x="1" y="14" width="6" height="8" rx="2"/><rect x="17" y="14" width="6" height="8" rx="2"/><path d="M3 3l18 18"/>' },
   micOff:       { path: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0M12 19v3M8 22h8"/><path d="M3 3l18 18"/>' },
   camera:       { path: '<path d="M4 8a2 2 0 012-2h1.2l1-1.6A2 2 0 0110 3.5h4a2 2 0 011.8 1.1L16.8 6H18a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><circle cx="12" cy="13" r="3.2"/>' },
   videoCall:    { path: '<rect x="2" y="6" width="14" height="12" rx="2.5"/><path d="M16 10l6-4v12l-6-4z"/>' },

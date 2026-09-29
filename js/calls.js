@@ -38,6 +38,12 @@ import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScre
 import { icon, iconHtml } from './icons.js';
 
 let room = null;               // instância única do LiveKit Room — só uma chamada ativa por vez
+// Ensurdecer: silencia TODO áudio recebido, e o microfone junto — mesmo
+// comportamento do Discord. Desligar o ensurdecer não desmuta o
+// microfone sozinho (precisa desmutar na mão); mas desmutar o microfone
+// manualmente enquanto ensurdecido desliga o ensurdecer junto (ver
+// toggleMute), porque não faz sentido falar sem conseguir ouvir.
+let isDeafened = false;
 let unsubIncoming = null;
 let unsubCurrentCall = null;
 
@@ -268,6 +274,7 @@ function handleTrackSubscribed(track, participant) {
     } else {
       track.attach(audioEl);
     }
+    audioEl.muted = isDeafened; // entra já mudo se a pessoa já estava ensurdecida
     // Reforço além do autoplay: se o navegador rejeitar o play() aqui
     // (autoplay bloqueado), o listener de AudioPlaybackStatusChanged em
     // wireRoomEvents entra em ação e pede um clique pra destravar.
@@ -512,6 +519,8 @@ function endCall(disconnectRoom) {
   room = null;
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
   document.getElementById('gk-remote-dm-audio')?.remove();
+  isDeafened = false;
+  updateDeafenButtons(false);
   state.activeCall = null;
   stopCallTimer();
   closeCallScreen();
@@ -981,6 +990,41 @@ function updateMuteButtons(muted) {
   });
 }
 
+function updateDeafenButtons(deafened) {
+  const html = iconHtml(deafened ? 'headphonesOff' : 'headphones');
+  ['gk-call-deafen-btn', 'gk-call-bar-deafen-btn'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.innerHTML = html;
+    btn.classList.toggle('gk-active', deafened);
+    btn.title = deafened ? 'Parar de ensurdecer' : 'Ensurdecer (silencia tudo)';
+  });
+}
+
+// Muta/desmuta todo áudio já tocando na chamada atual — tanto o de uma
+// DM (um elemento) quanto o de uma sala de voz (um por participante).
+function applyDeafenToAudioEls(deafened) {
+  const dmAudio = document.getElementById('gk-remote-dm-audio');
+  if (dmAudio) dmAudio.muted = deafened;
+  document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((elAudio) => { elAudio.muted = deafened; });
+}
+
+async function toggleDeafen() {
+  if (!room) return;
+  isDeafened = !isDeafened;
+  applyDeafenToAudioEls(isDeafened);
+  updateDeafenButtons(isDeafened);
+
+  if (isDeafened && isSourceOn(room.localParticipant, Track.Source.Microphone)) {
+    // Ensurdecer também muta o microfone — igual ao Discord.
+    await room.localParticipant.setMicrophoneEnabled(false, captureDefaults().audioCaptureDefaults);
+    updateMuteButtons(true);
+    if (state.activeCall?.kind === 'voiceChannel') setTileMuted(auth.currentUser.uid, true);
+  }
+  // Desligar o ensurdecer NÃO desmuta o microfone sozinho — precisa
+  // desmutar na mão, do mesmo jeito que no Discord.
+}
+
 function updateCameraButtons(on) {
   const btn = document.getElementById('gk-call-camera-btn');
   if (!btn) return;
@@ -1031,6 +1075,8 @@ export function wireCallBar() {
 
   document.getElementById('gk-call-mute-btn').addEventListener('click', toggleMute);
   document.getElementById('gk-call-bar-mute-btn').addEventListener('click', toggleMute);
+  document.getElementById('gk-call-deafen-btn').addEventListener('click', toggleDeafen);
+  document.getElementById('gk-call-bar-deafen-btn').addEventListener('click', toggleDeafen);
 
   document.getElementById('gk-call-camera-btn').addEventListener('click', toggleCameraInCall);
 
@@ -1055,6 +1101,13 @@ async function toggleMute() {
   await room.localParticipant.setMicrophoneEnabled(next, captureDefaults().audioCaptureDefaults);
   updateMuteButtons(!next);
   if (state.activeCall && state.activeCall.kind === 'voiceChannel') setTileMuted(auth.currentUser.uid, !next);
+  // Desmutar o microfone na mão enquanto ensurdecido também desliga o
+  // ensurdecer — não faz sentido falar sem conseguir ouvir ninguém.
+  if (next && isDeafened) {
+    isDeafened = false;
+    applyDeafenToAudioEls(false);
+    updateDeafenButtons(false);
+  }
 }
 function toggleScreenShareBtn() {
   if (isScreenSharing()) stopScreenShare(); else startScreenShare();
