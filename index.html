@@ -106,6 +106,36 @@
         </div>
         <button type="submit" class="gk-btn gk-btn-primary gk-btn-block" id="gk-auth-submit">Entrar</button>
       </form>
+
+      <!-- ================= Tela dedicada de "esqueci minha senha" =================
+           Aba própria dentro do mesmo cartão, não só um link que dispara o
+           e-mail na hora — tem seu próprio estado (enviando/enviado/erro) e
+           um jeito claro de voltar pro login. -->
+      <div id="gk-auth-forgot-panel" style="display:none;">
+        <button type="button" class="gk-auth-back" id="gk-auth-forgot-back">
+          <span data-icon="chevronLeft" class="gk-inline-icon"></span> Voltar para o login
+        </button>
+        <h2>Redefinir senha</h2>
+        <p class="gk-modal-sub">Digite o e-mail da sua conta — enviamos um link pra você criar uma senha nova.</p>
+
+        <div id="gk-auth-forgot-form">
+          <div class="gk-field">
+            <label>E-mail</label>
+            <div class="gk-field-icon-input gk-field-icon-at">
+              <input type="email" id="gk-auth-forgot-email" autocomplete="email" required placeholder="voce@email.com">
+            </div>
+            <div class="gk-error" id="gk-auth-forgot-error"></div>
+          </div>
+          <button type="button" class="gk-btn gk-btn-primary gk-btn-block" id="gk-auth-forgot-submit">Enviar link de redefinição</button>
+        </div>
+
+        <div id="gk-auth-forgot-sent" style="display:none;">
+          <div class="gk-auth-forgot-sent-icon"><span data-icon="chatBubble" class="gk-inline-icon"></span></div>
+          <p class="gk-auth-forgot-sent-text">Enviamos um link pra <b id="gk-auth-forgot-sent-email"></b>. Confira sua caixa de entrada (e o spam, por garantia).</p>
+          <button type="button" class="gk-btn gk-btn-ghost gk-btn-block" id="gk-auth-forgot-resend">Reenviar e-mail</button>
+        </div>
+      </div>
+
       <p class="gk-auth-toggle" id="gk-auth-mode-toggle">Não tem conta? Criar conta</p>
     </div>
     <p class="gk-auth-panel-bottomline">G.K.IO <span>· Conectando mundos.</span></p>

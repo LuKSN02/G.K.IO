@@ -207,23 +207,84 @@ export function wireAuthForm() {
   });
 
   if (forgotLink) {
-    forgotLink.addEventListener('click', async (e) => {
+    forgotLink.addEventListener('click', (e) => {
       e.preventDefault();
-      const email = document.getElementById('gk-auth-email').value.trim();
-      if (!email) {
-        errorBox.textContent = 'Digite seu e-mail no campo acima primeiro.';
-        errorBox.style.display = 'block';
-        return;
-      }
-      try {
-        await sendPasswordResetEmail(auth, email);
-        toast(`Enviamos um link de redefinição pra ${email}.`);
-      } catch (err) {
-        errorBox.textContent = friendlyAuthError(err);
-        errorBox.style.display = 'block';
-      }
+      // Pré-preenche com o que já foi digitado no login, pra não pedir de novo.
+      const typedEmail = document.getElementById('gk-auth-email').value.trim();
+      showForgotPanel(typedEmail);
     });
   }
+
+  wireForgotPasswordPanel();
+}
+
+// ---------- Aba dedicada de "esqueci minha senha" ----------
+// Antes era só um link que disparava o e-mail na hora, sem nenhuma tela
+// própria — agora é uma aba de verdade dentro do mesmo cartão, com seu
+// próprio estado de carregamento, erro e confirmação de envio.
+function showForgotPanel(prefillEmail = '') {
+  document.getElementById('gk-auth-form').style.display = 'none';
+  document.getElementById('gk-auth-mode-toggle').style.display = 'none';
+  document.getElementById('gk-auth-forgot-panel').style.display = 'block';
+  document.getElementById('gk-auth-forgot-form').style.display = 'block';
+  document.getElementById('gk-auth-forgot-sent').style.display = 'none';
+  const emailInput = document.getElementById('gk-auth-forgot-email');
+  emailInput.value = prefillEmail;
+  document.getElementById('gk-auth-forgot-error').style.display = 'none';
+  setTimeout(() => emailInput.focus(), 0);
+}
+
+function hideForgotPanel() {
+  document.getElementById('gk-auth-forgot-panel').style.display = 'none';
+  document.getElementById('gk-auth-form').style.display = 'block';
+  document.getElementById('gk-auth-mode-toggle').style.display = 'block';
+}
+
+function wireForgotPasswordPanel() {
+  const emailInput = document.getElementById('gk-auth-forgot-email');
+  const errorBox = document.getElementById('gk-auth-forgot-error');
+  const submitBtn = document.getElementById('gk-auth-forgot-submit');
+  const resendBtn = document.getElementById('gk-auth-forgot-resend');
+  const backBtn = document.getElementById('gk-auth-forgot-back');
+
+  async function send() {
+    const email = emailInput.value.trim();
+    if (!email) {
+      errorBox.textContent = 'Digite seu e-mail primeiro.';
+      errorBox.style.display = 'block';
+      return;
+    }
+    errorBox.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.classList.add('gk-btn-loading');
+    try {
+      await sendPasswordResetEmail(auth, email);
+      document.getElementById('gk-auth-forgot-sent-email').textContent = email;
+      document.getElementById('gk-auth-forgot-form').style.display = 'none';
+      document.getElementById('gk-auth-forgot-sent').style.display = 'block';
+    } catch (err) {
+      errorBox.textContent = friendlyAuthError(err);
+      errorBox.style.display = 'block';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('gk-btn-loading');
+    }
+  }
+
+  submitBtn.addEventListener('click', send);
+  emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+  resendBtn.addEventListener('click', async () => {
+    resendBtn.disabled = true;
+    try {
+      await sendPasswordResetEmail(auth, document.getElementById('gk-auth-forgot-sent-email').textContent);
+      toast('Reenviado.');
+    } catch (err) {
+      toast(friendlyAuthError(err), 'danger');
+    } finally {
+      resendBtn.disabled = false;
+    }
+  });
+  backBtn.addEventListener('click', hideForgotPanel);
 }
 
 function friendlyAuthError(err) {

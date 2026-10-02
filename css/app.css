@@ -1427,6 +1427,22 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 #gk-auth-forgot { font-size: 12.5px; color: var(--gk-accent); text-decoration: none; }
 #gk-auth-forgot:hover { text-decoration: underline; }
 
+/* ---------- Aba dedicada de "esqueci minha senha" ---------- */
+.gk-auth-back {
+  display: flex; align-items: center; gap: 6px; background: none; border: none;
+  color: var(--gk-gray-500); font-size: 12.5px; font-weight: 600; padding: 0; margin-bottom: 14px; cursor: pointer;
+}
+.gk-auth-back:hover { color: var(--gk-accent); }
+.gk-auth-back .gk-inline-icon { width: 13px; height: 13px; }
+.gk-auth-forgot-sent-icon {
+  width: 52px; height: 52px; margin: 6px auto 16px; border-radius: 50%;
+  background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  display: flex; align-items: center; justify-content: center;
+}
+.gk-auth-forgot-sent-icon .gk-inline-icon { width: 24px; height: 24px; }
+.gk-auth-forgot-sent-text { text-align: center; font-size: 13.5px; line-height: 1.5; color: var(--gk-gray-600); margin: 0 0 18px; }
+.gk-auth-forgot-sent-text b { color: var(--gk-gray-800); }
+
 .gk-auth-toggle {
   text-align: center; margin-top: 16px; font-size: 13px;
   color: var(--gk-gray-500); cursor: pointer;
