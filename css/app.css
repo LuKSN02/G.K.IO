@@ -1626,6 +1626,30 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   0% { transform: scale(1); opacity: 0.55; }
   100% { transform: scale(1.55); opacity: 0; }
 }
+/* Enquanto ninguém fala, os anéis acima ficam num pulso ambiente lento
+   (só decoração de "chamando..."). Quando a pessoa do outro lado está
+   falando de verdade (RoomEvent.ActiveSpeakersChanged), os anéis mudam
+   pra verde e pulsam mais rápido — a única forma de confirmar, olhando
+   pra tela, que o áudio dela está realmente chegando. */
+.gk-call-audio-view.gk-peer-speaking .gk-call-avatar-ring {
+  border-color: var(--gk-status-online);
+  animation-duration: 1.1s;
+}
+.gk-call-audio-view.gk-peer-speaking .gk-call-avatar-img { box-shadow: 0 0 0 3px var(--gk-status-online), 0 8px 32px rgba(0,0,0,0.4); }
+
+.gk-call-self-indicator {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 14px;
+  padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.55);
+  transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-call-self-indicator .gk-inline-icon { width: 13px; height: 13px; }
+/* Mesma régua do anel acima: só acende quando o SEU microfone está
+   detectando fala de verdade, não quando o botão de mutar está em
+   algum estado — é a confirmação direta de que você está sendo ouvido. */
+.gk-call-self-indicator.gk-speaking {
+  background: rgba(47,163,107,0.22); color: var(--gk-status-online);
+}
 .gk-call-peer-name {
   font-family: var(--gk-font-display); font-size: 24px; font-weight: 600; color: #fff;
 }

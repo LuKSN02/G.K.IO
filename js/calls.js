@@ -381,6 +381,20 @@ function setTileMuted(uid, muted) {
 function setTileSpeaking(uid, speaking) {
   document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-speaking', speaking);
   document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-speaking', speaking);
+
+  // A chamada de áudio simples (1:1, sem vídeo) não tem "tile" nenhum —
+  // só um avatar grande com anéis decorativos que pulsam sempre, mesmo
+  // sem ninguém falando. Sem isso, não existe NENHUM jeito de ver se o
+  // próprio microfone ou o da outra pessoa está realmente transmitindo
+  // — um microfone silenciosamente quebrado passa despercebido.
+  if (state.activeCall?.kind === 'dm') {
+    if (uid === state.activeCall.remoteUid) {
+      document.getElementById('gk-call-audio-view')?.classList.toggle('gk-peer-speaking', speaking);
+    }
+    if (uid === auth.currentUser?.uid) {
+      document.getElementById('gk-call-self-indicator')?.classList.toggle('gk-speaking', speaking);
+    }
+  }
 }
 
 // ============================================================
