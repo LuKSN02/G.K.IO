@@ -11,12 +11,19 @@ export function isNativeAndroid() {
 
 // ---------- Modo de áudio de chamada (corrige eco) ----------
 
+// Idempotente: só liga o modo uma vez por chamada. Isso permite chamar
+// antes de abrir o microfone (ordem importa no Android: trocar o modo de
+// áudio DEPOIS que o mic já começou a capturar pode deixar a captura muda)
+// e de novo mais tarde sem reiniciar o modo no meio da conversa.
+let callAudioModeOn = false;
 export async function startCallAudioMode() {
-  if (!isNativeAndroid()) return;
+  if (!isNativeAndroid() || callAudioModeOn) return;
+  callAudioModeOn = true;
   try { await window.Capacitor.Plugins.CallAudio.startCallMode({ speaker: true }); } catch (e) { /* plugin pode não estar disponível numa build antiga — chamada continua funcionando, só sem a correção */ }
 }
 export async function stopCallAudioMode() {
-  if (!isNativeAndroid()) return;
+  if (!isNativeAndroid() || !callAudioModeOn) return;
+  callAudioModeOn = false;
   try { await window.Capacitor.Plugins.CallAudio.stopCallMode(); } catch (e) {}
 }
 

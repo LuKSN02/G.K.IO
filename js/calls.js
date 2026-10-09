@@ -155,6 +155,12 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
 
   const name = state.user.displayName || state.user.username;
   const { token, url } = await fetchLiveKitToken({ room: roomName, name, metadata });
+
+  // No Android, o modo de áudio de chamada precisa estar ligado ANTES do
+  // microfone começar a capturar — nos dois lados (quem liga e quem atende).
+  // Antes, quem ligava abria o mic primeiro e o modo só entrava quando o
+  // outro atendia, o que podia deixar o mic dessa pessoa mudo.
+  await startCallAudioMode();
   await room.connect(url, token);
 
   // Política de autoplay dos navegadores: os <audio>/<video> criados por
@@ -575,6 +581,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
     });
   } catch (e) {
     toast(e.message || 'Não foi possível entrar na sala de voz.', 'danger');
+    stopCallAudioMode();
     state.activeCall = null;
     hideCallBar();
     return;
