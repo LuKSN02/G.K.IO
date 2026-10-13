@@ -12,6 +12,10 @@ const mediaDefaults = {
   noiseSuppression: true, echoCancellation: true, autoGainControl: true,
 };
 const notifDefaults = { sound: true, desktop: false, preview: true };
+const HOTKEY_KEY = 'gkio-hotkey-prefs';
+const IDLE_KEY = 'gkio-idle-prefs';
+const hotkeyDefaults = { mute: 'Ctrl+Shift+M', deafen: 'Ctrl+Shift+D', ptt: '', pttEnabled: false };
+const idleDefaults = { enabled: true, minutes: 10 };
 
 function read(key, defaults) {
   try {
@@ -25,6 +29,8 @@ function write(key, value) {
 
 let mediaPrefs = read(MEDIA_KEY, mediaDefaults);
 let notifPrefs = read(NOTIF_KEY, notifDefaults);
+let hotkeyPrefs = read(HOTKEY_KEY, hotkeyDefaults);
+let idlePrefs = read(IDLE_KEY, idleDefaults);
 
 export function getMediaPrefs() { return { ...mediaPrefs }; }
 export function setMediaPrefs(patch) {
@@ -36,6 +42,18 @@ export function getNotifPrefs() { return { ...notifPrefs }; }
 export function setNotifPrefs(patch) {
   notifPrefs = { ...notifPrefs, ...patch };
   write(NOTIF_KEY, notifPrefs);
+}
+
+export function getHotkeyPrefs() { return { ...hotkeyPrefs }; }
+export function setHotkeyPrefs(patch) {
+  hotkeyPrefs = { ...hotkeyPrefs, ...patch };
+  write(HOTKEY_KEY, hotkeyPrefs);
+  window.dispatchEvent(new CustomEvent('gkio-hotkeys-changed'));
+}
+export function getIdlePrefs() { return { ...idlePrefs }; }
+export function setIdlePrefs(patch) {
+  idlePrefs = { ...idlePrefs, ...patch };
+  write(IDLE_KEY, idlePrefs);
 }
 
 export async function listMediaDevices() {
@@ -88,6 +106,6 @@ export function showDesktopNotification(title, body, icon) {
     // No app de desktop (Electron), clicar na notificação restaura/foca
     // a janela — no navegador comum, foca a aba. window.focus() é a API
     // padrão pros dois casos.
-    n.onclick = () => { try { window.focus(); } catch (e) {} };
+    n.onclick = () => { try { window.gkioDesktop?.showWindow(); window.focus(); } catch (e) {} };
   } catch (e) {}
 }

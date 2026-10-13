@@ -16,6 +16,11 @@ import { initPushNotifications, onPushNotificationTap } from './push.js';
 import { goToFilesView, hideFilesView } from './files.js';
 import { goToCommunitiesView, hideCommunitiesView } from './communities.js';
 import { wireGlobalTopbar, closeProfileMenu } from './topbar.js';
+import { initExtensions } from './extensions.js';
+import { initZoom } from './zoom.js';
+import { initHotkeys } from './hotkeys.js';
+import { initIdleDetection } from './idle.js';
+import { initDesktopIntegration } from './desktop.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -41,6 +46,10 @@ initEmojiPicker({
   onSendGif: (url, title) => sendAttachmentMessage(url, 'gif', title),
 });
 initAuthListener();
+initZoom();
+initHotkeys();
+initExtensions();
+initDesktopIntegration();
 
 onPushNotificationTap((data) => {
   if (data.type === 'dm' && data.dmId) openDmById(data.dmId);
@@ -56,6 +65,7 @@ onAuthReady(() => {
   listenReadStates();
   goToHomeView();
   initPushNotifications();
+  initIdleDetection();
 });
 
 // ============================================================

@@ -2428,3 +2428,36 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   font-size: 13px; color: var(--gk-gray-700); cursor: pointer;
 }
 .gk-admin-badge-check input { cursor: pointer; }
+
+/* ============================================================
+   Recursos portados do Dorion: zoom, atalhos, presença, temas/plugins
+   ============================================================ */
+#gk-app { height: calc(100dvh / var(--gk-zoom, 1)); } /* compensa o CSS zoom do <html> */
+
+.gk-ext-hint { display: block; font-size: 11.5px; color: var(--gk-gray-400); margin-top: 2px; }
+.gk-ext-note { margin: 8px 0 0; }
+.gk-ext-zoom-row { display: flex; align-items: center; gap: 12px; }
+.gk-ext-zoom-slider { flex: 1; accent-color: var(--gk-accent); }
+.gk-ext-zoom-value { min-width: 44px; text-align: right; font-weight: 700; font-size: 13px; color: var(--gk-gray-800); font-variant-numeric: tabular-nums; }
+.gk-ext-key { min-width: 120px; font-family: var(--gk-font-mono, monospace); font-size: 12.5px; }
+.gk-ext-key.gk-empty { color: var(--gk-gray-400); font-family: inherit; }
+.gk-ext-key.gk-recording { border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); color: var(--gk-accent); }
+.gk-ext-idle-select { width: auto; min-width: 100px; }
+
+.gk-ext-banner {
+  padding: 10px 12px; margin-bottom: 14px; border-radius: var(--gk-radius-md);
+  background: var(--gk-accent-soft); color: var(--gk-gray-700); font-size: 12.5px;
+}
+.gk-ext-banner.gk-warn { background: rgba(217, 119, 6, 0.14); }
+.gk-ext-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.gk-ext-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md);
+}
+.gk-ext-item-main { flex: 1; min-width: 0; }
+.gk-ext-item-name { font-weight: 600; font-size: 13.5px; color: var(--gk-gray-800); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-ext-item-error { font-size: 11.5px; color: #e5484d; margin-top: 2px; word-break: break-word; }
+.gk-ext-remove { padding: 6px 8px; }
+.gk-ext-adder .gk-field { margin-bottom: 10px; }
+.gk-ext-adder textarea { min-height: 110px; font-size: 12.5px; }
+.gk-ext-adder-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }

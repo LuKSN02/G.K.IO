@@ -1,0 +1,193 @@
+// ============================================================
+// G.K.IO Desktop — processo principal (Electron)
+// Recursos inspirados no Dorion: bandeja com estados, fechar para a
+// bandeja, iniciar minimizado, iniciar com o sistema, instância única,
+// atalhos globais (mutar/ensurdecer/PTT) e janela que lembra posição.
+// ============================================================
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, desktopCapturer, Menu } = require('electron');
+const path = require('path');
+const config = require('./lib/config');
+const tray = require('./lib/tray');
+const ptt = require('./lib/ptt');
+const { start: startServer } = require('./lib/static-server');
+const { toAccelerator } = require('./lib/accelerator');
+
+let win = null;
+let quitting = false;
+let origin = null;
+let httpServer = null;
+const state = { unread: 0, muted: false, deafened: false, inCall: false };
+let shortcutMap = {};
+
+const startHidden = process.argv.includes('--hidden');
+
+if (!app.requestSingleInstanceLock()) { app.quit(); } else {
+  app.on('second-instance', () => showWindow());
+}
+
+function webRoot() { return app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..'); }
+
+function showWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show(); win.focus();
+}
+function toggleWindow() { if (win && win.isVisible() && win.isFocused()) win.hide(); else showWindow(); }
+function sendCommand(c) { if (win && !win.isDestroyed()) win.webContents.send('gkio:command', c); }
+
+const actions = {
+  open: showWindow, toggle: toggleWindow,
+  command: sendCommand,
+  reload: () => win && win.webContents.reloadIgnoringCache(),
+  restart: () => { quitting = true; app.relaunch(); app.quit(); },
+  quit: () => { quitting = true; app.quit(); },
+};
+
+function applyTray() {
+  const cfg = config.get();
+  if (cfg.trayEnabled) { if (!tray.exists()) tray.create(actions, state); else tray.update(actions, state); }
+  else tray.destroy();
+}
+function applyBadge() {
+  app.setBadgeCount(state.unread); // macOS/Linux (Unity)
+  if (process.platform === 'win32' && win) win.setTitle(state.unread > 0 ? `(${state.unread}) G.K.IO` : 'G.K.IO');
+}
+function applyLoginItem() {
+  if (!app.isPackaged) return; // em dev, registrar o electron.exe cru no startup seria um erro
+  const cfg = config.get();
+  app.setLoginItemSettings({ openAtLogin: !!cfg.openOnStartup, args: cfg.startMinimized ? ['--hidden'] : [] });
+}
+
+function applyShortcuts() {
+  globalShortcut.unregisterAll();
+  ptt.setBinding(null, () => {});
+  if (!config.get().globalShortcuts) return { mute: false, deafen: false, ptt: false };
+  const result = {};
+  for (const [name, cmd] of [['mute', 'toggle-mute'], ['deafen', 'toggle-deafen']]) {
+    const acc = toAccelerator(shortcutMap[name]);
+    result[name] = !!acc && (() => { try { return globalShortcut.register(acc, () => sendCommand(cmd)); } catch (e) { return false; } })();
+  }
+  if (shortcutMap.pttEnabled && shortcutMap.ptt) {
+    const r = ptt.setBinding(shortcutMap.ptt, (down) => { if (win && !win.isDestroyed()) win.webContents.send('gkio:ptt', down); });
+    result.ptt = !!r.active;
+  } else result.ptt = false;
+  return result;
+}
+
+async function createWindow() {
+  const cfg = config.get();
+  const w = cfg.window || {};
+  win = new BrowserWindow({
+    width: w.width || 1280, height: w.height || 800, x: w.x, y: w.y, minWidth: 420, minHeight: 600,
+    show: false, backgroundColor: '#0b1020', title: 'G.K.IO',
+    icon: path.join(__dirname, '..', 'img', 'favicon-512.png'),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true, nodeIntegration: false, sandbox: true,
+      backgroundThrottling: false, // chamadas continuam fluindo com a janela escondida
+      autoplayPolicy: 'no-user-gesture-required',
+    },
+  });
+  if (w.maximized) win.maximize();
+
+  win.once('ready-to-show', () => {
+    const hidden = (startHidden || cfg.startMinimized) && cfg.trayEnabled;
+    if (!hidden) win.show();
+  });
+
+  const saveBounds = () => {
+    if (!win || win.isDestroyed() || win.isMinimized()) return;
+    const maximized = win.isMaximized();
+    config.set({ window: { ...(maximized ? config.get().window : win.getBounds()), maximized } });
+  };
+  win.on('resize', saveBounds); win.on('move', saveBounds);
+
+  win.on('close', (e) => {
+    saveBounds();
+    const c = config.get();
+    if (!quitting && c.trayEnabled && c.closeToTray) { e.preventDefault(); win.hide(); }
+  });
+  win.on('closed', () => { win = null; });
+
+  // Links externos abrem no navegador; navegação fica restrita à origem do app.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    if (origin && !url.startsWith(origin)) { e.preventDefault(); if (/^https?:/i.test(url)) shell.openExternal(url); }
+  });
+  // Atalhos de desenvolvedor/recarregar (o menu padrão está oculto).
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.type !== 'keyDown') return;
+    const ctrl = input.control || input.meta;
+    if (input.key === 'F5' || (ctrl && input.key.toLowerCase() === 'r')) { win.webContents.reloadIgnoringCache(); e.preventDefault(); }
+    else if (input.key === 'F12' || (ctrl && input.shift && input.key.toLowerCase() === 'i')) { win.webContents.toggleDevTools(); e.preventDefault(); }
+  });
+
+  await win.loadURL(origin + '/index.html');
+}
+
+function setupPermissions() {
+  const ses = session.defaultSession;
+  const allowed = new Set(['media', 'notifications', 'display-capture', 'clipboard-sanitized-write', 'fullscreen', 'mediaKeySystem']);
+  ses.setPermissionRequestHandler((wc, perm, cb) => cb(allowed.has(perm)));
+  ses.setPermissionCheckHandler((wc, perm) => allowed.has(perm));
+
+  // getDisplayMedia() (compartilhar tela) não funciona no Electron sem isto:
+  // mostramos um menu com as telas/janelas e devolvemos a escolhida.
+  ses.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } });
+      if (!sources.length) return callback({});
+      let done = false;
+      const pick = (src) => { if (done) return; done = true; callback(src ? { video: src, audio: process.platform === 'win32' ? 'loopback' : undefined } : {}); };
+      const m = Menu.buildFromTemplate([
+        { label: 'Compartilhar qual tela/janela?', enabled: false }, { type: 'separator' },
+        ...sources.slice(0, 15).map((s) => ({ label: s.name.slice(0, 60), click: () => pick(s) })),
+        { type: 'separator' }, { label: 'Cancelar', click: () => pick(null) },
+      ]);
+      m.popup({ window: win, callback: () => setTimeout(() => pick(null), 100) });
+    } catch (e) { callback({}); }
+  }, { useSystemPicker: true });
+}
+
+function setupIpc() {
+  ipcMain.handle('cfg:get', () => { const { window: _w, ...rest } = config.get(); return { ...rest, packaged: app.isPackaged, version: app.getVersion() }; });
+  ipcMain.handle('cfg:set', (_e, patch) => {
+    const allowed = ['trayEnabled', 'closeToTray', 'startMinimized', 'openOnStartup', 'globalShortcuts', 'remoteUrl'];
+    const clean = {};
+    for (const k of allowed) if (k in (patch || {})) clean[k] = k === 'remoteUrl' ? String(patch[k] || '') : !!patch[k];
+    config.set(clean);
+    applyTray(); applyLoginItem();
+    if ('globalShortcuts' in clean) applyShortcuts();
+    const { window: _w, ...rest } = config.get();
+    return rest;
+  });
+  ipcMain.on('tray:state', (_e, s) => {
+    state.unread = Math.max(0, Number(s?.unread) || 0);
+    state.muted = !!s?.muted; state.deafened = !!s?.deafened; state.inCall = !!s?.inCall;
+    tray.update(actions, state); applyBadge();
+  });
+  ipcMain.handle('shortcuts:set', (_e, map) => { shortcutMap = map || {}; return applyShortcuts(); });
+  ipcMain.on('window:show', showWindow);
+}
+
+app.whenReady().then(async () => {
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
+  const cfg = config.get();
+  if (cfg.remoteUrl) { origin = cfg.remoteUrl.replace(/\/+$/, ''); }
+  else {
+    const { server, port } = await startServer(webRoot());
+    httpServer = server; origin = `http://localhost:${port}`;
+  }
+  setupPermissions(); setupIpc();
+  await createWindow();
+  applyTray(); applyLoginItem();
+  app.on('activate', () => { if (!win) createWindow(); else showWindow(); });
+});
+
+app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', () => { globalShortcut.unregisterAll(); ptt.setBinding(null, () => {}); if (httpServer) httpServer.close(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin' && (quitting || !config.get().trayEnabled)) app.quit(); });

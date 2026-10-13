@@ -10,12 +10,14 @@ import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from
 import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
 import { openImageCropper } from './cropper.js';
+import { buildZoomCard, buildDesktopCard, buildHotkeysCard, buildIdleCard, renderExtensionsSection } from './settings-extras.js';
 
 const SECTIONS = [
   { id: 'perfil', label: 'Perfil', icon: 'user' },
   { id: 'audio-video', label: 'Áudio & Vídeo', icon: 'mic' },
   { id: 'aparencia', label: 'Aparência', icon: 'palette' },
   { id: 'notificacoes', label: 'Notificações', icon: 'bell' },
+  { id: 'extensoes', label: 'Temas & Plugins', icon: 'sparkles' },
   { id: 'prime', label: 'G.K.IO Prime', icon: 'diamond' },
 ];
 // Só aparece pra quem tem isAdmin: true no próprio doc (setado manualmente
@@ -80,6 +82,7 @@ function renderSection() {
   if (activeSection === 'audio-video') return renderAudioVideoSection(content);
   if (activeSection === 'aparencia') return renderAparenciaSection(content);
   if (activeSection === 'notificacoes') return renderNotificacoesSection(content);
+  if (activeSection === 'extensoes') return renderExtensionsSection(content, sectionHeader);
   if (activeSection === 'prime') return renderPrimeSection(content);
   if (activeSection === 'admin' && state.user?.isAdmin) return renderAdminSection(content);
 }
@@ -316,6 +319,8 @@ async function renderAudioVideoSection(content) {
     el('div', { class: 'gk-field' }, [camPreview, camTestBtn]),
   ]));
 
+  content.appendChild(buildHotkeysCard());
+
   micSelect.addEventListener('change', () => setMediaPrefs({ micId: micSelect.value }));
   camSelect.addEventListener('change', () => setMediaPrefs({ camId: camSelect.value }));
   speakerSelect.addEventListener('change', () => setMediaPrefs({ speakerId: speakerSelect.value }));
@@ -369,7 +374,7 @@ function stopCamTest() {
 // ============================================================
 // Seção: Aparência
 // ============================================================
-function renderAparenciaSection(content) {
+async function renderAparenciaSection(content) {
   content.appendChild(sectionHeader('Aparência', 'Personalize o visual do G.K.IO em tempo real.', 'palette'));
   const prefs = getThemePrefs();
 
@@ -403,6 +408,9 @@ function renderAparenciaSection(content) {
     swatchRow,
   ]));
   content.appendChild(buildWallpaperCard());
+  content.appendChild(buildZoomCard());
+  const desktopCard = await buildDesktopCard();
+  if (desktopCard && content.isConnected) content.appendChild(desktopCard);
 }
 
 // Papel de parede — atrás das mensagens/composer, não no rail/sidebar
@@ -511,6 +519,7 @@ function renderNotificacoesSection(content) {
       setNotifPrefs({ desktop: v });
     }),
   ]));
+  content.appendChild(buildIdleCard());
 }
 
 // ============================================================

@@ -32,7 +32,7 @@ import {
   callsCol, callDoc, userDoc,
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
-import { getMediaPrefs } from './prefs.js';
+import { getMediaPrefs, getHotkeyPrefs } from './prefs.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 import { icon, iconHtml } from './icons.js';
@@ -185,6 +185,12 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   }
 
   await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
+  // Push-to-talk ligado: entra com o microfone fechado até segurar a tecla.
+  const hk = getHotkeyPrefs();
+  if (hk.pttEnabled && hk.ptt) {
+    await room.localParticipant.setMicrophoneEnabled(false, audioCaptureDefaults);
+    updateMuteButtons(true);
+  }
   if (withVideo) await room.localParticipant.setCameraEnabled(true, videoCaptureDefaults);
 
   const prefs = getMediaPrefs();
@@ -1004,6 +1010,7 @@ function expandCallScreen() {
 }
 
 function updateMuteButtons(muted) {
+  window.dispatchEvent(new CustomEvent('gkio-mic-state', { detail: { muted } }));
   const html = iconHtml(muted ? 'micOff' : 'mic');
   ['gk-call-mute-btn', 'gk-call-bar-mute-btn'].forEach((id) => {
     const btn = document.getElementById(id);
@@ -1012,6 +1019,7 @@ function updateMuteButtons(muted) {
 }
 
 function updateDeafenButtons(deafened) {
+  window.dispatchEvent(new CustomEvent('gkio-deafen-state', { detail: { deafened } }));
   const html = iconHtml(deafened ? 'headphonesOff' : 'headphones');
   ['gk-call-deafen-btn', 'gk-call-bar-deafen-btn'].forEach((id) => {
     const btn = document.getElementById(id);
@@ -1029,7 +1037,7 @@ function applyDeafenToAudioEls(deafened) {
   document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((elAudio) => { elAudio.muted = deafened; });
 }
 
-async function toggleDeafen() {
+export async function toggleDeafen() {
   if (!room) return;
   isDeafened = !isDeafened;
   applyDeafenToAudioEls(isDeafened);
@@ -1117,9 +1125,10 @@ export function wireCallBar() {
   document.getElementById('gk-video-call-btn').addEventListener('click', () => startDmCall(true));
 }
 
-async function toggleMute() {
+export function hasActiveCall() { return !!(room && state.activeCall); }
+
+export async function setMicEnabled(next) {
   if (!room) return;
-  const next = !isSourceOn(room.localParticipant, Track.Source.Microphone);
   await room.localParticipant.setMicrophoneEnabled(next, captureDefaults().audioCaptureDefaults);
   updateMuteButtons(!next);
   if (state.activeCall && state.activeCall.kind === 'voiceChannel') setTileMuted(auth.currentUser.uid, !next);
@@ -1130,6 +1139,10 @@ async function toggleMute() {
     applyDeafenToAudioEls(false);
     updateDeafenButtons(false);
   }
+}
+export async function toggleMute() {
+  if (!room) return;
+  return setMicEnabled(!isSourceOn(room.localParticipant, Track.Source.Microphone));
 }
 function toggleScreenShareBtn() {
   if (isScreenSharing()) stopScreenShare(); else startScreenShare();
