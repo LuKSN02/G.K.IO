@@ -133,8 +133,21 @@ function wireStaticUI() {
       return;
     }
     const btnRect = e.currentTarget.getBoundingClientRect();
-    menu.style.left = `${btnRect.right + 12}px`;
-    menu.style.top = `${btnRect.top}px`;
+    // O botão fica no rodapé da sidebar: se o menu nascesse na altura do
+    // topo do botão ele passaria da borda da tela e ficaria cortado. Mede
+    // o menu (já está no layout, só invisível) e alinha ele pela base do
+    // botão quando não couber, mantendo sempre uma margem da borda.
+    const margin = 8;
+    const menuW = menu.offsetWidth;
+    const menuH = menu.offsetHeight;
+    let left = btnRect.right + 12;
+    let top = btnRect.top;
+    if (left + menuW > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - menuW - margin);
+    if (top + menuH > window.innerHeight - margin) top = btnRect.bottom - menuH;
+    top = Math.max(margin, Math.min(top, window.innerHeight - menuH - margin));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+    menu.style.transformOrigin = top < btnRect.top ? 'bottom left' : 'top left';
     menu.classList.add('gk-open-inline');
   });
   document.addEventListener('click', (e) => {

@@ -180,9 +180,12 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   opacity: 1; visibility: visible; pointer-events: auto; transform: none;
 }
 .gk-server-menu button {
-  display: block; width: 100%; text-align: left; padding: 9px 10px; border: none; background: none;
-  border-radius: var(--gk-radius-sm); font-size: 13.5px; color: var(--gk-gray-700);
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border: none; background: none;
+  border-radius: var(--gk-radius-sm); font-size: 13.5px; font-weight: 600; color: var(--gk-gray-700);
+  white-space: nowrap; cursor: pointer;
 }
+.gk-server-menu button .gk-inline-icon { display: inline-flex; flex-shrink: 0; width: 16px; height: 16px; color: var(--gk-gray-500); }
+.gk-server-menu button:hover .gk-inline-icon { color: var(--gk-accent-strong); }
 .gk-server-menu button:hover { background: var(--gk-surface-sunken); color: var(--gk-accent-strong); }
 
 /* ---------- Sidebar (canais / DMs) ---------- */
