@@ -324,25 +324,67 @@ export function openAddFriendModal() {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
-  const input = el('input', { type: 'text', placeholder: 'nome-de-usuario' });
-  const errorBox = el('div', { class: 'gk-error', style: 'display:none;' });
-  modal.appendChild(el('h2', {}, 'Adicionar amigo'));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome de usuário'), input, errorBox]));
+  modal.classList.remove('gk-modal-wizard');
+
+  const close = () => overlay.classList.remove('gk-open');
+
+  const input = el('input', {
+    type: 'text', placeholder: 'nome-de-usuario', maxlength: '32',
+    autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+  });
+  const errorBox = el('div', { class: 'gk-error' });
+  const sendBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button', disabled: 'true' }, [
+    icon('personPlus', { size: 16 }), 'Enviar pedido',
+  ]);
+
+  const showError = (msg) => {
+    errorBox.textContent = msg;
+    errorBox.style.display = msg ? 'block' : 'none';
+    input.closest('.gk-addfriend-input').classList.toggle('gk-invalid', !!msg);
+  };
+
+  async function submit() {
+    if (sendBtn.disabled) return;
+    showError('');
+    sendBtn.classList.add('gk-btn-loading');
+    sendBtn.disabled = true;
+    try {
+      await sendFriendRequestByUsername(input.value);
+      toast('Pedido de amizade enviado.');
+      close();
+    } catch (err) {
+      showError(err.message || 'Não foi possível enviar o pedido.');
+      sendBtn.classList.remove('gk-btn-loading');
+      sendBtn.disabled = !normalizeUsername(input.value);
+    }
+  }
+
+  input.addEventListener('input', () => {
+    showError('');
+    sendBtn.disabled = !normalizeUsername(input.value);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    else if (e.key === 'Escape') close();
+  });
+  sendBtn.addEventListener('click', submit);
+
+  modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+    el('div', { class: 'gk-modal-icon' }, [icon('personPlus', { size: 22 })]),
+    el('div', {}, [
+      el('h2', {}, 'Adicionar amigo'),
+      el('p', { class: 'gk-modal-sub' }, 'Digite o nome de usuário de quem você quer adicionar.'),
+    ]),
+  ]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [
+    el('label', {}, 'Nome de usuário'),
+    el('div', { class: 'gk-addfriend-input' }, [el('span', { class: 'gk-addfriend-at' }, '@'), input]),
+    errorBox,
+  ]));
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
-    el('button', {
-      class: 'gk-btn gk-btn-primary',
-      onclick: async () => {
-        try {
-          await sendFriendRequestByUsername(input.value);
-          toast('Pedido de amizade enviado.');
-          overlay.classList.remove('gk-open');
-        } catch (err) {
-          errorBox.textContent = err.message;
-          errorBox.style.display = 'block';
-        }
-      },
-    }, 'Enviar pedido'),
+    el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: close }, 'Cancelar'),
+    sendBtn,
   ]));
   overlay.classList.add('gk-open');
+  setTimeout(() => input.focus(), 50);
 }

@@ -2,7 +2,8 @@
 // G.K.IO — Bootstrap da aplicação
 // ============================================================
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
-import { state, fallbackAvatar } from './state.js';
+import { state, fallbackAvatar, cleanupListener } from './state.js';
+import { stopTyping } from './typing.js';
 import { listenUserServers, openCreateServerModal, openJoinServerModal, selectServer, goToServerPickerView } from './servers.js';
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById, hideFriendsHome, showFriendsHome } from './dms.js';
@@ -75,6 +76,16 @@ onAuthReady(() => {
 // existe (Mensagens/Amigos/Servidores).
 // ============================================================
 function goToHomeView() {
+  // Sai de qualquer conversa aberta de verdade (listener de mensagens,
+  // "digitando", estado) — antes ela continuava viva por trás da tela de
+  // Início e era redesenhada por cima dela.
+  stopTyping();
+  cleanupListener('messages');
+  cleanupListener('typing');
+  state.currentView = 'home';
+  state.currentServerId = null;
+  state.currentChannelId = null;
+  state.currentDmId = null;
   hideFriendsHome();
   hideFilesView();
   hideCommunitiesView();
@@ -99,20 +110,20 @@ function goToHomeView() {
   document.getElementById('gk-nav-home').classList.add('gk-active');
 }
 
-// "Amigos" reaproveita a view de DMs (mesma sidebar, mesma tela de
-// amigos) — só muda qual item do rail fica em destaque, já que aqui a
-// intenção de navegação é "gerenciar amigos", não "abrir uma conversa".
-function goToFriendsView() {
-  goToDmsView();
-  showFriendsHome();
-  hideFilesView();
-  hideCommunitiesView();
-  document.getElementById('gk-home-view').style.display = 'none';
-  document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
-  document.getElementById('gk-nav-friends').classList.add('gk-active');
+// O Início não tem lista lateral: a coluna de DMs/canais some enquanto a
+// tela de boas-vindas está visível e volta sozinha ao abrir qualquer outra
+// seção. Observa o próprio #gk-home-view em vez de depender de cada tela
+// lembrar de mostrar/esconder a sidebar.
+function wireHomeSidebarToggle() {
+  const homeView = document.getElementById('gk-home-view');
+  const appBody = document.querySelector('.gk-app-body');
+  const sync = () => appBody.classList.toggle('gk-home-mode', homeView.style.display === 'flex');
+  new MutationObserver(sync).observe(homeView, { attributes: true, attributeFilter: ['style'] });
+  sync();
 }
 
 function wireStaticUI() {
+  wireHomeSidebarToggle();
   document.getElementById('gk-add-server-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     const menu = document.getElementById('gk-server-menu');
@@ -136,13 +147,12 @@ function wireStaticUI() {
   document.getElementById('gk-join-server-btn').addEventListener('click', openJoinServerModal);
   document.getElementById('gk-dm-rail-item').addEventListener('click', goToDmsView);
   document.getElementById('gk-nav-home').addEventListener('click', goToHomeView);
-  document.getElementById('gk-nav-friends').addEventListener('click', goToFriendsView);
   document.getElementById('gk-nav-servers').addEventListener('click', goToServerPickerView);
   document.getElementById('gk-nav-communities').addEventListener('click', goToCommunitiesView);
   document.getElementById('gk-nav-files').addEventListener('click', goToFilesView);
   document.getElementById('gk-nav-settings').addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal('perfil'); });
   document.getElementById('gk-home-go-messages').addEventListener('click', goToDmsView);
-  document.getElementById('gk-home-go-friends').addEventListener('click', goToFriendsView);
+  document.getElementById('gk-home-go-friends').addEventListener('click', goToDmsView);
   document.getElementById('gk-home-go-servers').addEventListener('click', goToServerPickerView);
   document.getElementById('gk-add-friend-btn').addEventListener('click', openAddFriendModal);
   document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); closeProfileMenu(); openSettingsModal('perfil'); });

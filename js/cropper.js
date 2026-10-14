@@ -92,7 +92,7 @@ export function openImageCropper(file, aspect, { title = 'Ajustar imagem', outpu
       clampOffset(); draw();
     });
 
-    const overlay = el('div', { class: 'gk-overlay gk-open' });
+    const overlay = el('div', { class: 'gk-overlay gk-open gk-cropper-overlay' });
     const modal = el('div', { class: 'gk-modal gk-cropper-modal' }, [
       el('h2', {}, title),
       el('div', { class: 'gk-cropper-stage', style: `width:${viewportW}px;height:${viewportH}px;` }, [canvas]),

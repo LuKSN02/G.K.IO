@@ -1033,6 +1033,11 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   animation: gk-fade-in var(--gk-transition-slow) both;
 }
 .gk-overlay.gk-open { display: flex; }
+/* Recorte de imagem: abre POR CIMA do modal que o chamou (criar servidor,
+   configurações, perfil...). Antes usava o mesmo z-index (200) dos outros
+   overlays e ficava escondido atrás do modal genérico (220), por isso não
+   dava pra escolher o ícone do servidor. */
+.gk-overlay.gk-cropper-overlay { z-index: 400; }
 /* O modal genérico (#gk-generic-modal-overlay) é reaproveitado como
    diálogo aninhado em cima das Configurações de servidor/usuário
    (ex: confirmar exclusão, atribuir cargos, criar canal a partir da
@@ -2492,3 +2497,26 @@ html[data-streamer] input[autocomplete=email],
 html[data-streamer] input[autocomplete=username] { filter: blur(7px); transition: filter .15s; }
 html[data-streamer] .gk-sensitive:focus,
 html[data-streamer] input[type=email]:focus { filter: none; }
+
+
+/* ---------- Início: sem sidebar ---------- */
+.gk-app-body.gk-home-mode .gk-sidebar { display: none; }
+
+/* ---------- Modal "Adicionar amigo" ---------- */
+.gk-addfriend-input {
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 14px; height: 48px;
+  background: var(--gk-bg); border: 1.5px solid var(--gk-gray-200);
+  border-radius: var(--gk-radius-md);
+  transition: border-color var(--gk-transition), box-shadow var(--gk-transition);
+}
+.gk-addfriend-input:focus-within { border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-glow); }
+.gk-addfriend-input.gk-invalid { border-color: var(--gk-danger); box-shadow: 0 0 0 3px var(--gk-danger-soft); }
+.gk-addfriend-at { font-family: var(--gk-font-mono); font-size: 16px; font-weight: 600; color: var(--gk-gray-400); }
+.gk-addfriend-input:focus-within .gk-addfriend-at { color: var(--gk-accent-strong); }
+.gk-addfriend-input input {
+  flex: 1; min-width: 0; height: 100%; border: none; background: transparent; outline: none;
+  font-size: 15px; font-family: var(--gk-font-body); color: var(--gk-gray-800);
+}
+.gk-addfriend-input input::placeholder { color: var(--gk-gray-400); }
+.gk-modal-actions .gk-btn { padding: 11px 18px; }

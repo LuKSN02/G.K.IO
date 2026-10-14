@@ -46,8 +46,19 @@ const renderedMessageIds = new Set();
 // primeiro desenho da conversa animaria o histórico inteiro de uma vez.
 let hasRenderedConversationOnce = false;
 
+// Esconde as telas "cheias" (Início, Arquivos, Comunidades) que ficam por
+// cima da área de chat. Sem isso, abrir uma conversa por qualquer caminho
+// que não seja um clique no rail deixava a tela anterior sobreposta ao chat.
+function hideOverlayViews() {
+  for (const id of ['gk-home-view', 'gk-files-view', 'gk-communities-view']) {
+    const node = document.getElementById(id);
+    if (node) node.style.display = 'none';
+  }
+}
+
 export function selectChannel(serverId, channelId, name, readOnly = false) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
+  hideOverlayViews();
   hideFriendsHome();
   state.currentView = 'server';
   state.currentServerId = serverId;
@@ -105,6 +116,7 @@ function applyComposerReadOnly(readOnly) {
 
 export function selectDm(dmId, title, subtitle, otherUid = null) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
+  hideOverlayViews();
   hideFriendsHome();
   state.currentView = 'dms';
   state.currentDmId = dmId;
