@@ -45,6 +45,7 @@ function menu(actions, s) {
     { type: 'separator' },
     { label: 'Recarregar', click: actions.reload },
     { label: 'Reiniciar app', click: actions.restart },
+    { label: 'Reiniciar em modo seguro', click: actions.safe },
     { label: 'Sair', click: actions.quit },
   ]);
 }

@@ -20,7 +20,7 @@ import { initExtensions } from './extensions.js';
 import { initZoom } from './zoom.js';
 import { initHotkeys } from './hotkeys.js';
 import { initIdleDetection } from './idle.js';
-import { initDesktopIntegration } from './desktop.js';
+import { initDesktopIntegration, pushActivity } from './desktop.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
@@ -66,6 +66,7 @@ onAuthReady(() => {
   goToHomeView();
   initPushNotifications();
   initIdleDetection();
+  pushActivity();
 });
 
 // ============================================================

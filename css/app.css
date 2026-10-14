@@ -2461,3 +2461,34 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 .gk-ext-adder .gk-field { margin-bottom: 10px; }
 .gk-ext-adder textarea { min-height: 110px; font-size: 12.5px; }
 .gk-ext-adder-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
+/* ---- Jogo em execução (RPC) + efeitos de janela do app desktop ---- */
+.gk-activity-line { font-size: 11.5px; color: var(--gk-gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.gk-member-text { min-width: 0; }
+.gk-profile-activity {
+  display: flex; align-items: center; gap: 10px; margin: 10px 0 2px; padding: 10px 12px;
+  border-radius: var(--gk-radius-md); background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+}
+.gk-profile-activity span { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.gk-profile-activity small { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; opacity: .8; }
+.gk-profile-activity b { font-size: 13.5px; color: var(--gk-gray-800); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Com blur/transparência ligados, as áreas grandes ficam semitransparentes
+   para o efeito da janela aparecer; modais e menus continuam sólidos. */
+html[data-blur] body, html[data-blur] #gk-app { background: transparent !important; }
+html[data-blur] .gk-rail, html[data-blur] .gk-sidebar, html[data-blur] .gk-topbar, html[data-blur] #gk-members {
+  background: color-mix(in srgb, var(--gk-surface) 62%, transparent) !important;
+}
+html[data-blur] .gk-main { background: color-mix(in srgb, var(--gk-bg) 70%, transparent) !important; }
+.gk-update-status { font-size: 12.5px; color: var(--gk-gray-600); margin-top: 8px; }
+.gk-ext-games { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.gk-ext-games-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.gk-ext-games-add input { flex: 1; min-width: 120px; }
+
+/* ---- Modo streamer: esconde dados sensíveis (clique no campo para revelar) ---- */
+html[data-streamer] .gk-sensitive,
+html[data-streamer] input[type=email],
+html[data-streamer] input[autocomplete=email],
+html[data-streamer] input[autocomplete=username] { filter: blur(7px); transition: filter .15s; }
+html[data-streamer] .gk-sensitive:focus,
+html[data-streamer] input[type=email]:focus { filter: none; }

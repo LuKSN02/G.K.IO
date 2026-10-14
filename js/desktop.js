@@ -4,6 +4,8 @@
 // e no APK tudo aqui é no-op.
 // ============================================================
 import { getHotkeyPrefs } from './prefs.js';
+import { auth, userDoc, updateDoc } from './db.js';
+import { state, toast } from './state.js';
 import { toggleMute, toggleDeafen, setMicEnabled, hasActiveCall } from './calls.js';
 
 const d = () => window.gkioDesktop;
@@ -17,6 +19,7 @@ export async function syncShortcuts() {
 
 export function initDesktopIntegration() {
   if (!d()) return;
+  initDesktopFeatures();
   document.documentElement.setAttribute('data-desktop', d().platform);
 
   // Comandos vindos da bandeja / atalhos globais.
@@ -44,4 +47,38 @@ export function initDesktopIntegration() {
   syncShortcuts();
   window.addEventListener('storage', (e) => { if (e.key === 'gkio-hotkey-prefs') syncShortcuts(); });
   window.addEventListener('gkio-hotkeys-changed', syncShortcuts);
+}
+
+// ---------- Jogo em execução (RPC) ----------
+let lastGame = null;
+export async function pushActivity() {
+  if (!auth.currentUser) return;
+  const activity = lastGame ? { name: String(lastGame.name).slice(0, 64), startedAt: lastGame.startedAt || Date.now() } : null;
+  if ((state.user?.activity?.name || null) === (activity?.name || null)) return;
+  try {
+    await updateDoc(userDoc(auth.currentUser.uid), { activity });
+    if (state.user) state.user.activity = activity;
+  } catch (e) { /* regras ainda sem o campo 'activity'? publique o firestore.rules novo */ }
+}
+
+// Efeito de janela: só marca o <html>; o CSS cuida do resto.
+export function applyBlurAttr(effect) {
+  if (effect && effect !== 'none') document.documentElement.setAttribute('data-blur', effect);
+  else document.documentElement.removeAttribute('data-blur');
+}
+
+export function applyStreamerAttr(on) {
+  if (on) document.documentElement.setAttribute('data-streamer', '1');
+  else document.documentElement.removeAttribute('data-streamer');
+}
+
+export async function initDesktopFeatures() {
+  if (!d()) return;
+  try { applyStreamerAttr(await d().getStreamerMode()); } catch (e) { /* noop */ }
+  d().onStreamer((on) => { applyStreamerAttr(on); toast(on ? 'Modo streamer ligado — dados sensíveis ocultos.' : 'Modo streamer desligado.'); });
+  try { const cfg = await d().getConfig(); applyBlurAttr(cfg.blur); } catch (e) { /* noop */ }
+  try { lastGame = await d().getCurrentGame(); } catch (e) { /* noop */ }
+  d().onGame((g) => { lastGame = g; pushActivity(); });
+  // Aviso discreto quando uma atualização termina de baixar.
+  d().onUpdate((st) => { if (st.state === 'ready') toast(`Atualização ${st.version} pronta — instale em Configurações > Aparência > App desktop.`); });
 }

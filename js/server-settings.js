@@ -458,7 +458,7 @@ function renderConvitesSection(content) {
   const serverId = currentServerId;
   content.appendChild(sectionHeader('Convites', 'Gere um código para outras pessoas entrarem no servidor.'));
 
-  const codeBox = el('input', { type: 'text', readonly: 'true', class: 'gk-mono', placeholder: 'Clique em "Gerar" abaixo' });
+  const codeBox = el('input', { type: 'text', readonly: 'true', class: 'gk-mono gk-sensitive', placeholder: 'Clique em "Gerar" abaixo' });
   const genBtn = el('button', {
     class: 'gk-btn gk-btn-primary', type: 'button',
     onclick: async () => {

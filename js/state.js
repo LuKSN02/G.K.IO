@@ -121,6 +121,13 @@ export function effectiveStatus(user) {
   return raw;
 }
 
+// "Jogando X" — só vale se a pessoa não está offline (se o app caiu sem
+// limpar o campo, effectiveStatus já vira offline e a atividade some junto).
+export function currentActivity(user) {
+  if (!user || !user.activity || !user.activity.name) return null;
+  return effectiveStatus(user) === 'offline' ? null : user.activity;
+}
+
 export function genInviteCode(len = 8) {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let out = '';

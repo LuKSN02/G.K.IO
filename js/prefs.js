@@ -102,7 +102,8 @@ export function showDesktopNotification(title, body, icon) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   if (document.visibilityState === 'visible') return;
   try {
-    const n = new Notification(title, { body: notifPrefs.preview ? body : 'Nova mensagem', icon });
+    const hide = !notifPrefs.preview || document.documentElement.hasAttribute('data-streamer'); // modo streamer nunca mostra prévia
+    const n = new Notification(title, { body: hide ? 'Nova mensagem' : body, icon });
     // No app de desktop (Electron), clicar na notificação restaura/foca
     // a janela — no navegador comum, foca a aba. window.focus() é a API
     // padrão pros dois casos.

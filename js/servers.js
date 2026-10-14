@@ -7,7 +7,7 @@ import {
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from './db.js';
-import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus } from './state.js';
+import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus, currentActivity } from './state.js';
 import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
@@ -655,7 +655,10 @@ function renderMembersPanel(cache, serverId) {
       el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(m.user) }, [
         el('img', { src: m.user.avatarUrl || fallbackAvatar(m.user.username) }),
       ]),
-      el('div', {}, [nameLine]),
+      el('div', { class: 'gk-member-text' }, [
+        nameLine,
+        currentActivity(m.user) ? el('div', { class: 'gk-activity-line', title: 'Jogando ' + currentActivity(m.user).name }, 'Jogando ' + currentActivity(m.user).name) : null,
+      ]),
     ];
 
     // Só o dono vê o botão de promover/rebaixar, e nunca para si mesmo ou para outro dono.

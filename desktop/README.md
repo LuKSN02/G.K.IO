@@ -21,4 +21,13 @@ Para apontar para uma versão hospedada, defina `remoteUrl` em `desktop-config.j
 - Compartilhar tela: menu para escolher tela/janela
 - Tudo configurável em Configurações > Aparência > App desktop
 
+- **Jogo em execução (RPC):** detecta ~37 jogos pelo nome do processo (`games.json`) + jogos que você adicionar em Configurações, e grava `activity` no seu perfil ("Jogando X" no cartão de perfil e na lista de membros). **Publique o `firestore.rules` novo** — ele libera o campo `activity`.
+- **Efeito de janela:** Windows 11 (acrílico/mica/mica abas), macOS (vibrancy), Linux (só transparente, aplica após reiniciar). Em Windows 10 não há efeito.
+- **Atualização automática:** `electron-updater` + GitHub Releases. Edite `build.publish` em `package.json` (owner/repo — hoje `luksn02/G.K.IO`). Para lançar: aumente a versão em `desktop/package.json`, crie a tag `vX.Y.Z` e dê push; o workflow `.github/workflows/release-desktop.yml` gera e publica os instaladores. A versão *portable* do Windows não se atualiza sozinha (use o instalador NSIS).
+
+- **Modo streamer:** detecta OBS/Streamlabs/XSplit etc. (ou liga manualmente) e borra e-mails e códigos de convite; notificações sem prévia
+- **Perfis:** várias contas lado a lado, cada uma com login/cache/config próprios (`--profile=nome`)
+- **Manutenção:** limpar cache (sem apagar o login), limpar ao abrir, proxy, desligar aceleração de hardware, iniciar maximizado, abrir pasta de dados/logs, reiniciar em modo seguro (`--safe`, também na bandeja)
+- **Importar tema/plugin por URL** (https, até 512 KB)
+
 F5 recarrega, F12 abre o DevTools.
