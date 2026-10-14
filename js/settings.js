@@ -104,10 +104,12 @@ async function renderPerfilSection(content) {
     style: (state.user.bannerUrl && state.user.bannerType !== 'video') ? `background-image:url(${state.user.bannerUrl})` : '',
   });
   if (state.user.bannerUrl && state.user.bannerType === 'video') {
-    bannerPreview.appendChild(el('video', {
+    const previewVideo = el('video', {
       src: state.user.bannerUrl, class: 'gk-settings-banner-video',
       autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
-    }));
+    });
+    previewVideo.muted = true; // o atributo sozinho não muta um <video> criado por JS
+    bannerPreview.appendChild(previewVideo);
   } else if (!state.user.bannerUrl) {
     bannerPreview.textContent = 'Clique para escolher um banner';
   }
@@ -120,10 +122,12 @@ async function renderPerfilSection(content) {
       pendingBanner = file;
       bannerPreview.innerHTML = '';
       bannerPreview.style.backgroundImage = '';
-      bannerPreview.appendChild(el('video', {
+      const pickedVideo = el('video', {
         src: URL.createObjectURL(file), class: 'gk-settings-banner-video',
         autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
-      }));
+      });
+      pickedVideo.muted = true;
+      bannerPreview.appendChild(pickedVideo);
       return;
     }
     const cropped = await openImageCropper(file, 3, { title: 'Ajustar banner', outputWidth: 1200 });

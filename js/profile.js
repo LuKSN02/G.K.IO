@@ -85,11 +85,15 @@ export async function openProfileCard(uid) {
       el('img', { src: user.avatarUrl || fallbackAvatar(user.username) }),
     ]),
   ]);
+  // Sem autoplay/muted no HTML: quem decide quando toca (e com som) é
+  // playBannerVideoWhileOpen(), depois que o cartão estiver visível.
+  let bannerVideo = null;
   if (user.bannerUrl && user.bannerType === 'video') {
-    bannerEl.prepend(el('video', {
+    bannerVideo = el('video', {
       src: user.bannerUrl, class: 'gk-profile-banner-video',
-      autoplay: 'true', loop: 'true', muted: 'true', playsinline: 'true',
-    }));
+      loop: 'true', playsinline: 'true', preload: 'auto',
+    });
+    bannerEl.prepend(bannerVideo);
   }
   modal.appendChild(bannerEl);
 
@@ -162,6 +166,35 @@ export async function openProfileCard(uid) {
 
   modal.appendChild(body);
   overlay.classList.add('gk-open');
+  if (bannerVideo) playBannerVideoWhileOpen(bannerVideo, overlay, modal);
+}
+
+// O banner em vídeo toca COM som só enquanto o cartão de perfil está
+// aberto. Ao fechar (clique fora, botões, Esc) ou quando outro modal
+// ocupa o lugar, o vídeo é pausado e descarregado. Antes ele ficava
+// tocando o áudio "solto" depois de sair do perfil: o modal só era
+// escondido, e um <video> escondido (ou removido do DOM) continua
+// tocando até ser pausado de verdade.
+function playBannerVideoWhileOpen(video, overlay, modal) {
+  const observer = new MutationObserver(() => {
+    if (!video.isConnected || !overlay.classList.contains('gk-open')) stop();
+  });
+  function stop() {
+    observer.disconnect();
+    try { video.pause(); } catch (e) { /* noop */ }
+    video.muted = true;
+    video.removeAttribute('src');
+    video.load(); // solta o recurso de mídia
+  }
+  observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+  observer.observe(modal, { childList: true });
+
+  video.muted = false;
+  const playing = video.play();
+  if (playing && playing.catch) {
+    // O navegador pode bloquear som automático: nesse caso toca mudo em vez de não tocar.
+    playing.catch(() => { video.muted = true; video.play().catch(() => {}); });
+  }
 }
 
 function statusText(s) {
