@@ -31,3 +31,15 @@ Para apontar para uma versão hospedada, defina `remoteUrl` em `desktop-config.j
 - **Importar tema/plugin por URL** (https, até 512 KB)
 
 F5 recarrega, F12 abre o DevTools.
+
+## Instalador estilo Discord
+O instalador do Windows (`G.K.IO-Setup-<versão>.exe`) funciona como o do Discord:
+- **Um clique, sem assistente:** nada de "Avançar > Avançar"; abre uma janelinha de progresso e pronto
+- **Instala só para o usuário** (`%LocalAppData%\Programs\G.K.IO`) — **não pede administrador**
+- **Splash de marca** (`build/splash.bmp`) antes de instalar; na atualização automática (silenciosa) ele não aparece
+- Cria atalho na área de trabalho e no menu Iniciar e **abre o G.K.IO sozinho** ao terminar
+- Desinstalar não apaga seus dados (login/config)
+
+**Gerar:** dê dois cliques em `desktop/gerar-instalador.bat` (precisa do Node.js). O arquivo sai em `desktop/dist/`.
+
+**Personalizar:** troque `build/icon.ico` (ícone do app/instalador) e `build/splash.bmp` (460×300, BMP 24 bits); o comportamento fica em `build.nsis` no `package.json` e em `build/installer.nsh`.

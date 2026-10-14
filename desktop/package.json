@@ -1,6 +1,6 @@
 {
   "name": "gkio-desktop",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "G.K.IO — app desktop (Electron)",
   "main": "main.js",
   "author": "G.K.IO",
@@ -22,6 +22,7 @@
   "build": {
     "appId": "io.gkio.desktop",
     "productName": "G.K.IO",
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },
@@ -50,7 +51,7 @@
         "nsis",
         "portable"
       ],
-      "icon": "../img/favicon-512.png"
+      "icon": "build/icon.ico"
     },
     "linux": {
       "target": [
@@ -70,7 +71,27 @@
         "owner": "luksn02",
         "repo": "G.K.IO"
       }
-    ]
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "G.K.IO",
+      "uninstallDisplayName": "G.K.IO",
+      "deleteAppDataOnUninstall": false,
+      "language": "1046",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
+      "artifactName": "G.K.IO-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "G.K.IO-Portable-${version}.${ext}"
+    }
   },
   "dependencies": {
     "electron-updater": "^6.3.9"

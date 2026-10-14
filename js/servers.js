@@ -39,6 +39,20 @@ let lastChannels = [];
 // "Cargos") e pelo cálculo de permissões efetivas de cada membro.
 let lastRoles = new Map();
 
+// Aviso "os dados do servidor mudaram" (canais, categorias, cargos, membros).
+// A tela de Configurações do servidor se inscreve aqui para se redesenhar
+// sozinha — antes ela só mostrava a mudança depois de trocar de aba.
+const serverDataHandlers = new Set();
+export function onServerDataChange(fn) {
+  serverDataHandlers.add(fn);
+  return () => serverDataHandlers.delete(fn);
+}
+function emitServerDataChange(serverId) {
+  for (const fn of serverDataHandlers) {
+    try { fn(serverId); } catch (err) { console.error('[servers] onServerDataChange', err); }
+  }
+}
+
 // ---------- Catálogo de permissões dos cargos personalizados ----------
 // Cada permissão soma poderes ao que o membro já teria como "membro comum".
 // 'owner' e o campo legado member.role === 'admin' continuam concedendo
@@ -188,6 +202,7 @@ export function listenRoles(serverId) {
       const cache = state.serverMembersCache.get(serverId);
       if (cache) renderMembersPanel(cache, serverId);
     }
+    emitServerDataChange(serverId);
   });
   state.unsubscribers.roles = () => unsubRoles && unsubRoles();
 }
@@ -196,16 +211,17 @@ export function getRoles() {
   return [...lastRoles.values()].sort((a, b) => (a.position || 0) - (b.position || 0));
 }
 
-export async function createRole(serverId, { name, color }) {
+export async function createRole(serverId, { name, color, permissions }) {
   const existing = await getDocs(query(rolesCol(serverId)));
-  await addDoc(rolesCol(serverId), {
+  const ref = await addDoc(rolesCol(serverId), {
     name: (name || '').trim() || 'Novo cargo',
     color: color || ROLE_COLOR_SWATCHES[0],
-    permissions: emptyPermissions(),
+    permissions: { ...emptyPermissions(), ...(permissions || {}) },
     position: existing.size,
     createdAt: serverTimestamp(),
   });
   toast('Cargo criado.');
+  return ref.id;
 }
 
 export async function updateRole(serverId, roleId, patch) {
@@ -396,6 +412,9 @@ export async function renameChannel(serverId, channelId, name) {
   await updateDoc(channelDoc(serverId, channelId), { name: name.trim().toLowerCase().replace(/\s+/g, '-') || 'canal' });
 }
 
+export async function setChannelNsfw(serverId, channelId, nsfw) {
+  await updateDoc(channelDoc(serverId, channelId), { nsfw: !!nsfw });
+}
 export async function deleteChannel(serverId, channelId) {
   await deleteDoc(channelDoc(serverId, channelId));
   if (state.currentChannelId === channelId) state.currentChannelId = null;
@@ -522,6 +541,7 @@ function listenCategoriesAndChannels(serverId) {
       lastCategories = categories;
       lastChannels = channels;
       renderServerSidebar(serverId, categories, channels);
+      emitServerDataChange(serverId);
       if (!state.currentChannelId) {
         const firstText = channels.find((c) => c.type === 'text' && canViewChannel(serverId, c));
         if (firstText) selectChannel(serverId, firstText.id, firstText.name, !canSendInChannel(serverId, firstText));
@@ -547,6 +567,9 @@ function renderServerSidebar(serverId, categories, channels) {
       const unread = ch.type === 'text' && !isActive && isConversationUnread(ch.id, ch.lastMessageAt, ch.lastMessageAuthorId);
       const row = el('div', {
         class: 'gk-channel' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
+        // Canal marcado como +18: fica exposto como atributo para temas/plugins
+        // (ex.: o plugin BetterNsfwTag mostra uma tag "NSFW" ao lado do nome).
+        'data-nsfw': ch.nsfw ? 'true' : undefined,
         onclick: () => ch.type === 'text'
           ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
           : confirmJoinVoiceChannel(serverId, ch),
@@ -625,6 +648,7 @@ function listenMembers(serverId) {
     // Um cargo pode ter mudado (ex: alguém virou admin) — re-renderiza a
     // sidebar de canais para atualizar a visibilidade do "Novo canal".
     if (state.currentServerId === serverId) renderServerSidebar(serverId, lastCategories, lastChannels);
+    emitServerDataChange(serverId);
   });
   state.unsubscribers.members = () => unsubMembers && unsubMembers();
 }
@@ -717,10 +741,18 @@ export function openCreateChannelModal(serverId, categories) {
     textOption.classList.toggle('gk-active', type === 'text');
     voiceOption.classList.toggle('gk-active', type === 'voice');
     prefixEl.innerHTML = type === 'text' ? '#' : iconHtml('speaker', { size: 15 });
+    nsfwRow.style.display = type === 'text' ? '' : 'none';
   }
 
   const catSelect = el('select', { class: 'gk-select' },
     categories.map((c) => el('option', { value: c.id }, c.name)));
+
+  // Canal +18 (só faz sentido em canais de texto).
+  const nsfwCheckbox = el('input', { type: 'checkbox' });
+  const nsfwRow = el('label', { class: 'gk-nsfw-option' }, [
+    nsfwCheckbox,
+    el('span', {}, [el('strong', {}, 'Canal NSFW (+18)'), el('small', {}, 'Marca o canal como conteúdo adulto. Plugins e temas podem destacá-lo.')]),
+  ]);
 
   modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
     el('div', { class: 'gk-modal-icon' }, '#'),
@@ -732,6 +764,7 @@ export function openCreateChannelModal(serverId, categories) {
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do canal'), nameWrap]));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Tipo'), el('div', { class: 'gk-type-picker' }, [textOption, voiceOption])]));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Categoria'), catSelect]));
+  modal.appendChild(nsfwRow);
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
     el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
     el('button', {
@@ -745,6 +778,7 @@ export function openCreateChannelModal(serverId, categories) {
           type: selectedType,
           categoryId: catSelect.value,
           position: existing.size,
+          nsfw: selectedType === 'text' && nsfwCheckbox.checked,
         });
         closeGenericModal();
       },

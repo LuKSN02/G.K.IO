@@ -2523,3 +2523,129 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 }
 .gk-addfriend-input input::placeholder { color: var(--gk-gray-400); }
 .gk-modal-actions .gk-btn { padding: 11px 18px; }
+
+/* ---------- Canal NSFW (+18) ---------- */
+.gk-nsfw-option {
+  display: flex; align-items: flex-start; gap: 10px; cursor: pointer;
+  margin: 4px 0 12px; padding: 10px 12px;
+  border: 1px solid var(--gk-border, rgba(127,127,127,.25)); border-radius: var(--gk-radius-sm);
+}
+.gk-nsfw-option input { margin-top: 3px; }
+.gk-nsfw-option strong { display: block; font-size: 14px; }
+.gk-nsfw-option small { display: block; color: var(--gk-gray-500); font-size: 12px; margin-top: 2px; }
+
+/* ============================================================
+   Configurações do servidor — redesign (Canais, Cargos, Membros)
+   Escopo: só #gk-server-settings-shell (não afeta as configurações de usuário)
+   ============================================================ */
+#gk-server-settings-shell { width: 940px; height: 680px; }
+#gk-server-settings-content { padding: 28px 34px 36px; }
+#gk-server-settings-content .gk-settings-section-header { display: block; margin-bottom: 20px; padding-right: 36px; }
+#gk-server-settings-content .gk-settings-section-header h2 { margin: 0 0 4px; font-size: 22px; }
+#gk-server-settings-content .gk-settings-section-header .gk-modal-sub { margin: 0; font-size: 13.5px; color: var(--gk-gray-500); }
+
+.gk-sv-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+.gk-sv-toolbar .gk-sv-input { flex: 1; min-width: 0; }
+.gk-sv-toolbar .gk-btn { white-space: nowrap; }
+
+.gk-sv-input {
+  width: 100%; box-sizing: border-box; padding: 9px 12px;
+  font: inherit; font-size: 13.5px; color: var(--gk-gray-800);
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm);
+  outline: none; transition: border-color var(--gk-transition), box-shadow var(--gk-transition);
+}
+.gk-sv-input:focus { border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-soft); }
+
+.gk-sv-card {
+  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100);
+  border-radius: var(--gk-radius-md); padding: 6px; margin-bottom: 14px;
+}
+.gk-sv-card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 6px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--gk-gray-100);
+}
+.gk-sv-count { font-size: 12px; color: var(--gk-gray-400); white-space: nowrap; }
+
+/* campo "fantasma": parece texto, vira campo ao passar o mouse/focar */
+.gk-sv-ghost {
+  flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 8px;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  font: inherit; color: var(--gk-gray-800); outline: none; text-overflow: ellipsis;
+  transition: border-color var(--gk-transition), background var(--gk-transition), box-shadow var(--gk-transition);
+}
+.gk-sv-ghost:hover { border-color: var(--gk-gray-200); }
+.gk-sv-ghost:focus { background: var(--gk-surface); border-color: var(--gk-accent); box-shadow: 0 0 0 3px var(--gk-accent-soft); }
+.gk-sv-cat-name { font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-sv-ch-name { font-size: 14px; font-weight: 500; }
+
+.gk-sv-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; border-radius: var(--gk-radius-sm); transition: background var(--gk-transition); }
+.gk-sv-row:hover { background: var(--gk-gray-100); }
+.gk-sv-row-icon { width: 18px; display: inline-flex; justify-content: center; flex-shrink: 0; color: var(--gk-gray-400); font-weight: 700; }
+.gk-sv-empty { padding: 10px 12px; font-size: 13px; color: var(--gk-gray-400); }
+
+.gk-sv-iconbtn {
+  width: 30px; height: 30px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; border-radius: 8px; color: var(--gk-gray-500); cursor: pointer;
+  transition: background var(--gk-transition), color var(--gk-transition);
+}
+.gk-sv-iconbtn:hover { background: var(--gk-gray-100); color: var(--gk-gray-800); }
+.gk-sv-iconbtn.gk-danger:hover { background: var(--gk-danger-soft); color: var(--gk-danger); }
+
+.gk-sv-pill {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; flex-shrink: 0;
+  background: transparent; border: 1px solid var(--gk-gray-200); border-radius: 999px;
+  font: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .3px; color: var(--gk-gray-500); cursor: pointer;
+  transition: background var(--gk-transition), color var(--gk-transition), border-color var(--gk-transition);
+}
+.gk-sv-pill:hover { border-color: var(--gk-accent); color: var(--gk-accent-strong); }
+.gk-sv-pill:disabled { opacity: .6; cursor: default; }
+.gk-sv-nsfw.gk-on, .gk-sv-nsfw.gk-on:hover { background: var(--gk-danger); border-color: var(--gk-danger); color: #fff; }
+
+/* cargos */
+.gk-sv-role { padding: 0; overflow: hidden; }
+.gk-sv-role.gk-new { border-style: dashed; }
+.gk-sv-role-head { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; user-select: none; }
+.gk-sv-role-head:hover { background: var(--gk-gray-100); }
+.gk-sv-role-head:focus-visible { outline: 2px solid var(--gk-accent); outline-offset: -2px; }
+.gk-sv-role-title { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; color: var(--gk-gray-800); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-sv-role-plus { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--gk-accent-soft); color: var(--gk-accent-strong); }
+.gk-sv-chevron { display: inline-flex; color: var(--gk-gray-400); transition: transform var(--gk-transition); }
+.gk-sv-role.gk-open .gk-sv-chevron { transform: rotate(180deg); }
+.gk-sv-role-body { display: none; padding: 6px 18px 18px; border-top: 1px solid var(--gk-gray-100); }
+.gk-sv-role.gk-open .gk-sv-role-body { display: block; }
+.gk-sv-role-body .gk-field { margin-top: 14px; margin-bottom: 0; }
+.gk-sv-role-body .gk-field > label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-role-perms { display: flex; flex-direction: column; gap: 2px; }
+.gk-sv-search { margin-bottom: 8px; }
+.gk-sv-assign-list { max-height: 220px; overflow-y: auto; background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-sm); }
+.gk-sv-assign-row { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; }
+.gk-sv-assign-row:hover { background: var(--gk-surface-sunken); }
+.gk-sv-assign-name { flex: 1; min-width: 0; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-sv-role-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.gk-sv-role-footer > :only-child { margin-left: auto; }
+
+/* membros */
+.gk-sv-members { padding: 6px; }
+.gk-sv-member { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--gk-radius-sm); cursor: pointer; transition: background var(--gk-transition); }
+.gk-sv-member:hover { background: var(--gk-gray-100); }
+.gk-sv-member-main { flex: 1; min-width: 0; }
+.gk-sv-member-main .gk-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.gk-sv-member-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.gk-sv-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; margin-bottom: 14px; border-radius: var(--gk-radius-md);
+  background: var(--gk-accent-soft); color: var(--gk-accent-strong); font-size: 13.5px; font-weight: 500;
+}
+
+/* Os <label> dentro de .gk-field herdam "display:block; margin-bottom" de
+   `.gk-field label`; estas regras (mais específicas) mantêm as linhas de
+   permissão e de atribuição de cargo como linhas flex. */
+.gk-sv-role-body .gk-role-perm-row,
+.gk-sv-role-body .gk-sv-assign-row { display: flex; margin-bottom: 0; font-size: inherit; font-weight: inherit; color: inherit; }
+.gk-sv-role-body .gk-role-perm-row { align-items: flex-start; gap: 10px; padding: 8px; }
+.gk-sv-role-body .gk-sv-assign-row { align-items: center; gap: 10px; padding: 7px 12px; }
+.gk-sv-role-body .gk-sv-assign-row input[type="checkbox"],
+.gk-sv-role-body .gk-role-perm-row input[type="checkbox"] { width: auto; flex-shrink: 0; }
+.gk-sv-role-body .gk-role-perm-row input[type="checkbox"] { margin-top: 3px; }
+.gk-sv-assign-row .gk-avatar::after { display: none; }
+.gk-sv-assign-row .gk-avatar img { width: 24px; height: 24px; border-radius: 7px; }
