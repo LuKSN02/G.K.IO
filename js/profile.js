@@ -181,6 +181,7 @@ function playBannerVideoWhileOpen(video, overlay, modal) {
   });
   function stop() {
     observer.disconnect();
+    clearInterval(watchdog);
     try { video.pause(); } catch (e) { /* noop */ }
     video.muted = true;
     video.removeAttribute('src');
@@ -188,6 +189,12 @@ function playBannerVideoWhileOpen(video, overlay, modal) {
   }
   observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
   observer.observe(modal, { childList: true });
+  // Rede de segurança: se o cartão sumir por qualquer outro caminho
+  // (display:none, aba em segundo plano...), o som para em até meio segundo.
+  const watchdog = setInterval(() => {
+    const hidden = !video.isConnected || !overlay.classList.contains('gk-open') || document.hidden;
+    if (hidden) stop();
+  }, 400);
 
   video.muted = false;
   const playing = video.play();
