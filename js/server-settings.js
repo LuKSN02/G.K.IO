@@ -165,6 +165,7 @@ function renderGeralSection(content) {
           'Excluir servidor',
           `Tem certeza que quer excluir "${server.name}"? Essa ação não pode ser desfeita.`,
           async () => { await deleteServerPermanently(serverId); closeServerSettingsModal(); location.reload(); },
+          { confirmLabel: 'Excluir servidor' },
         ),
       }, 'Excluir servidor'),
     ]));
@@ -281,6 +282,7 @@ function renderCanaisSection(content) {
       iconBtn('trash', 'Excluir categoria', () => confirmDangerAction(
         'Excluir categoria', `Excluir a categoria "${cat.name}"?`,
         async () => { await deleteCategory(serverId, cat.id); toast('Categoria excluída.'); },
+        { confirmLabel: 'Excluir categoria' },
       ), { danger: true }),
     ]));
 
@@ -296,8 +298,9 @@ function renderCanaisSection(content) {
       if (isText) row.appendChild(nsfwPill(serverId, ch));
       row.appendChild(iconBtn('lock', 'Permissões do canal (por cargo)', () => openChannelPermissionsModal(serverId, ch)));
       row.appendChild(iconBtn('trash', 'Excluir canal', () => confirmDangerAction(
-        'Excluir canal', `Excluir #${ch.name}? As mensagens desse canal deixam de ser acessíveis.`,
+        'Excluir canal', `Excluir o canal "#${ch.name}"? As mensagens desse canal deixam de ser acessíveis.`,
         () => deleteChannel(serverId, ch.id),
+        { confirmLabel: 'Excluir canal' },
       ), { danger: true }));
       card.appendChild(row);
     }
@@ -464,7 +467,7 @@ function renderRoleCard(serverId, role, members) {
       onclick: () => confirmDangerAction('Excluir cargo', `Excluir o cargo "${role.name}"? Ele será removido de todos os membros.`, async () => {
         expandedRoles.delete(role.id);
         await deleteRole(serverId, role.id);
-      }),
+      }, { confirmLabel: 'Excluir cargo' }),
     }, [icon('trash', { size: 14 }), ' Excluir cargo']));
   }
   footer.push(saveBtn);
@@ -534,8 +537,9 @@ function renderMembrosSection(content) {
     }
     if (iCanKick && role !== 'owner' && m.uid !== myUid) {
       actions.push(iconBtn('block', 'Expulsar do servidor', () => confirmDangerAction(
-        'Expulsar membro', `Remover ${m.user.displayName || m.user.username} deste servidor?`,
+        'Expulsar membro', `Remover "${m.user.displayName || m.user.username}" deste servidor?`,
         () => kickMember(serverId, m.uid),
+        { confirmLabel: 'Expulsar', iconName: 'block' },
       ), { danger: true }));
     }
 
@@ -552,7 +556,7 @@ function renderMembrosSection(content) {
       el('div', { class: 'gk-settings-card-title' }, 'Sair do servidor'),
       el('button', {
         class: 'gk-btn gk-btn-danger', type: 'button',
-        onclick: () => confirmDangerAction('Sair do servidor', `Sair de "${server.name}"? Você pode entrar de novo com um convite.`, async () => { await leaveServer(serverId); closeServerSettingsModal(); location.reload(); }),
+        onclick: () => confirmDangerAction('Sair do servidor', `Sair de "${server.name}"? Você pode entrar de novo com um convite.`, async () => { await leaveServer(serverId); closeServerSettingsModal(); location.reload(); }, { confirmLabel: 'Sair do servidor', iconName: 'power' }),
       }, 'Sair do servidor'),
     ]));
   }
@@ -628,21 +632,47 @@ function renderConvitesSection(content) {
 // ============================================================
 // Confirmação para ações destrutivas — reaproveita o modal genérico.
 // ============================================================
-function confirmDangerAction(title, message, onConfirm) {
+// Diálogo de confirmação para ações destrutivas (excluir cargo/canal/servidor,
+// expulsar, sair...). O que estiver entre aspas na mensagem vira negrito.
+// opts: { confirmLabel, iconName }. Esc ou "Cancelar" fecham; o foco começa
+// em "Cancelar" para que um Enter distraído não confirme a exclusão.
+function confirmDangerAction(title, message, onConfirm, { confirmLabel = 'Confirmar', iconName = 'trash' } = {}) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
-  modal.appendChild(el('h2', {}, title));
-  modal.appendChild(el('p', { class: 'gk-modal-sub' }, message));
-  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
-    el('button', {
-      class: 'gk-btn gk-btn-danger',
-      onclick: async () => {
-        overlay.classList.remove('gk-open');
-        try { await onConfirm(); } catch (err) { toast(err.message || 'Não foi possível concluir a ação.', 'danger'); }
-      },
-    }, 'Confirmar'),
+
+  const sub = el('p', { class: 'gk-modal-sub' });
+  for (const part of message.split(/("[^"]+")/)) {
+    if (!part) continue;
+    if (part.length > 2 && part.startsWith('"') && part.endsWith('"')) sub.appendChild(el('strong', {}, part));
+    else sub.appendChild(document.createTextNode(part));
+  }
+
+  const onKey = (e) => {
+    if (!overlay.classList.contains('gk-open')) { document.removeEventListener('keydown', onKey, true); return; }
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+  };
+  const close = () => {
+    overlay.classList.remove('gk-open');
+    document.removeEventListener('keydown', onKey, true);
+  };
+
+  const cancelBtn = el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: close }, 'Cancelar');
+  const confirmBtn = el('button', {
+    class: 'gk-btn gk-confirm-btn', type: 'button',
+    onclick: async () => {
+      close();
+      try { await onConfirm(); } catch (err) { toast(err.message || 'Não foi possível concluir a ação.', 'danger'); }
+    },
+  }, [icon(iconName, { size: 15 }), ' ' + confirmLabel]);
+
+  modal.appendChild(el('div', { class: 'gk-confirm' }, [
+    el('div', { class: 'gk-confirm-icon' }, [icon(iconName, { size: 24 })]),
+    el('h2', {}, title),
+    sub,
+    el('div', { class: 'gk-modal-actions' }, [cancelBtn, confirmBtn]),
   ]));
   overlay.classList.add('gk-open');
+  document.addEventListener('keydown', onKey, true);
+  cancelBtn.focus();
 }

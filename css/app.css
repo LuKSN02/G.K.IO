@@ -2649,3 +2649,20 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-sv-role-body .gk-role-perm-row input[type="checkbox"] { margin-top: 3px; }
 .gk-sv-assign-row .gk-avatar::after { display: none; }
 .gk-sv-assign-row .gk-avatar img { width: 24px; height: 24px; border-radius: 7px; }
+
+/* ---------- Diálogo de confirmação de ação destrutiva ---------- */
+.gk-confirm { text-align: center; padding: 6px 4px 0; }
+.gk-confirm-icon {
+  width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--gk-danger-soft); color: var(--gk-danger);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--gk-danger) 10%, transparent);
+}
+.gk-confirm h2 { margin: 0 0 8px; font-size: 19px; }
+.gk-confirm .gk-modal-sub { margin: 0 0 24px; font-size: 13.5px; line-height: 1.55; }
+.gk-confirm .gk-modal-sub strong { color: var(--gk-gray-800); font-weight: 700; overflow-wrap: anywhere; }
+.gk-confirm .gk-modal-actions { margin-top: 0; gap: 10px; }
+.gk-confirm .gk-modal-actions .gk-btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.gk-confirm-btn { background: var(--gk-danger); border: 1px solid var(--gk-danger); color: #fff; font-weight: 700; }
+.gk-confirm-btn:hover { filter: brightness(1.1); }
+.gk-confirm-btn:focus-visible, .gk-confirm .gk-btn-ghost:focus-visible { outline: 2px solid var(--gk-accent); outline-offset: 2px; }
