@@ -9,7 +9,7 @@ import { getZoomPrefs, setZoom, setZoomHotkeys, isElectron, ZOOM_MIN, ZOOM_MAX, 
 import { recordCombo } from './hotkeys.js';
 import { syncShortcuts, applyBlurAttr, applyStreamerAttr } from './desktop.js';
 import {
-  isSafeMode, listThemes, listPlugins, addTheme, setThemeEnabled, removeTheme,
+  isSafeMode, listThemes, listPlugins, addTheme, setThemeEnabled, setThemeDiscord, removeTheme,
   addPlugin, setPluginEnabled, removePlugin,
 } from './extensions.js';
 
@@ -107,12 +107,13 @@ function readFile(file) {
   });
 }
 
-function itemRow(item, { onToggle, onRemove, kind }) {
+function itemRow(item, { onToggle, onRemove, kind, extra }) {
   return el('div', { class: 'gk-ext-item' }, [
     el('div', { class: 'gk-ext-item-main' }, [
       el('div', { class: 'gk-ext-item-name' }, item.name),
       item.error ? el('div', { class: 'gk-ext-item-error' }, 'Erro: ' + item.error) : null,
     ]),
+    extra || null,
     el('div', { class: 'gk-toggle' + (item.enabled ? ' gk-on' : ''), onclick: (e) => { const t = e.currentTarget; const n = !t.classList.contains('gk-on'); t.classList.toggle('gk-on', n); onToggle(n); } }),
     el('button', { class: 'gk-btn gk-btn-ghost gk-ext-remove', title: 'Remover ' + kind, onclick: onRemove }, [icon('trash', { size: 14 })]),
   ]);
@@ -163,9 +164,14 @@ export function renderExtensionsSection(content, sectionHeader) {
     kind: 'tema',
     onToggle: (v) => setThemeEnabled(t.id, v),
     onRemove: () => { removeTheme(t.id); rerender(); },
+    extra: el('button', {
+      class: 'gk-btn gk-btn-ghost',
+      title: 'Camada de compatibilidade com temas do Discord (BetterDiscord/Vencord). Ligada automaticamente quando o CSS parece ser do Discord.',
+      onclick: () => { setThemeDiscord(t.id, !t.discord); rerender(); },
+    }, 'Discord: ' + (t.discord ? 'sim' : 'não')),
   }));
   content.appendChild(card('Temas (CSS)', [
-    themeList.length ? el('div', { class: 'gk-ext-list' }, themeList) : el('div', { class: 'gk-hint gk-ext-note' }, 'Nenhum tema instalado. Cole um CSS abaixo — dica: sobrescreva as variáveis --gk-* em :root.'),
+    themeList.length ? el('div', { class: 'gk-ext-list' }, themeList) : el('div', { class: 'gk-hint gk-ext-note' }, 'Nenhum tema instalado. Cole um CSS abaixo — dica: sobrescreva as variáveis --gk-* em :root. Temas do Discord (BetterDiscord/Vencord, como Fluent e OldCord) também funcionam.'),
     buildAdder({
       kind: 'tema', accept: '.css,text/css', placeholder: ':root { --gk-accent: #ff5d8f; }\n@import url("https://...");',
       onAdd: (n, css) => { addTheme(n, css); rerender(); },
