@@ -58,6 +58,27 @@ service cloud.firestore {
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.createdAt == resource.data.createdAt;
     }
+    // Votos de enquete: qualquer pessoa da conversa, só no campo 'votes' e só
+    // enquanto a enquete não foi encerrada.
+    function isValidVoteUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+        && !resource.data.get('pollClosed', false)
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+    // Encerrar a enquete: só o autor, só o campo 'pollClosed'.
+    function isValidPollClose() {
+      return resource.data.authorId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollClosed'])
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+    // Fixar/desafixar mensagem: só os campos de pin. QUEM pode fixar é decidido
+    // por quem chama (canal: quem gerencia canais; DM: qualquer participante).
+    function isValidPinUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pinned', 'pinnedBy', 'pinnedAt'])
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
 
     // ---------- Usuários e perfil ----------
     // Campos de status Prime (role, primeSince, customBadges) NUNCA podem
@@ -71,7 +92,9 @@ service cloud.firestore {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity'])
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs'])
+          // notifPrefs = { servers:{id:nível}, channels:{id:nível}, dms:{id:nível} } (silenciar / só menções)
+          && (!('notifPrefs' in request.resource.data) || request.resource.data.notifPrefs is map)
           // activity = { name, startedAt } ou null (jogo detectado pelo app desktop)
           && (!('activity' in request.resource.data) || request.resource.data.activity == null
               || (request.resource.data.activity is map && request.resource.data.activity.name is string
@@ -127,8 +150,9 @@ service cloud.firestore {
           && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
           && request.resource.data.authorId == request.auth.uid;
         allow update: if signedIn()
-          && (isValidMessageEdit()
-              || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds && isValidReactionUpdate()));
+          && (isValidMessageEdit() || isValidPollClose()
+              || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
+                  && (isValidReactionUpdate() || isValidVoteUpdate() || isValidPinUpdate())));
         // Numa DM não existe moderação: só o próprio autor apaga o que escreveu.
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
       }
@@ -225,13 +249,16 @@ service cloud.firestore {
         // badge de não lida na sidebar. Renomear, mudar tipo, overwrites
         // etc. continuam exclusivos de quem gerencia canais (regra acima).
         allow update: if signedIn() && isServerMember(serverId)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageAuthorId']);
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt', 'lastMessageAuthorId', 'lastMentionedUids'])
+          // lastMentionedUids: quem foi @mencionado/respondido na última mensagem (badge do nível "só menções")
+          && request.resource.data.get('lastMentionedUids', []) is list;
 
         match /messages/{msgId} {
           allow read: if signedIn() && isServerMember(serverId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
           allow update: if signedIn() && isServerMember(serverId)
-            && (isValidMessageEdit() || isValidReactionUpdate());
+            && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidPollClose()
+                || (isValidPinUpdate() && canManageChannels(serverId)));
           // O autor apaga a própria mensagem; quem modera o canal apaga a de
           // qualquer um (mesma régua usada para gerenciar canais).
           allow delete: if signedIn() && isServerMember(serverId)

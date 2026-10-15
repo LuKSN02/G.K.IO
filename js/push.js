@@ -21,6 +21,7 @@ import { auth, userDoc, getDoc, updateDoc, getIdToken } from './db.js';
 import { toast } from './state.js';
 import { isNativeAndroid } from './native-bridge.js';
 import { pushConfig } from './push-config.js';
+import { levelFromPrefs, shouldAlert } from './notify-prefs.js';
 
 let onNotificationTap = null; // callback registrado por app.js (navega pra DM/canal certo)
 
@@ -81,13 +82,16 @@ export async function initPushNotifications() {
 // Best-effort: nunca deixa uma falha no push derrubar o envio da
 // mensagem em si (ver chat.js) — por isso todo erro aqui só vai pro
 // console, nunca pra um toast que a pessoa que está enviando veria.
-async function sendPushToUid(uid, { title, body, data }) {
+async function sendPushToUid(uid, { title, body, data, filter }) {
   if (!pushConfig.tokenEndpoint || pushConfig.tokenEndpoint.startsWith('COLE_AQUI')) return;
   if (!auth.currentUser || uid === auth.currentUser.uid) return;
   try {
     const snap = await getDoc(userDoc(uid));
-    const fcmToken = snap.exists() ? snap.data().fcmToken : null;
+    const userData = snap.exists() ? snap.data() : null;
+    const fcmToken = userData ? userData.fcmToken : null;
     if (!fcmToken) return; // pessoa nunca abriu o APK (ou push ainda não registrou) — nada a fazer
+    // Quem recebe pode ter silenciado essa conversa (ou pedido só @menções).
+    if (filter && !shouldAlert(levelFromPrefs(userData.notifPrefs, filter.ctx), filter.mentioned)) return;
 
     const idToken = await getIdToken(auth.currentUser);
     const res = await fetch(pushConfig.tokenEndpoint, {
@@ -110,17 +114,19 @@ export function notifyDmMessage(otherUid, { authorName, preview, dmId }) {
     title: authorName || 'Nova mensagem',
     body: preview || 'Enviou uma mensagem.',
     data: { type: 'dm', dmId },
+    filter: { ctx: { dmId }, mentioned: false },
   });
 }
 
 // Chamada por chat.js depois de enviar uma mensagem de canal — avisa
 // todo mundo do servidor, exceto quem mandou (best-effort, em paralelo).
-export function notifyChannelMessage(memberUids, { authorName, preview, serverId, channelId, channelName }) {
+export function notifyChannelMessage(memberUids, { authorName, preview, serverId, channelId, channelName, mentionedUids = [] }) {
   for (const uid of memberUids) {
     sendPushToUid(uid, {
       title: `${authorName} em #${channelName}`,
       body: preview || 'Enviou uma mensagem.',
       data: { type: 'channel', serverId, channelId },
+      filter: { ctx: { serverId, channelId }, mentioned: mentionedUids.includes(uid) },
     });
   }
 }

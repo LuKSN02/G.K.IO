@@ -17,6 +17,11 @@ import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName,
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
+import { messagePreview, extractMentionedUids } from './message-utils.js';
+import { effectiveLevel, shouldAlert, refreshNotifButton, openNotifModal, onNotifPrefsChange } from './notify-prefs.js';
+import { openPinnedPanel } from './pins.js';
+import { openPollModal, buildPollCard } from './polls.js';
+import { startVoiceRecording, cancelVoiceRecording, buildVoicePlayer } from './voice-messages.js';
 import { icon } from './icons.js';
 import { notifyDmMessage, notifyChannelMessage } from './push.js';
 // Import circular com servers.js (que importa selectChannel daqui). É seguro:
@@ -30,6 +35,7 @@ let lastSeenMessageId = null;
 let isFirstSnapshotForConversation = true;
 let currentChannelName = '';
 let currentDmOtherUid = null;
+let replyingTo = null; // { id, authorId, authorName, preview } — mensagem que está sendo respondida
 
 // ---------- Edição de mensagem ----------
 let editingMessageId = null; // id da mensagem sendo editada no momento (ou null)
@@ -70,6 +76,7 @@ export function selectChannel(serverId, channelId, name, readOnly = false) {
   setBaseSubtitle(readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto');
   document.getElementById('gk-call-btn').style.display = 'none';
   applyComposerReadOnly(readOnly);
+  showConversationButtons();
   attachMessagesListener(channelMessagesCol(serverId, channelId), channelId);
   listenTyping({ serverId, channelId }, applyTypingLabel);
   refreshSidebarActiveState();
@@ -111,6 +118,7 @@ function applyComposerReadOnly(readOnly) {
   textarea.disabled = readOnly;
   sendBtn.disabled = readOnly;
   attachBtn.disabled = readOnly;
+  for (const id of ['gk-poll-btn', 'gk-voice-btn']) document.getElementById(id).disabled = readOnly;
   textarea.placeholder = readOnly ? 'Você não pode enviar mensagens neste canal.' : 'Escreva uma mensagem...';
 }
 
@@ -127,6 +135,7 @@ export function selectDm(dmId, title, subtitle, otherUid = null) {
   setBaseSubtitle(subtitle || '');
   document.getElementById('gk-call-btn').style.display = 'inline-flex';
   applyComposerReadOnly(false);
+  showConversationButtons();
   attachMessagesListener(dmMessagesCol(dmId), dmId);
   listenTyping({ dmId }, applyTypingLabel);
   refreshSidebarActiveState();
@@ -145,6 +154,9 @@ function attachMessagesListener(colRef, conversationId) {
   isFirstSnapshotForConversation = true;
   editingMessageId = null;
   editingDraft = '';
+  replyingTo = null;
+  renderReplyBar();
+  cancelVoiceRecording(); // gravação em andamento não "viaja" pra outra conversa
   renderedMessageIds.clear();
   hasRenderedConversationOnce = false;
   clearPendingFile(); // anexo escolhido e não enviado não "viaja" pra outra conversa
@@ -186,8 +198,12 @@ function notifyIfNewIncomingMessage(messages) {
   lastSeenMessageId = last.id;
   if (!isNew || isFirstSnapshotForConversation) { isFirstSnapshotForConversation = false; return false; }
   if (last.authorId === state.user?.uid) return false;
-  playNotifSound();
-  showDesktopNotification(last.authorName || 'Nova mensagem', last.content || '📎 Anexo enviado', last.authorAvatar);
+  // Silenciada / "só @menções": a mensagem aparece, mas sem som nem notificação.
+  const mentioned = (last.mentionedUids || []).includes(state.user?.uid);
+  if (shouldAlert(effectiveLevel(currentConvCtx() || {}), mentioned)) {
+    playNotifSound();
+    showDesktopNotification(last.authorName || 'Nova mensagem', last.content || messagePreview(last) || '📎 Anexo enviado', last.authorAvatar);
+  }
   return true;
 }
 
@@ -291,6 +307,8 @@ function renderMessages(messages, isNewIncoming = false) {
     if (isEditingThis) {
       row.appendChild(buildEditBox(msg));
     } else {
+      if (msg.pinned) row.appendChild(el('div', { class: 'gk-msg-pin-tag' }, [icon('pin', { size: 12 }), ' Fixada']));
+      if (msg.replyTo) row.appendChild(buildReplyRef(msg.replyTo));
       if (msg.content) {
         const classes = ['gk-msg-line'];
         if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
@@ -309,11 +327,23 @@ function renderMessages(messages, isNewIncoming = false) {
           onclick: (e) => { e.stopPropagation(); openEmojiPickerForReaction(e.currentTarget, (key) => toggleReaction(msg, key)); },
         }, [icon('emojiSmile', { size: 15 })]),
       ];
+      actionButtons.unshift(el('button', {
+        class: 'gk-msg-action-btn', type: 'button', title: 'Responder',
+        onclick: () => startReply(msg),
+      }, [icon('reply', { size: 15 })]));
       if (msg.content) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Copiar texto',
           onclick: () => copyMessageText(msg.content),
         }, [icon('copy', { size: 14 })]));
+      }
+      // Fixar: em canal, quem modera o canal; em DM, qualquer um dos dois.
+      if (canPinHere()) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn' + (msg.pinned ? ' gk-msg-action-on' : ''), type: 'button',
+          title: msg.pinned ? 'Desafixar mensagem' : 'Fixar mensagem',
+          onclick: () => togglePin(msg),
+        }, [icon('pin', { size: 14 })]));
       }
       // Editar é só do autor, e agora também quando a mensagem tem um
       // anexo sem legenda (dava pra reagir/apagar mas nunca editar pra
@@ -352,12 +382,15 @@ function renderMessages(messages, isNewIncoming = false) {
         ]));
       } else if (msg.attachmentType === 'video') {
         row.appendChild(el('div', { class: 'gk-msg-attachment' }, [el('video', { src: msg.attachmentUrl, controls: 'true' })]));
+      } else if (msg.attachmentType === 'audio') {
+        row.appendChild(buildVoicePlayer(msg));
       } else {
         row.appendChild(el('a', { class: 'gk-msg-file', href: msg.attachmentUrl, target: '_blank' }, [
           icon('attach', { size: 14 }), el('span', {}, msg.attachmentName || 'Arquivo anexado'),
         ]));
       }
     }
+    if (msg.poll && !isEditingThis) row.appendChild(buildPollCard(msg, buildCtx()));
     body.appendChild(row);
 
     if (!isEditingThis) {
@@ -523,6 +556,120 @@ async function toggleReaction(msg, key) {
   }
 }
 
+// ---------- Responder ----------
+function startReply(msg) {
+  replyingTo = { id: msg.id, authorId: msg.authorId, authorName: msg.authorName || 'Usuário', preview: messagePreview(msg, 100) };
+  renderReplyBar();
+  document.getElementById('gk-composer-input').focus();
+}
+
+function cancelReply() {
+  replyingTo = null;
+  renderReplyBar();
+}
+
+function renderReplyBar() {
+  const bar = document.getElementById('gk-composer-reply');
+  if (!bar) return;
+  bar.innerHTML = '';
+  if (!replyingTo) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.appendChild(icon('reply', { size: 14 }));
+  bar.appendChild(el('div', { class: 'gk-reply-bar-text' }, [
+    el('span', {}, 'Respondendo a '), el('b', {}, replyingTo.authorName), el('small', {}, replyingTo.preview),
+  ]));
+  bar.appendChild(el('button', {
+    class: 'gk-sv-iconbtn', type: 'button', id: 'gk-reply-cancel', title: 'Cancelar resposta', 'aria-label': 'Cancelar resposta',
+    onclick: cancelReply,
+  }, [icon('close', { size: 14 })]));
+}
+
+// Citação (acima da mensagem que responde) — clicar leva até a original.
+function buildReplyRef(r) {
+  return el('button', {
+    class: 'gk-msg-reply-ref', type: 'button', title: 'Ir para a mensagem original',
+    onclick: () => { if (!jumpToMessage(r.id)) toast('A mensagem original é mais antiga que as últimas 200 — role a conversa para cima.'); },
+  }, [icon('reply', { size: 12 }), el('b', {}, r.authorName || 'Usuário'), el('span', {}, r.preview || 'Mensagem')]);
+}
+
+// Rola até a mensagem e dá um destaque rápido. false = não está na tela.
+function jumpToMessage(id) {
+  const box = document.getElementById('gk-messages');
+  const row = box.querySelector(`.gk-msg-row[data-msg-id="${CSS.escape(id)}"]`);
+  if (!row) return false;
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.classList.remove('gk-msg-flash');
+  void row.offsetWidth; // reinicia a animação se já estava piscando
+  row.classList.add('gk-msg-flash');
+  setTimeout(() => row.classList.remove('gk-msg-flash'), 1800);
+  return true;
+}
+
+// ---------- Fixar ----------
+function canPinHere() {
+  if (state.currentDmId) return true; // DM: qualquer um dos dois
+  return canModerateCurrentChannel();
+}
+
+async function togglePin(msg) {
+  const ref = getMessageRef(msg.id);
+  if (!ref) return false;
+  try {
+    await updateDoc(ref, msg.pinned
+      ? { pinned: false, pinnedBy: null, pinnedAt: null }
+      : { pinned: true, pinnedBy: state.user.uid, pinnedAt: serverTimestamp() });
+    toast(msg.pinned ? 'Mensagem desafixada.' : 'Mensagem fixada.');
+    return true;
+  } catch (err) {
+    toast('Não foi possível alterar a fixação.', 'danger');
+    return false;
+  }
+}
+
+// ---------- Contexto repassado aos módulos de fixadas / enquetes / voz ----------
+function getMessagesCol() {
+  if (state.currentChannelId && state.currentServerId) return channelMessagesCol(state.currentServerId, state.currentChannelId);
+  if (state.currentDmId) return dmMessagesCol(state.currentDmId);
+  return null;
+}
+
+function buildCtx() {
+  return {
+    getMessageRef, getMessagesCol, canPin: canPinHere, jumpToMessage, togglePin,
+    setUploading: setAttachmentUploading,
+    // Enquete/voz também carregam a resposta em andamento e as menções.
+    postPayload: async (extra, opts) => {
+      const payload = { ...basePayload(), ...extra };
+      applyReplyAndMentions(payload);
+      const ok = await postPayload(payload, opts);
+      if (ok) cancelReply();
+      return ok;
+    },
+  };
+}
+
+// ---------- Notificações da conversa aberta ----------
+function currentConvCtx() {
+  if (state.currentChannelId && state.currentServerId) return { serverId: state.currentServerId, channelId: state.currentChannelId };
+  if (state.currentDmId) return { dmId: state.currentDmId };
+  return null;
+}
+
+function showConversationButtons() {
+  for (const id of ['gk-pins-btn', 'gk-conv-notif-btn']) {
+    const b = document.getElementById(id);
+    if (b) b.style.display = 'inline-flex';
+  }
+  refreshNotifButton(currentConvCtx());
+}
+
+function openNotifPanel() {
+  const ctx = currentConvCtx();
+  if (!ctx) return;
+  openNotifModal({ ...ctx, channelName: currentChannelName }, () => refreshNotifButton(ctx));
+}
+onNotifPrefsChange(() => refreshNotifButton(currentConvCtx()));
+
 // ---------- Edição de mensagem própria ----------
 function buildEditBox(msg) {
   const textarea = el('textarea', {
@@ -623,16 +770,8 @@ export async function sendCurrentMessage() {
   if (!text && !pendingFile) return;
 
   const uid = auth.currentUser.uid;
-  const payload = {
-    authorId: uid,
-    authorName: state.user.displayName || state.user.username,
-    authorAvatar: state.user.avatarUrl || '',
-    authorRole: state.user.role || 'free',
-    authorTag: state.user.tag || '',
-    authorFrameStyle: state.user.frameStyle || 'none',
-    content: text,
-    createdAt: serverTimestamp(),
-  };
+  const payload = { ...basePayload(), content: text };
+  applyReplyAndMentions(payload);
 
   if (pendingFile) {
     setAttachmentUploading(true);
@@ -652,32 +791,79 @@ export async function sendCurrentMessage() {
   textarea.value = '';
   autoResizeComposer();
   stopTyping(); // a mensagem já saiu — não faz sentido continuar mostrando "digitando..."
+  cancelReply();
 
+  await postPayload(payload, {
+    preview: text || (payload.attachmentUrl ? 'Enviou um anexo.' : ''),
+    dmPreview: text.slice(0, 80),
+  });
+}
+
+// Campos que toda mensagem carrega (autor + carimbo de data).
+function basePayload() {
+  return {
+    authorId: auth.currentUser.uid,
+    authorName: state.user.displayName || state.user.username,
+    authorAvatar: state.user.avatarUrl || '',
+    authorRole: state.user.role || 'free',
+    authorTag: state.user.tag || '',
+    authorFrameStyle: state.user.frameStyle || 'none',
+    createdAt: serverTimestamp(),
+  };
+}
+
+// Anota na mensagem a resposta (replyTo) e quem foi @mencionado — quem é
+// respondido conta como mencionado (para "só @menções" e o ponto de não lida).
+function applyReplyAndMentions(payload) {
+  const members = state.currentServerId ? state.serverMembersCache.get(state.currentServerId) : null;
+  const mentioned = new Set(extractMentionedUids(payload.content || '', members));
+  if (replyingTo) {
+    payload.replyTo = { id: replyingTo.id, authorId: replyingTo.authorId || '', authorName: replyingTo.authorName, preview: replyingTo.preview };
+    if (replyingTo.authorId) mentioned.add(replyingTo.authorId);
+  }
+  mentioned.delete(payload.authorId);
+  if (mentioned.size) payload.mentionedUids = [...mentioned];
+}
+
+// Grava a mensagem na conversa aberta (canal ou DM), atualiza o "ponteiro" de
+// última atividade (badge de não lida) e dispara o push. Devolve true/false.
+async function postPayload(payload, { preview = '', dmPreview, skipIndex = false, errorMsg = 'Não foi possível enviar a mensagem.' } = {}) {
+  const uid = payload.authorId;
+  const mentioned = payload.mentionedUids || [];
   try {
     if (state.currentChannelId && state.currentServerId) {
-      await addDoc(channelMessagesCol(state.currentServerId, state.currentChannelId), payload);
+      const serverId = state.currentServerId;
+      const channelId = state.currentChannelId;
+      await addDoc(channelMessagesCol(serverId, channelId), payload);
       // Denormalizado no próprio canal — é o que a sidebar usa pra saber se
       // há mensagem "nova" ali (ver isConversationUnread em unread.js).
-      await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
-        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
+      const pointer = { lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid };
+      try {
+        await updateDoc(channelDoc(serverId, channelId), { ...pointer, lastMentionedUids: mentioned });
+      } catch (err) {
+        // Regras do Firestore ainda sem o campo lastMentionedUids (app novo antes
+        // de publicar as regras novas): manda só o ponteiro, o resto segue igual.
+        await updateDoc(channelDoc(serverId, channelId), pointer);
+      }
+      notifyChannelMessage(otherServerMemberUids(serverId, uid), {
+        authorName: payload.authorName, preview, serverId, channelId, channelName: currentChannelName, mentionedUids: mentioned,
       });
-      notifyChannelMessage(otherServerMemberUids(state.currentServerId, uid), {
-        authorName: payload.authorName, preview: text || (payload.attachmentUrl ? 'Enviou um anexo.' : ''),
-        serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
-      });
-      indexAttachment(payload, { serverId: state.currentServerId, channelId: state.currentChannelId });
+      if (!skipIndex) indexAttachment(payload, { serverId, channelId });
     } else if (state.currentDmId) {
-      await addDoc(dmMessagesCol(state.currentDmId), payload);
-      await updateDoc(dmDoc(state.currentDmId), {
-        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: text.slice(0, 80),
+      const dmId = state.currentDmId;
+      await addDoc(dmMessagesCol(dmId), payload);
+      await updateDoc(dmDoc(dmId), {
+        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: dmPreview ?? preview.slice(0, 80),
       });
       if (currentDmOtherUid) {
-        notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: text || 'Enviou um anexo.', dmId: state.currentDmId });
+        notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: preview || 'Enviou uma mensagem.', dmId });
       }
-      indexAttachment(payload, { dmId: state.currentDmId });
+      if (!skipIndex) indexAttachment(payload, { dmId });
     }
+    return true;
   } catch (err) {
-    toast('Não foi possível enviar a mensagem.', 'danger');
+    toast(errorMsg, 'danger');
+    return false;
   }
 }
 
@@ -754,44 +940,16 @@ export async function sendAttachmentMessage(url, attachmentType, attachmentName)
     toast('Selecione uma conversa antes.', 'danger');
     return;
   }
-  const uid = auth.currentUser.uid;
   const payload = {
-    authorId: uid,
-    authorName: state.user.displayName || state.user.username,
-    authorAvatar: state.user.avatarUrl || '',
-    authorRole: state.user.role || 'free',
-    authorTag: state.user.tag || '',
-    authorFrameStyle: state.user.frameStyle || 'none',
+    ...basePayload(),
     content: '',
     attachmentUrl: url,
     attachmentType,
     attachmentName: attachmentName || 'GIF',
-    createdAt: serverTimestamp(),
   };
-  try {
-    if (state.currentChannelId && state.currentServerId) {
-      await addDoc(channelMessagesCol(state.currentServerId, state.currentChannelId), payload);
-      await updateDoc(channelDoc(state.currentServerId, state.currentChannelId), {
-        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid,
-      });
-      notifyChannelMessage(otherServerMemberUids(state.currentServerId, uid), {
-        authorName: payload.authorName, preview: 'Enviou um GIF.',
-        serverId: state.currentServerId, channelId: state.currentChannelId, channelName: currentChannelName,
-      });
-      indexAttachment(payload, { serverId: state.currentServerId, channelId: state.currentChannelId });
-    } else if (state.currentDmId) {
-      await addDoc(dmMessagesCol(state.currentDmId), payload);
-      await updateDoc(dmDoc(state.currentDmId), {
-        lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid, lastMessagePreview: '📎 GIF',
-      });
-      if (currentDmOtherUid) {
-        notifyDmMessage(currentDmOtherUid, { authorName: payload.authorName, preview: 'Enviou um GIF.', dmId: state.currentDmId });
-      }
-      indexAttachment(payload, { dmId: state.currentDmId });
-    }
-  } catch (err) {
-    toast('Não foi possível enviar o GIF.', 'danger');
-  }
+  applyReplyAndMentions(payload);
+  const ok = await postPayload(payload, { preview: 'Enviou um GIF.', dmPreview: '📎 GIF', errorMsg: 'Não foi possível enviar o GIF.' });
+  if (ok) cancelReply();
 }
 
 // ---------- Autocomplete de @menção ----------
@@ -922,6 +1080,7 @@ export function wireComposer() {
     // ele — só cai pro comportamento normal (enviar mensagem) quando não
     // há nenhuma sugestão em exibição.
     if (handleMentionKeydown(e, textarea)) return;
+    if (e.key === 'Escape' && replyingTo) { e.preventDefault(); cancelReply(); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendCurrentMessage();
@@ -933,6 +1092,10 @@ export function wireComposer() {
   });
   sendBtn.addEventListener('click', sendCurrentMessage);
   document.getElementById('gk-attach-btn').addEventListener('click', () => fileInput.click());
+  document.getElementById('gk-voice-btn').addEventListener('click', () => startVoiceRecording(buildCtx()));
+  document.getElementById('gk-poll-btn').addEventListener('click', () => openPollModal(buildCtx()));
+  document.getElementById('gk-pins-btn').addEventListener('click', () => openPinnedPanel(buildCtx()));
+  document.getElementById('gk-conv-notif-btn').addEventListener('click', openNotifPanel);
   fileInput.addEventListener('change', () => {
     if (fileInput.files[0]) setPendingFile(fileInput.files[0]);
     fileInput.value = '';

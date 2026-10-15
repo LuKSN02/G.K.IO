@@ -15,12 +15,17 @@ import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
 import { openImageCropper } from './cropper.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
+import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
 
 // Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
 // do servidor atualmente aberto pra atualizar os indicadores de não lida.
 onReadStatesChange(() => {
+  if (state.currentServerId) renderServerSidebar(state.currentServerId, lastCategories, lastChannels);
+});
+// Silenciar / "só @menções" também muda o que a sidebar mostra.
+onNotifPrefsChange(() => {
   if (state.currentServerId) renderServerSidebar(state.currentServerId, lastCategories, lastChannels);
 });
 
@@ -564,9 +569,12 @@ function renderServerSidebar(serverId, categories, channels) {
       // histórico de "mensagens" da mesma forma) — a própria conversa
       // aberta nunca mostra o indicador, ela já é marcada como lida em
       // tempo real (ver markConversationRead em chat.js).
-      const unread = ch.type === 'text' && !isActive && isConversationUnread(ch.id, ch.lastMessageAt, ch.lastMessageAuthorId);
+      const chCtx = { serverId, channelId: ch.id };
+      const unread = ch.type === 'text' && !isActive
+        && isConversationUnread(ch.id, ch.lastMessageAt, ch.lastMessageAuthorId)
+        && showUnreadDot(chCtx, ch.lastMentionedUids);
       const row = el('div', {
-        class: 'gk-channel' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
+        class: 'gk-channel' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : '') + (ch.type === 'text' && isMuted(chCtx) ? ' gk-muted' : ''),
         // Canal marcado como +18: fica exposto como atributo para temas/plugins
         // (ex.: o plugin BetterNsfwTag mostra uma tag "NSFW" ao lado do nome).
         'data-nsfw': ch.nsfw ? 'true' : undefined,

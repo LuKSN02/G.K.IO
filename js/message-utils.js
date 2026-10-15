@@ -1,0 +1,42 @@
+// ============================================================
+// G.K.IO — Utilidades compartilhadas das mensagens
+// ============================================================
+
+// Texto curto que descreve uma mensagem: usado na citação de resposta, na
+// lista de fixadas e no corpo do push.
+export function messagePreview(msg, max = 120) {
+  const clip = (t) => {
+    const s = String(t).replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  };
+  if (msg.poll) return clip('📊 Enquete: ' + msg.poll.question);
+  if (msg.content) return clip(msg.content);
+  switch (msg.attachmentType) {
+    case 'audio': return '🎤 Mensagem de voz';
+    case 'image': return '🖼️ Imagem';
+    case 'gif': return '🎞️ GIF';
+    case 'video': return '🎬 Vídeo';
+    default: return msg.attachmentUrl ? '📎 ' + (msg.attachmentName || 'Anexo') : '';
+  }
+}
+
+// 75 -> "1:15"
+export function formatDuration(sec) {
+  const total = Math.max(0, Math.round(Number(sec) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// uids das pessoas @mencionadas no texto (o autocomplete escreve "@username").
+// `members` = Map(uid -> { user }) do cache de membros do servidor.
+export function extractMentionedUids(text, members) {
+  if (!text || !members) return [];
+  const names = new Set();
+  for (const m of text.matchAll(/@([a-zA-Z0-9_-]{2,32})/g)) names.add(m[1].toLowerCase());
+  if (!names.size) return [];
+  const uids = [];
+  for (const [uid, member] of members) {
+    const username = member?.user?.username?.toLowerCase();
+    if (username && names.has(username)) uids.push(uid);
+  }
+  return uids;
+}

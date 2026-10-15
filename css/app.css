@@ -2666,3 +2666,119 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-confirm-btn { background: var(--gk-danger); border: 1px solid var(--gk-danger); color: #fff; font-weight: 700; }
 .gk-confirm-btn:hover { filter: brightness(1.1); }
 .gk-confirm-btn:focus-visible, .gk-confirm .gk-btn-ghost:focus-visible { outline: 2px solid var(--gk-accent); outline-offset: 2px; }
+
+/* ============================================================
+   Conversa: responder, fixar, voz, enquetes e silenciar
+   ============================================================ */
+
+/* ---- barra "Respondendo a ..." acima do composer ---- */
+.gk-composer-reply {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 10px 8px 12px;
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-200); border-left: 3px solid var(--gk-accent);
+  border-radius: var(--gk-radius-sm); color: var(--gk-gray-500);
+  animation: gk-msg-in 160ms cubic-bezier(.2,.8,.2,1) both;
+}
+.gk-reply-bar-text { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
+.gk-reply-bar-text b { color: var(--gk-gray-800); white-space: nowrap; }
+.gk-reply-bar-text small { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gk-gray-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- citação dentro da mensagem que responde ---- */
+.gk-msg-reply-ref {
+  display: flex; align-items: center; gap: 6px; max-width: 100%; margin: 0 0 3px;
+  padding: 2px 8px 2px 6px; background: none; border: 0; border-left: 2px solid var(--gk-gray-300, var(--gk-gray-200));
+  color: var(--gk-gray-400); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; border-radius: 0 6px 6px 0;
+}
+.gk-msg-reply-ref:hover { background: var(--gk-gray-100); color: var(--gk-gray-600, var(--gk-gray-500)); }
+.gk-msg-reply-ref b { color: var(--gk-accent-strong); font-weight: 600; white-space: nowrap; }
+.gk-msg-reply-ref span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* destaque ao pular para uma mensagem */
+.gk-msg-flash { animation: gk-msg-flash 1.8s ease-out; }
+@keyframes gk-msg-flash { 0%, 35% { background: var(--gk-accent-soft); } 100% { background: transparent; } }
+
+/* ---- fixadas ---- */
+.gk-msg-pin-tag { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 2px; font-size: 11.5px; font-weight: 600; color: var(--gk-accent-strong); }
+.gk-msg-action-btn.gk-msg-action-on { color: var(--gk-accent-strong); }
+.gk-pins-list { display: flex; flex-direction: column; gap: 10px; max-height: 52vh; overflow-y: auto; margin: 6px 0 4px; }
+.gk-pin-item { padding: 12px 14px; background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md); }
+.gk-pin-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gk-gray-500); }
+.gk-pin-head b { color: var(--gk-gray-800); }
+.gk-pin-time { margin-left: auto; font-size: 12px; color: var(--gk-gray-400); }
+.gk-pin-text { margin: 6px 0 10px; font-size: 14px; color: var(--gk-gray-700, var(--gk-gray-800)); overflow-wrap: anywhere; }
+.gk-pin-actions { display: flex; gap: 8px; }
+
+/* ---- sino da conversa / canais silenciados ---- */
+#gk-conv-notif-btn.gk-notif-off { color: var(--gk-gray-400); }
+.gk-channel.gk-muted, .gk-dm-row.gk-muted { opacity: .55; }
+.gk-channel.gk-muted:hover, .gk-dm-row.gk-muted:hover, .gk-channel.gk-muted.gk-active, .gk-dm-row.gk-muted.gk-active { opacity: 1; }
+.gk-notif-section-title { margin: 14px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-notif-group { display: flex; flex-direction: column; gap: 4px; }
+.gk-notif-opt {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 12px;
+  background: var(--gk-surface-sunken); border: 1px solid transparent; border-radius: var(--gk-radius-sm);
+  font: inherit; font-size: 14px; color: var(--gk-gray-800); text-align: left; cursor: pointer;
+  transition: background var(--gk-transition), border-color var(--gk-transition);
+}
+.gk-notif-opt:hover { background: var(--gk-gray-100); }
+.gk-notif-opt.gk-active { border-color: var(--gk-accent); color: var(--gk-accent-strong); font-weight: 600; background: var(--gk-accent-soft); }
+
+/* ---- botões novos do composer ---- */
+.gk-composer-box button:disabled { opacity: .4; cursor: default; }
+
+/* ---- gravador de voz ---- */
+.gk-voice-recorder {
+  align-items: center; gap: 12px; padding: 8px 10px;
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-md);
+}
+.gk-voice-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gk-danger); animation: gk-rec-pulse 1.1s ease-in-out infinite; }
+@keyframes gk-rec-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+.gk-voice-rec-label { flex: 1; font-size: 14px; color: var(--gk-gray-500); }
+.gk-voice-rec-time { font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: var(--gk-gray-800); }
+.gk-voice-rec-send {
+  width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; background: var(--gk-accent); color: #fff; cursor: pointer;
+}
+.gk-voice-rec-send:hover { filter: brightness(1.1); }
+
+/* ---- player de mensagem de voz ---- */
+.gk-voice-msg {
+  display: flex; align-items: center; gap: 10px; width: min(320px, 100%); margin-top: 4px; padding: 8px 12px 8px 8px;
+  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: 999px;
+}
+.gk-voice-play {
+  width: 32px; height: 32px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 50%; background: var(--gk-accent); color: #fff; cursor: pointer;
+}
+.gk-voice-play:hover { filter: brightness(1.1); }
+.gk-voice-track { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--gk-gray-200); cursor: pointer; }
+.gk-voice-fill { height: 100%; width: 0; border-radius: 3px; background: var(--gk-accent); }
+.gk-voice-time { min-width: 38px; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--gk-gray-500); text-align: right; white-space: nowrap; }
+
+/* ---- enquetes ---- */
+.gk-poll { width: min(420px, 100%); margin-top: 6px; padding: 14px; background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md); }
+.gk-poll-head { display: flex; align-items: flex-start; gap: 8px; color: var(--gk-accent-strong); }
+.gk-poll-question { font-size: 15px; font-weight: 700; color: var(--gk-gray-800); overflow-wrap: anywhere; }
+.gk-poll-sub { margin: 2px 0 10px 24px; font-size: 12px; color: var(--gk-gray-400); }
+.gk-poll-opt {
+  position: relative; display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 6px; padding: 9px 12px; overflow: hidden;
+  background: var(--gk-surface); border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm);
+  font: inherit; font-size: 14px; color: var(--gk-gray-800); text-align: left; cursor: pointer;
+  transition: border-color var(--gk-transition);
+}
+.gk-poll-opt:hover:not(:disabled) { border-color: var(--gk-accent); }
+.gk-poll-opt:disabled { cursor: default; }
+.gk-poll-opt.gk-mine { border-color: var(--gk-accent); }
+.gk-poll-fill { position: absolute; inset: 0 auto 0 0; background: var(--gk-accent-soft); transition: width 250ms ease; }
+.gk-poll-check, .gk-poll-text, .gk-poll-count { position: relative; }
+.gk-poll-check { width: 16px; flex-shrink: 0; color: var(--gk-accent-strong); display: inline-flex; }
+.gk-poll-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gk-poll-count { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--gk-gray-500); white-space: nowrap; }
+.gk-poll-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--gk-gray-400); }
+.gk-poll-close { background: none; border: 0; font: inherit; font-size: 12px; font-weight: 600; color: var(--gk-accent-strong); cursor: pointer; }
+.gk-poll-close:hover { text-decoration: underline; }
+.gk-poll.gk-closed { opacity: .85; }
+.gk-poll-edit-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.gk-poll-edit-row { display: flex; align-items: center; gap: 6px; }
+
+/* O avatar não pode esticar junto com grupos altos (enquete, imagem, várias mensagens). */
+.gk-msg-group > .gk-avatar { align-self: flex-start; flex-shrink: 0; }

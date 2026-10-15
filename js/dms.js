@@ -11,12 +11,14 @@ import { selectDm } from './chat.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
+import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
 import { icon } from './icons.js';
 import { refreshNotifDot } from './topbar.js';
 
 // Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
 // lida), re-renderiza a lista pra atualizar os indicadores de não lida.
 onReadStatesChange(() => renderDmSidebar());
+onNotifPrefsChange(() => renderDmSidebar());
 
 let unsubFriendships = null;
 let unsubDms = null;
@@ -102,9 +104,10 @@ function renderDmSidebar() {
     const isActive = state.currentDmId === dm.id;
     // A própria conversa aberta nunca mostra o indicador — ela já está
     // sendo marcada como lida em tempo real (ver markConversationRead em chat.js).
-    const unread = !isActive && isConversationUnread(dm.id, dm.lastMessageAt, dm.lastMessageAuthorId);
+    const unread = !isActive && isConversationUnread(dm.id, dm.lastMessageAt, dm.lastMessageAuthorId)
+      && showUnreadDot({ dmId: dm.id }, []);
     const row = el('div', {
-      class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : ''),
+      class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : '') + (isMuted({ dmId: dm.id }) ? ' gk-muted' : ''),
       'data-id': dm.id,
       onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(effectiveStatus(dm.other)), dm.other.uid),
     }, [

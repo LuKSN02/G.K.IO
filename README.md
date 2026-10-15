@@ -117,3 +117,14 @@ npx serve gkio
 ## 6. Identidade visual
 
 Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em css/tokens.css. Para ajustar a paleta ou o accent color da marca, basta editar as variaveis CSS no topo do arquivo.
+
+## Conversa (v1.3.0)
+- **Responder** (botão de seta ao passar o mouse na mensagem): citação clicável acima da resposta; Esc cancela. Quem é respondido conta como mencionado.
+- **Fixar mensagens** (alfinete): em canais, quem gerencia canais; em DMs, os dois. O botão de alfinete no topo lista todas as fixadas da conversa.
+- **Silenciar / só @menções** (sino no topo): por canal, por servidor e por DM. Afeta som, notificação do app, push e o ponto de "não lida". Fica salvo na conta (`notifPrefs`).
+- **Mensagens de voz** (microfone no composer): até 5 min, sobem pelo Cloudinary.
+- **Enquetes** (ícone de barras no composer): escolha única ou múltipla; o autor pode encerrar.
+
+> **Importante:** estes recursos usam campos novos (`pinned`, `votes`, `pollClosed`, `notifPrefs`, `lastMentionedUids`).
+> Publique o `firestore.rules` atualizado no console do Firebase (Firestore > Regras > Publicar), senão fixar, votar e silenciar dão erro de permissão.
+
