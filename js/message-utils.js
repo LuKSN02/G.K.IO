@@ -40,3 +40,11 @@ export function extractMentionedUids(text, members) {
   }
   return uids;
 }
+
+// 272000 ms -> "4:32" · 5400000 -> "1 h 30 min" · 200000000 -> "2 d 7 h"
+export function formatLong(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  if (total < 3600) return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  if (total < 86400) return `${Math.floor(total / 3600)} h ${String(Math.floor((total % 3600) / 60)).padStart(2, '0')} min`;
+  return `${Math.floor(total / 86400)} d ${Math.floor((total % 86400) / 3600)} h`;
+}

@@ -17,7 +17,7 @@ import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName,
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
-import { messagePreview, extractMentionedUids } from './message-utils.js';
+import { messagePreview, extractMentionedUids, formatLong } from './message-utils.js';
 import { effectiveLevel, shouldAlert, refreshNotifButton, openNotifModal, onNotifPrefsChange } from './notify-prefs.js';
 import { openPinnedPanel } from './pins.js';
 import { openPollModal, buildPollCard } from './polls.js';
@@ -28,7 +28,9 @@ import { notifyDmMessage, notifyChannelMessage } from './push.js';
 // canManageChannels é uma declaração de função, então já existe no escopo do
 // módulo antes de qualquer chamada — só é usada em resposta a clique, muito
 // depois dos dois módulos terminarem de avaliar.
-import { canManageChannels } from './servers.js';
+import { canManageChannels, getCategoriesAndChannels, onServerDataChange } from './servers.js';
+import { getTimeoutUntilMs } from './moderation.js';
+import { logAudit } from './audit.js';
 
 let pendingFile = null;
 let lastSeenMessageId = null;
@@ -41,6 +43,7 @@ let replyingTo = null; // { id, authorId, authorName, preview } — mensagem que
 let editingMessageId = null; // id da mensagem sendo editada no momento (ou null)
 let editingDraft = '';       // texto em edição, preservado entre re-renders do snapshot
 let lastRenderedMessages = [];
+let lastRenderedConv = null; // a qual conversa pertence lastRenderedMessages (evita misturar canais)
 
 // Ids que já apareceram na tela desta conversa. Como cada snapshot do
 // Firestore redesenha a lista inteira, é isso que distingue "mensagem
@@ -111,16 +114,90 @@ function applyTypingLabel(names) {
 // desabilita o composer — só no client (ver nota em CHANNEL_OVERWRITE_PERMISSIONS
 // em servers.js: as regras do Firestore ainda aceitariam o envio se alguém
 // forçasse via console, isto é só a barreira normal de uso pela UI).
+let composerReadOnly = false;
+
 function applyComposerReadOnly(readOnly) {
-  const textarea = document.getElementById('gk-composer-input');
-  const sendBtn = document.getElementById('gk-send-btn');
-  const attachBtn = document.getElementById('gk-attach-btn');
-  textarea.disabled = readOnly;
-  sendBtn.disabled = readOnly;
-  attachBtn.disabled = readOnly;
-  for (const id of ['gk-poll-btn', 'gk-voice-btn']) document.getElementById(id).disabled = readOnly;
-  textarea.placeholder = readOnly ? 'Você não pode enviar mensagens neste canal.' : 'Escreva uma mensagem...';
+  composerReadOnly = readOnly;
+  renderComposerNotice(); // também reaplica o estado dos botões (castigo / modo lento)
 }
+
+// ---------- Castigo (timeout) e modo lento ----------
+// Castigo: campo `timeoutUntil` no doc do meu membro (as regras do Firestore também barram).
+// Modo lento: canal.slowmodeSeconds — aplicado aqui no composer; quem gerencia canais é isento.
+const lastSentAt = new Map(); // `${uid}:${channelId}` -> ms do último envio daquela conta nesta sessão
+const sentKey = (channelId) => `${auth.currentUser?.uid}:${channelId}`;
+let restrictionTimer = null;
+
+function myMemberEntry() {
+  const cache = state.currentServerId && state.serverMembersCache.get(state.currentServerId);
+  return cache ? cache.get(auth.currentUser?.uid) : null;
+}
+function timeoutRemainingMs() {
+  if (!state.currentChannelId) return 0;
+  return Math.max(0, getTimeoutUntilMs(myMemberEntry()) - Date.now());
+}
+function currentSlowmodeSeconds() {
+  if (!state.currentChannelId) return 0;
+  const { channels } = getCategoriesAndChannels();
+  return Number(channels.find((c) => c.id === state.currentChannelId)?.slowmodeSeconds) || 0;
+}
+function slowmodeRemainingMs() {
+  const secs = currentSlowmodeSeconds();
+  if (!secs || canModerateCurrentChannel()) return 0;
+  const me = auth.currentUser?.uid;
+  let last = lastSentAt.get(sentKey(state.currentChannelId)) || 0;
+  if (lastRenderedConv === state.currentChannelId) {
+    for (const m of lastRenderedMessages) {
+      if (m.authorId === me && m.createdAt?.toMillis) last = Math.max(last, m.createdAt.toMillis());
+    }
+  }
+  return Math.max(0, last + secs * 1000 - Date.now());
+}
+const fmtSecs = (n) => (n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` : `${n} s`);
+
+// Motivo pelo qual NÃO dá para enviar agora (ou null).
+function sendBlockReason() {
+  const t = timeoutRemainingMs();
+  if (t > 0) return `Você está de castigo — falta ${formatLong(t)}.`;
+  const s = slowmodeRemainingMs();
+  if (s > 0) return `Modo lento: aguarde ${Math.ceil(s / 1000)}s para enviar outra mensagem.`;
+  return null;
+}
+
+function renderComposerNotice() {
+  const textarea = document.getElementById('gk-composer-input');
+  const box = document.getElementById('gk-composer-notice');
+  if (!textarea || !box) return;
+  clearTimeout(restrictionTimer);
+
+  const timedOut = timeoutRemainingMs();
+  const slowSecs = currentSlowmodeSeconds();
+  const wait = slowmodeRemainingMs();
+  let text = '';
+  if (timedOut > 0) text = `Você está de castigo — falta ${formatLong(timedOut)}. Você não pode enviar mensagens.`;
+  else if (wait > 0) text = `Modo lento: aguarde ${Math.ceil(wait / 1000)}s.`;
+  else if (slowSecs > 0) {
+    text = canModerateCurrentChannel()
+      ? `Modo lento ativo (${fmtSecs(slowSecs)}) — você é isento.`
+      : `Modo lento: 1 mensagem a cada ${fmtSecs(slowSecs)}.`;
+  }
+  box.className = 'gk-composer-notice' + (timedOut > 0 ? ' gk-danger' : '');
+  box.style.display = text ? 'flex' : 'none';
+  box.replaceChildren();
+  if (text) { box.appendChild(icon('clock', { size: 14 })); box.appendChild(el('span', {}, text)); }
+
+  const disabled = composerReadOnly || timedOut > 0;
+  textarea.disabled = disabled;
+  for (const id of ['gk-send-btn', 'gk-attach-btn', 'gk-poll-btn', 'gk-voice-btn', 'gk-emoji-btn']) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = disabled;
+  }
+  textarea.placeholder = composerReadOnly ? 'Você não pode enviar mensagens neste canal.'
+    : timedOut > 0 ? 'Você está de castigo.' : 'Escreva uma mensagem...';
+
+  if (timedOut > 0 || wait > 0) restrictionTimer = setTimeout(renderComposerNotice, 1000);
+}
+
 
 export function selectDm(dmId, title, subtitle, otherUid = null) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
@@ -157,6 +234,8 @@ function attachMessagesListener(colRef, conversationId) {
   replyingTo = null;
   renderReplyBar();
   cancelVoiceRecording(); // gravação em andamento não "viaja" pra outra conversa
+  lastRenderedMessages = [];
+  lastRenderedConv = null;
   renderedMessageIds.clear();
   hasRenderedConversationOnce = false;
   clearPendingFile(); // anexo escolhido e não enviado não "viaja" pra outra conversa
@@ -171,6 +250,8 @@ function attachMessagesListener(colRef, conversationId) {
     snap.forEach((d) => messages.push({ id: d.id, ...d.data() }));
     const isNewIncoming = notifyIfNewIncomingMessage(messages);
     lastRenderedMessages = messages;
+    lastRenderedConv = conversationId;
+    renderComposerNotice();
     renderMessages(messages, isNewIncoming);
     // A pessoa está com esta conversa aberta agora — qualquer mensagem que
     // chegue (inclusive em tempo real) conta como "lida" na hora.
@@ -501,6 +582,12 @@ function confirmDeleteMessage(msg, asModerator = false) {
         if (!ref) return;
         try {
           await deleteDoc(ref);
+          if (asModerator && msg.authorId !== auth.currentUser?.uid) {
+            logAudit(state.currentServerId, 'message.delete', {
+              targetId: msg.authorId, targetName: msg.authorName || null,
+              details: { channelName: currentChannelName, preview: messagePreview(msg, 80) },
+            });
+          }
           toast('Mensagem apagada.');
         } catch (err) {
           toast('Não foi possível apagar a mensagem.', 'danger');
@@ -768,6 +855,8 @@ export async function sendCurrentMessage() {
   const textarea = document.getElementById('gk-composer-input');
   const text = textarea.value.trim();
   if (!text && !pendingFile) return;
+  const blocked = sendBlockReason();
+  if (blocked) { toast(blocked, 'danger'); return; } // o texto continua no campo
 
   const uid = auth.currentUser.uid;
   const payload = { ...basePayload(), content: text };
@@ -830,6 +919,10 @@ function applyReplyAndMentions(payload) {
 async function postPayload(payload, { preview = '', dmPreview, skipIndex = false, errorMsg = 'Não foi possível enviar a mensagem.' } = {}) {
   const uid = payload.authorId;
   const mentioned = payload.mentionedUids || [];
+  if (state.currentChannelId) {
+    const blocked = sendBlockReason();
+    if (blocked) { toast(blocked, 'danger'); return false; }
+  }
   try {
     if (state.currentChannelId && state.currentServerId) {
       const serverId = state.currentServerId;
@@ -849,6 +942,8 @@ async function postPayload(payload, { preview = '', dmPreview, skipIndex = false
         authorName: payload.authorName, preview, serverId, channelId, channelName: currentChannelName, mentionedUids: mentioned,
       });
       if (!skipIndex) indexAttachment(payload, { serverId, channelId });
+      lastSentAt.set(sentKey(channelId), Date.now());
+      renderComposerNotice();
     } else if (state.currentDmId) {
       const dmId = state.currentDmId;
       await addDoc(dmMessagesCol(dmId), payload);
@@ -1066,6 +1161,9 @@ export function autoResizeComposer() {
 }
 
 export function wireComposer() {
+  // Não dá para registrar isto no topo do módulo: servers.js e chat.js se importam
+  // um ao outro, e onServerDataChange ainda não existiria nesse momento.
+  onServerDataChange(() => renderComposerNotice()); // canal/membro mudou (modo lento, castigo...)
   const textarea = document.getElementById('gk-composer-input');
   const sendBtn = document.getElementById('gk-send-btn');
   const fileInput = document.getElementById('gk-file-input');

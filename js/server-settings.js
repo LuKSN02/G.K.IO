@@ -11,13 +11,17 @@ import {
   canManageChannels, canManageServerInfo, canKickMembers, canManageRoles,
   isServerOwner, getCategoriesAndChannels,
   updateServerInfo, deleteServerPermanently, leaveServer, kickMember, setMemberRole,
-  createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel, setChannelNsfw,
+  createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel, setChannelNsfw, setChannelSlowmode,
   createInvite, openCreateChannelModal, openChannelPermissionsModal,
   PERMISSION_CATALOG, ROLE_COLOR_SWATCHES, getRoles, createRole, updateRole, deleteRole, assignRoleToMember,
   onServerDataChange,
 } from './servers.js';
 import { openProfileCard } from './profile.js';
 import { icon } from './icons.js';
+import { confirmDangerAction } from './dialogs.js';
+import { openModerateModal, canModerateTarget, isTimedOut, getTimeoutUntilMs, listBans, unbanMember } from './moderation.js';
+import { loadAuditLog, describeAudit } from './audit.js';
+import { formatLong } from './message-utils.js';
 
 let activeSection = 'geral';
 let currentServerId = null;
@@ -28,6 +32,9 @@ function sections(serverId) {
   if (canManageChannels(serverId)) list.push({ id: 'canais', label: 'Canais', icon: '#', isText: true });
   if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: 'shield' });
   list.push({ id: 'membros', label: 'Membros', icon: 'members' });
+  if (canKickMembers(serverId) || canManageChannels(serverId) || canManageServerInfo(serverId)) {
+    list.push({ id: 'moderacao', label: 'Moderação', icon: 'block' });
+  }
   list.push({ id: 'convites', label: 'Convites', icon: 'link' });
   return list;
 }
@@ -73,6 +80,7 @@ function renderSection() {
   if (activeSection === 'canais') return renderCanaisSection(content);
   if (activeSection === 'cargos') return renderCargosSection(content);
   if (activeSection === 'membros') return renderMembrosSection(content);
+  if (activeSection === 'moderacao') return renderModeracaoSection(content);
   if (activeSection === 'convites') return renderConvitesSection(content);
 }
 
@@ -246,6 +254,34 @@ function nsfwPill(serverId, ch) {
   return btn;
 }
 
+const SLOWMODE_OPTIONS = [[0, 'off'], [5, '5 s'], [10, '10 s'], [15, '15 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [900, '15 min'], [3600, '1 h']];
+
+// Modo lento: tempo mínimo entre duas mensagens da mesma pessoa no canal.
+function slowmodeSelect(serverId, ch) {
+  const current = Number(ch.slowmodeSeconds) || 0;
+  const options = SLOWMODE_OPTIONS.some(([v]) => v === current) ? SLOWMODE_OPTIONS : [...SLOWMODE_OPTIONS, [current, `${current} s`]];
+  const select = el('select', {
+    class: 'gk-sv-select gk-sv-slowmode' + (current ? ' gk-on' : ''),
+    title: 'Modo lento: tempo mínimo entre duas mensagens da mesma pessoa neste canal (quem gerencia canais é isento)',
+    'aria-label': 'Modo lento',
+  }, options.map(([v, label]) => el('option', { value: String(v) }, `Lento: ${label}`)));
+  select.value = String(current);
+  select.addEventListener('click', (e) => e.stopPropagation());
+  select.addEventListener('change', async () => {
+    const seconds = Number(select.value);
+    select.disabled = true;
+    try {
+      await setChannelSlowmode(serverId, ch.id, seconds);
+      select.classList.toggle('gk-on', seconds > 0);
+      toast(seconds ? `Modo lento de ${select.selectedOptions[0].textContent.replace('Lento: ', '')} ativado.` : 'Modo lento desativado.');
+    } catch (err) {
+      select.value = String(Number(ch.slowmodeSeconds) || 0);
+      toast('Não foi possível alterar o modo lento: ' + (err.message || err), 'danger');
+    } finally { select.disabled = false; }
+  });
+  return select;
+}
+
 function renderCanaisSection(content) {
   const serverId = currentServerId;
   content.appendChild(sectionHeader('Canais', 'Organize categorias e canais de texto e voz. Clique em um nome para renomear.'));
@@ -295,6 +331,7 @@ function renderCanaisSection(content) {
           onCommit: async (v) => { await renameChannel(serverId, ch.id, v); toast('Canal renomeado.'); },
         }),
       ]);
+      if (isText) row.appendChild(slowmodeSelect(serverId, ch));
       if (isText) row.appendChild(nsfwPill(serverId, ch));
       row.appendChild(iconBtn('lock', 'Permissões do canal (por cargo)', () => openChannelPermissionsModal(serverId, ch)));
       row.appendChild(iconBtn('trash', 'Excluir canal', () => confirmDangerAction(
@@ -523,6 +560,12 @@ function renderMembrosSection(content) {
       }, customRole.name));
     }
 
+    if (isTimedOut(m)) {
+      nameLine.appendChild(el('span', {
+        class: 'gk-timeout-chip', title: `Em castigo — falta ${formatLong(getTimeoutUntilMs(m) - Date.now())}`,
+      }, [icon('clock', { size: 11 }), ' Castigo']));
+    }
+
     const actions = [];
     if (iCanManageRoles && roles.length > 0) {
       actions.push(el('button', {
@@ -535,12 +578,11 @@ function renderMembrosSection(content) {
         role === 'admin' ? 'Remover cargo de admin' : 'Tornar admin',
         () => setMemberRole(serverId, m.uid, role === 'admin' ? 'member' : 'admin')));
     }
-    if (iCanKick && role !== 'owner' && m.uid !== myUid) {
-      actions.push(iconBtn('block', 'Expulsar do servidor', () => confirmDangerAction(
-        'Expulsar membro', `Remover "${m.user.displayName || m.user.username}" deste servidor?`,
-        () => kickMember(serverId, m.uid),
-        { confirmLabel: 'Expulsar', iconName: 'block' },
-      ), { danger: true }));
+    if (canModerateTarget(serverId, m)) {
+      actions.push(el('button', {
+        class: 'gk-sv-pill', type: 'button', title: 'Castigo, expulsar ou banir',
+        onclick: (e) => { e.stopPropagation(); openModerateModal(serverId, m); },
+      }, [icon('block', { size: 13 }), ' Moderar']));
     }
 
     list.appendChild(el('div', { class: 'gk-sv-member', onclick: () => openProfileCard(m.uid) }, [
@@ -560,6 +602,81 @@ function renderMembrosSection(content) {
       }, 'Sair do servidor'),
     ]));
   }
+}
+
+// ============================================================
+// Seção: Moderação (banidos + log de auditoria)
+// ============================================================
+function fmtDateTime(ts) {
+  const ms = ts?.toMillis ? ts.toMillis() : 0;
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderModeracaoSection(content) {
+  const serverId = currentServerId;
+  content.appendChild(sectionHeader('Moderação', 'Quem está banido e o histórico das ações de quem modera o servidor.'));
+  const stillHere = () => content.isConnected && activeSection === 'moderacao' && currentServerId === serverId;
+
+  // ----- Banidos (só quem pode banir enxerga) -----
+  if (canKickMembers(serverId)) {
+    const bansBody = el('div', { id: 'gk-bans-list' }, [el('div', { class: 'gk-sv-empty' }, 'Carregando…')]);
+    content.appendChild(el('div', { class: 'gk-sv-card' }, [
+      el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('block', { size: 14 }), ' Banidos'])]),
+      bansBody,
+    ]));
+    const loadBans = async () => {
+      let bans;
+      try { bans = await listBans(serverId); }
+      catch (err) { if (stillHere()) bansBody.replaceChildren(el('div', { class: 'gk-sv-empty' }, 'Não foi possível carregar os banidos.')); return; }
+      if (!stillHere()) return;
+      bansBody.innerHTML = '';
+      if (!bans.length) { bansBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Ninguém foi banido deste servidor.')); return; }
+      for (const ban of bans) {
+        const unbanBtn = el('button', { class: 'gk-sv-pill', type: 'button', 'data-uid': ban.uid }, 'Desbanir');
+        unbanBtn.addEventListener('click', async () => {
+          unbanBtn.disabled = true;
+          try { await unbanMember(serverId, ban); await loadBans(); }
+          catch (err) { toast(err.message || 'Não foi possível desbanir.', 'danger'); unbanBtn.disabled = false; }
+        });
+        bansBody.appendChild(el('div', { class: 'gk-sv-row gk-ban-row' }, [
+          el('div', { class: 'gk-avatar gk-sz-24' }, [el('img', { src: ban.avatarUrl || fallbackAvatar(ban.username || 'user') })]),
+          el('div', { class: 'gk-ban-main' }, [
+            el('b', {}, ban.displayName || ban.username || 'Usuário'),
+            el('small', {}, `Banido por ${ban.bannedByName || 'um moderador'}${fmtDateTime(ban.createdAt) ? ' · ' + fmtDateTime(ban.createdAt) : ''}${ban.reason ? ' · ' + ban.reason : ''}`),
+          ]),
+          unbanBtn,
+        ]));
+      }
+    };
+    loadBans();
+  }
+
+  // ----- Log de auditoria -----
+  const logBody = el('div', { id: 'gk-audit-list' }, [el('div', { class: 'gk-sv-empty' }, 'Carregando…')]);
+  const refreshBtn = el('button', { class: 'gk-sv-pill', type: 'button' }, 'Atualizar');
+  content.appendChild(el('div', { class: 'gk-sv-card' }, [
+    el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('edit', { size: 14 }), ' Log de auditoria']), refreshBtn]),
+    logBody,
+  ]));
+  const loadLog = async () => {
+    let entries;
+    try { entries = await loadAuditLog(serverId, 100); }
+    catch (err) { if (stillHere()) logBody.replaceChildren(el('div', { class: 'gk-sv-empty' }, 'Não foi possível carregar o log (as regras do Firestore já foram publicadas?).')); return; }
+    if (!stillHere()) return;
+    logBody.innerHTML = '';
+    if (!entries.length) { logBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhuma ação registrada ainda.')); return; }
+    for (const e of entries) {
+      const d = describeAudit(e);
+      logBody.appendChild(el('div', { class: 'gk-sv-row gk-audit-row' }, [
+        el('span', { class: 'gk-sv-row-icon' }, [icon(d.icon, { size: 14 })]),
+        el('span', { class: 'gk-audit-text' }, d.text),
+        el('span', { class: 'gk-audit-time' }, fmtDateTime(e.createdAt)),
+      ]));
+    }
+  };
+  refreshBtn.addEventListener('click', loadLog);
+  loadLog();
 }
 
 // ============================================================
@@ -632,47 +749,3 @@ function renderConvitesSection(content) {
 // ============================================================
 // Confirmação para ações destrutivas — reaproveita o modal genérico.
 // ============================================================
-// Diálogo de confirmação para ações destrutivas (excluir cargo/canal/servidor,
-// expulsar, sair...). O que estiver entre aspas na mensagem vira negrito.
-// opts: { confirmLabel, iconName }. Esc ou "Cancelar" fecham; o foco começa
-// em "Cancelar" para que um Enter distraído não confirme a exclusão.
-function confirmDangerAction(title, message, onConfirm, { confirmLabel = 'Confirmar', iconName = 'trash' } = {}) {
-  const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
-  modal.innerHTML = '';
-
-  const sub = el('p', { class: 'gk-modal-sub' });
-  for (const part of message.split(/("[^"]+")/)) {
-    if (!part) continue;
-    if (part.length > 2 && part.startsWith('"') && part.endsWith('"')) sub.appendChild(el('strong', {}, part));
-    else sub.appendChild(document.createTextNode(part));
-  }
-
-  const onKey = (e) => {
-    if (!overlay.classList.contains('gk-open')) { document.removeEventListener('keydown', onKey, true); return; }
-    if (e.key === 'Escape') { e.stopPropagation(); close(); }
-  };
-  const close = () => {
-    overlay.classList.remove('gk-open');
-    document.removeEventListener('keydown', onKey, true);
-  };
-
-  const cancelBtn = el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: close }, 'Cancelar');
-  const confirmBtn = el('button', {
-    class: 'gk-btn gk-confirm-btn', type: 'button',
-    onclick: async () => {
-      close();
-      try { await onConfirm(); } catch (err) { toast(err.message || 'Não foi possível concluir a ação.', 'danger'); }
-    },
-  }, [icon(iconName, { size: 15 }), ' ' + confirmLabel]);
-
-  modal.appendChild(el('div', { class: 'gk-confirm' }, [
-    el('div', { class: 'gk-confirm-icon' }, [icon(iconName, { size: 24 })]),
-    el('h2', {}, title),
-    sub,
-    el('div', { class: 'gk-modal-actions' }, [cancelBtn, confirmBtn]),
-  ]));
-  overlay.classList.add('gk-open');
-  document.addEventListener('keydown', onKey, true);
-  cancelBtn.focus();
-}

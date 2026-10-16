@@ -128,3 +128,12 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 > **Importante:** estes recursos usam campos novos (`pinned`, `votes`, `pollClosed`, `notifPrefs`, `lastMentionedUids`).
 > Publique o `firestore.rules` atualizado no console do Firebase (Firestore > Regras > Publicar), senão fixar, votar e silenciar dão erro de permissão.
 
+## Moderação (v1.4.0)
+- **Moderar** (botão na aba Membros): **castigo** (60 s a 1 semana — a pessoa não envia mensagens nos canais), **expulsar** e **banir** (com motivo). Quem foi banido não volta nem por convite até ser desbanido.
+- **Hierarquia:** ninguém modera o dono nem a si mesmo; administradores só o dono modera. A permissão do cargo "Moderar membros" libera tudo isso.
+- **Modo lento** (seletor "Lento: …" em cada canal de texto, em Configurações do servidor > Canais): tempo mínimo entre duas mensagens da mesma pessoa. Quem gerencia canais é isento.
+- **Aba Moderação:** lista de banidos (com "Desbanir") e **log de auditoria** (expulsões, banimentos, castigos, cargos, canais, modo lento, mensagens apagadas por moderador). O log só acrescenta e lê — ninguém edita nem apaga.
+
+> **Importante:** publique o `firestore.rules` atualizado (Firestore > Regras > Publicar). É ele que barra banidos de voltar e mensagens durante o castigo.
+> O **modo lento** é aplicado pelo app (composer): um cliente adulterado consegue burlá-lo. O **castigo** e o **banimento** são garantidos pelas regras do Firestore.
+

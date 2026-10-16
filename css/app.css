@@ -2782,3 +2782,55 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 
 /* O avatar não pode esticar junto com grupos altos (enquete, imagem, várias mensagens). */
 .gk-msg-group > .gk-avatar { align-self: flex-start; flex-shrink: 0; }
+
+/* ============================================================
+   Moderação: castigo, banimento, modo lento e log de auditoria
+   ============================================================ */
+.gk-sv-select {
+  flex-shrink: 0; padding: 4px 8px; background: transparent; border: 1px solid var(--gk-gray-200); border-radius: 999px;
+  font: inherit; font-size: 11.5px; font-weight: 700; color: var(--gk-gray-500); cursor: pointer; outline: none;
+}
+.gk-sv-select:hover, .gk-sv-select:focus { border-color: var(--gk-accent); color: var(--gk-accent-strong); }
+.gk-sv-select option { color: var(--gk-gray-800); background: var(--gk-surface); }
+.gk-sv-slowmode.gk-on { border-color: var(--gk-accent); color: var(--gk-accent-strong); background: var(--gk-accent-soft); }
+.gk-mod-card .gk-sv-select { padding: 9px 12px; border-radius: var(--gk-radius-sm); font-size: 13px; font-weight: 500; }
+
+/* aviso acima do composer (castigo / modo lento) */
+.gk-composer-notice {
+  align-items: center; gap: 8px; margin-bottom: 8px; padding: 8px 12px;
+  background: var(--gk-accent-soft); color: var(--gk-accent-strong); border-radius: var(--gk-radius-sm);
+  font-size: 13px; font-weight: 500;
+}
+.gk-composer-notice.gk-danger { background: var(--gk-danger-soft); color: var(--gk-danger); }
+
+/* chip "Castigo" na lista de membros */
+.gk-timeout-chip {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 999px;
+  background: var(--gk-danger-soft); color: var(--gk-danger); font-size: 11px; font-weight: 700;
+}
+
+/* janela "Moderar" */
+.gk-mod-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.gk-mod-head h2 { margin: 0 0 2px; font-size: 18px; }
+.gk-mod-head .gk-modal-sub { margin: 0; font-size: 12.5px; }
+.gk-mod-card { margin-bottom: 10px; padding: 12px 14px; background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md); }
+.gk-mod-card.gk-danger { border-color: color-mix(in srgb, var(--gk-danger) 40%, transparent); }
+.gk-mod-card-title { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 14px; font-weight: 700; color: var(--gk-gray-800); }
+.gk-mod-card.gk-danger .gk-mod-card-title { color: var(--gk-danger); }
+.gk-mod-card-text { margin: 0 0 10px; font-size: 13px; color: var(--gk-gray-500); }
+.gk-mod-row { display: flex; align-items: center; gap: 8px; }
+.gk-mod-row .gk-sv-input { flex: 1; min-width: 0; }
+.gk-mod-row .gk-btn { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+
+/* aba Moderação: banidos e log */
+.gk-mod-section-title { display: inline-flex; align-items: center; gap: 6px; flex: 1; font-size: 12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-ban-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gk-ban-main b { font-size: 14px; color: var(--gk-gray-800); }
+.gk-ban-main small { font-size: 12px; color: var(--gk-gray-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-audit-row { align-items: flex-start; padding: 7px 8px; }
+.gk-audit-row .gk-sv-row-icon { margin-top: 2px; }
+.gk-audit-text { flex: 1; min-width: 0; font-size: 13.5px; color: var(--gk-gray-700, var(--gk-gray-800)); overflow-wrap: anywhere; }
+.gk-audit-time { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--gk-gray-400); }
+#gk-audit-list { max-height: 360px; overflow-y: auto; }
+.gk-ban-row .gk-avatar::after { display: none; }
+.gk-ban-row .gk-avatar img { width: 24px; height: 24px; border-radius: 7px; }

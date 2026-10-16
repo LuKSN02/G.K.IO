@@ -198,6 +198,7 @@ service cloud.firestore {
     // entrar por convite (ver joinServerByInviteCode em servers.js).
     function isSelfJoiningOnly(serverId) {
       return !(request.auth.uid in resource.data.memberIds)
+        && !isBanned(serverId, request.auth.uid)
         && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
     }
     function isValidMemberIdsChange(serverId) {
@@ -213,10 +214,37 @@ service cloud.firestore {
       return (request.resource.data.role == 'owner' && isServerOwner(serverId)
               || request.resource.data.role == 'member')
         && request.resource.data.get('roleIds', []) == []
-        && request.resource.data.get('permissions', {}) == {};
+        && request.resource.data.get('permissions', {}) == {}
+        && !isBanned(serverId, request.auth.uid);
     }
     function isValidSelfMemberEdit() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']);
+    }
+
+    // ---------- Moderação: banimento, castigo (timeout) e log de auditoria ----------
+    // Banido = existe servers/{id}/bans/{uid}. Quem foi banido não consegue voltar
+    // (nem por convite): ver isSelfJoiningOnly e isValidSelfMemberJoin.
+    function isBanned(serverId, uid) {
+      return exists(/databases/$(database)/documents/servers/$(serverId)/bans/$(uid));
+    }
+    // Castigo = `timeoutUntil` (+ `timeoutBy`) no doc do membro. Só quem pode expulsar
+    // altera esses campos, e nunca no dono, em si mesmo ou — exceto o dono — em admins.
+    function isValidTimeoutChange(serverId, uid) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['timeoutUntil', 'timeoutBy'])
+        && uid != get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId
+        && uid != request.auth.uid
+        && (resource.data.get('role', 'member') != 'admin' || isServerOwner(serverId));
+    }
+    // Em castigo = `timeoutUntil` ainda no futuro. Sem o campo (ou nulo) = livre. Quem não
+    // tem doc de membro (conta antiga) também fica livre — por isso o exists() antes do get().
+    function isTimedOut(serverId) {
+      return exists(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid))
+        && myMemberDoc(serverId).get('timeoutUntil', null) != null
+        && myMemberDoc(serverId).get('timeoutUntil', null) > request.time;
+    }
+    // Quem enxerga (e alimenta) o log de auditoria: quem modera, gerencia canais ou o servidor.
+    function canViewAuditLog(serverId) {
+      return canKickMembers(serverId) || canManageChannels(serverId) || hasPermission(serverId, 'manageServer');
     }
 
     match /servers/{serverId} {
@@ -255,7 +283,8 @@ service cloud.firestore {
 
         match /messages/{msgId} {
           allow read: if signedIn() && isServerMember(serverId);
-          allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid;
+          allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid
+            && !isTimedOut(serverId);
           allow update: if signedIn() && isServerMember(serverId)
             && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidPollClose()
                 || (isValidPinUpdate() && canManageChannels(serverId)));
@@ -288,8 +317,32 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if signedIn() && isServerMember(serverId);
         allow create: if signedIn() && isSelf(uid) && isValidSelfMemberJoin(serverId);
-        allow update: if signedIn() && ((isSelf(uid) && isValidSelfMemberEdit()) || isServerOwner(serverId));
+        allow update: if signedIn() && ((isSelf(uid) && isValidSelfMemberEdit()) || isServerOwner(serverId)
+                                        || (canKickMembers(serverId) && isValidTimeoutChange(serverId, uid)));
         allow delete: if signedIn() && (isSelf(uid) || isServerOwner(serverId) || canKickMembers(serverId));
+      }
+
+      // Banidos — só quem pode expulsar lê/cria/remove. Não dá para banir o dono, a si
+      // mesmo nem (exceto o dono) um admin. A pessoa banida NÃO consegue ler esta lista.
+      match /bans/{uid} {
+        allow read: if signedIn() && isServerMember(serverId) && canKickMembers(serverId);
+        allow create: if signedIn() && isServerMember(serverId) && canKickMembers(serverId)
+          && request.resource.data.uid == uid
+          && request.resource.data.bannedBy == request.auth.uid
+          && uid != request.auth.uid
+          && uid != get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId
+          && (get(/databases/$(database)/documents/servers/$(serverId)/members/$(uid)).data.get('role', 'member') != 'admin'
+              || isServerOwner(serverId));
+        allow delete: if signedIn() && isServerMember(serverId) && canKickMembers(serverId);
+      }
+
+      // Log de auditoria — só acrescenta e lê (nunca edita nem apaga), e cada entrada
+      // precisa ser do próprio autor da ação.
+      match /auditLog/{entryId} {
+        allow read: if signedIn() && isServerMember(serverId) && canViewAuditLog(serverId);
+        allow create: if signedIn() && isServerMember(serverId) && canViewAuditLog(serverId)
+          && request.resource.data.actorId == request.auth.uid;
+        allow update, delete: if false;
       }
     }
 

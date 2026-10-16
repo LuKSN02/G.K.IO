@@ -72,6 +72,7 @@ const ICONS = {
   palette:      { path: '<path d="M12 3a9 9 0 100 18c1.1 0 2-.9 2-2 0-.5-.2-.9-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1.1.9-2 2-2H17a4 4 0 004-4c0-4.4-4-7.5-9-7.5z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="9.7" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/><circle cx="16.7" cy="10.5" r="1"/>' },
   bell:         { path: '<path d="M6 9a6 6 0 1112 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 19a2 2 0 004 0"/>' },
   bellOff:      { path: '<path d="M8.5 4.7A6 6 0 0118 9c0 3 .6 4.6 1.4 5.6M6 9c0 5-2 6-2 6h10"/><path d="M10 19a2 2 0 004 0"/><path d="M3 3l18 18"/>' },
+  clock:        { path: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
   reply:        { path: '<path d="M9 5L3 11l6 6"/><path d="M3 11h11a7 7 0 017 7v1"/>' },
   pin:          { path: '<path d="M9 3h6l-1.2 6.2L17 12.5V14H7v-1.5l3.2-3.3L9 3z"/><path d="M12 14v7"/>' },
   poll:         { path: '<path d="M5 20V11M12 20V4M19 20v-6"/>' },

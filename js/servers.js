@@ -16,6 +16,7 @@ import { SERVER_TEMPLATES } from './server-templates.js';
 import { openImageCropper } from './cropper.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
+import { logAudit } from './audit.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
 
@@ -44,6 +45,13 @@ let lastChannels = [];
 // "Cargos") e pelo cálculo de permissões efetivas de cada membro.
 let lastRoles = new Map();
 
+// Nome para exibir/registrar de quem é membro do servidor.
+function memberName(serverId, uid) {
+  const m = state.serverMembersCache.get(serverId)?.get(uid);
+  return m ? (m.nickname || m.user?.displayName || m.user?.username || 'Membro') : 'Membro';
+}
+const channelNameOf = (id) => lastChannels.find((c) => c.id === id)?.name || 'canal';
+
 // Aviso "os dados do servidor mudaram" (canais, categorias, cargos, membros).
 // A tela de Configurações do servidor se inscreve aqui para se redesenhar
 // sozinha — antes ela só mostrava a mudança depois de trocar de aba.
@@ -65,7 +73,7 @@ function emitServerDataChange(serverId) {
 export const PERMISSION_CATALOG = [
   { key: 'manageChannels', label: 'Gerenciar canais', desc: 'Criar, renomear e excluir categorias e canais.' },
   { key: 'manageServer', label: 'Gerenciar servidor', desc: 'Editar nome, descrição, ícone e banner do servidor.' },
-  { key: 'manageMembers', label: 'Expulsar membros', desc: 'Remover membros do servidor.' },
+  { key: 'manageMembers', label: 'Moderar membros', desc: 'Expulsar, banir, dar castigo e ver o log de auditoria.' },
 ];
 
 export const ROLE_COLOR_SWATCHES = [
@@ -170,8 +178,15 @@ export async function createInvite(serverId) {
 // js/communities.js). Sempre nasce como 'member' comum, nunca 'owner'.
 export async function joinServerAsMember(serverId) {
   const uid = auth.currentUser.uid;
-  await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
-  await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
+  try {
+    await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
+    await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
+  } catch (err) {
+    // As regras barram quem foi banido (servers/{id}/bans/{uid}) — a pessoa não pode ler a
+    // lista de bans, então não dá para confirmar; deixamos a pista na mensagem.
+    if (err?.code === 'permission-denied') throw new Error('Não foi possível entrar neste servidor. Você pode ter sido banido dele.');
+    throw err;
+  }
 }
 
 export async function joinServerByInviteCode(code) {
@@ -192,6 +207,7 @@ export async function joinServerByInviteCode(code) {
 // lado do servidor — ver firestore.rules).
 export async function setMemberRole(serverId, targetUid, role) {
   await updateDoc(memberDoc(serverId, targetUid), { role });
+  logAudit(serverId, 'member.admin', { targetId: targetUid, targetName: memberName(serverId, targetUid), details: { admin: role === 'admin' } });
   toast(role === 'admin' ? 'Membro promovido a administrador.' : 'Cargo de administrador removido.');
 }
 
@@ -225,6 +241,7 @@ export async function createRole(serverId, { name, color, permissions }) {
     position: existing.size,
     createdAt: serverTimestamp(),
   });
+  logAudit(serverId, 'role.create', { details: { name: (name || '').trim() || 'Novo cargo' } });
   toast('Cargo criado.');
   return ref.id;
 }
@@ -240,10 +257,12 @@ export async function updateRole(serverId, roleId, patch) {
   // já que as regras do Firestore leem esse campo direto do membro em vez
   // de "percorrer" a lista de cargos (o Firestore Rules não permite isso).
   if (patch.permissions !== undefined) await resyncMembersWithRole(serverId, roleId);
+  logAudit(serverId, 'role.update', { details: { name: clean.name || lastRoles.get(roleId)?.name || 'Cargo' } });
   toast('Cargo atualizado.');
 }
 
 export async function deleteRole(serverId, roleId) {
+  const roleName = lastRoles.get(roleId)?.name || 'Cargo';
   const cache = state.serverMembersCache.get(serverId) || new Map();
   for (const m of cache.values()) {
     if (!(m.roleIds || []).includes(roleId)) continue;
@@ -251,6 +270,7 @@ export async function deleteRole(serverId, roleId) {
     await writeMemberRoles(serverId, m.uid, newRoleIds);
   }
   await deleteDoc(roleDoc(serverId, roleId));
+  logAudit(serverId, 'role.delete', { details: { name: roleName } });
   toast('Cargo excluído.');
 }
 
@@ -260,6 +280,9 @@ export async function assignRoleToMember(serverId, targetUid, roleId, assign) {
   const current = member?.roleIds || [];
   const newRoleIds = assign ? [...new Set([...current, roleId])] : current.filter((r) => r !== roleId);
   await writeMemberRoles(serverId, targetUid, newRoleIds);
+  logAudit(serverId, assign ? 'role.assign' : 'role.remove', {
+    targetId: targetUid, targetName: memberName(serverId, targetUid), details: { name: lastRoles.get(roleId)?.name || 'Cargo' },
+  });
 }
 
 async function resyncMembersWithRole(serverId, roleId) {
@@ -390,17 +413,21 @@ export async function leaveServer(serverId) {
   toast('Você saiu do servidor.');
 }
 
-export async function kickMember(serverId, targetUid) {
+// opts.silent: sem toast (o banimento mostra o próprio) · opts.audit: registrar no log (padrão sim)
+export async function kickMember(serverId, targetUid, { silent = false, audit = true } = {}) {
   const server = state.servers.get(serverId);
+  const targetName = memberName(serverId, targetUid);
   await updateDoc(serverDoc(serverId), { memberIds: (server.memberIds || []).filter((id) => id !== targetUid) });
   await deleteDoc(memberDoc(serverId, targetUid)).catch(() => {});
-  toast('Membro removido do servidor.');
+  if (audit) logAudit(serverId, 'member.kick', { targetId: targetUid, targetName });
+  if (!silent) toast('Membro removido do servidor.');
 }
 
 // ---------- Configurações de servidor: categorias e canais ----------
 export async function createCategory(serverId, name) {
   const existing = await getDocs(query(categoriesCol(serverId)));
   await addDoc(categoriesCol(serverId), { name: name.trim() || 'Nova categoria', position: existing.size });
+  logAudit(serverId, 'category.create', { details: { name: name.trim() || 'Nova categoria' } });
 }
 
 export async function renameCategory(serverId, catId, name) {
@@ -410,18 +437,35 @@ export async function renameCategory(serverId, catId, name) {
 export async function deleteCategory(serverId, catId) {
   const hasChannels = lastChannels.some((c) => c.categoryId === catId);
   if (hasChannels) throw new Error('Mova ou exclua os canais desta categoria antes de excluí-la.');
+  const catName = lastCategories.find((c) => c.id === catId)?.name || 'Categoria';
   await deleteDoc(doc(db, 'servers', serverId, 'categories', catId));
+  logAudit(serverId, 'category.delete', { details: { name: catName } });
 }
 
 export async function renameChannel(serverId, channelId, name) {
-  await updateDoc(channelDoc(serverId, channelId), { name: name.trim().toLowerCase().replace(/\s+/g, '-') || 'canal' });
+  const from = channelNameOf(channelId);
+  const to = name.trim().toLowerCase().replace(/\s+/g, '-') || 'canal';
+  await updateDoc(channelDoc(serverId, channelId), { name: to });
+  logAudit(serverId, 'channel.rename', { details: { from, to } });
 }
 
 export async function setChannelNsfw(serverId, channelId, nsfw) {
   await updateDoc(channelDoc(serverId, channelId), { nsfw: !!nsfw });
+  logAudit(serverId, 'channel.nsfw', { details: { name: channelNameOf(channelId), nsfw: !!nsfw } });
 }
+
+// Modo lento: segundos mínimos entre duas mensagens da mesma pessoa no canal (0 = desligado).
+// Quem gerencia canais (e o dono/admin) é isento. É aplicado pelo app (composer) — ver chat.js.
+export async function setChannelSlowmode(serverId, channelId, seconds) {
+  const value = Math.max(0, Math.min(21600, Math.round(Number(seconds) || 0)));
+  await updateDoc(channelDoc(serverId, channelId), { slowmodeSeconds: value });
+  logAudit(serverId, 'channel.slowmode', { details: { name: channelNameOf(channelId), seconds: value } });
+}
+
 export async function deleteChannel(serverId, channelId) {
+  const chName = channelNameOf(channelId);
   await deleteDoc(channelDoc(serverId, channelId));
+  logAudit(serverId, 'channel.delete', { details: { name: chName } });
   if (state.currentChannelId === channelId) state.currentChannelId = null;
   toast('Canal excluído.');
 }
@@ -788,6 +832,7 @@ export function openCreateChannelModal(serverId, categories) {
           position: existing.size,
           nsfw: selectedType === 'text' && nsfwCheckbox.checked,
         });
+        logAudit(serverId, 'channel.create', { details: { name: nameInput.value.trim() } });
         closeGenericModal();
       },
     }, 'Criar canal'),
