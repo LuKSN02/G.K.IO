@@ -62,6 +62,7 @@ export function describeAudit(e) {
     case 'invite.create': return { icon: 'link', text: `${a} criou um convite${d.maxUses ? ` (até ${d.maxUses} usos)` : ''}${d.seconds ? ` válido por ${secs(d.seconds)}` : ''}` };
     case 'invite.revoke': return { icon: 'link', text: `${a} revogou o convite ${d.code}` };
     case 'server.welcome': return { icon: 'edit', text: `${a} atualizou as boas-vindas${d.enabled ? ' (ativadas)' : ' (desativadas)'}${d.autoRole ? ` e o cargo automático "${d.autoRole}"` : ''}` };
+    case 'server.visibility': return { icon: 'lock', text: d.visibility === 'public' ? `${a} tornou o servidor público` : `${a} tornou o servidor privado (só entra com convite)` };
     case 'message.delete': return { icon: 'trash', text: `${a} apagou uma mensagem de ${t} em #${d.channelName}${d.preview ? `: "${d.preview}"` : ''}` };
     default: return { icon: 'edit', text: `${a} fez uma ação (${e.type})` };
   }

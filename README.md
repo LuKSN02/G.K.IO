@@ -145,3 +145,15 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 > **Importante:** publique o `firestore.rules` atualizado. Ele protege o contador de usos (só sobe de 1 em 1, em convite válido), permite revogar e libera o cargo automático.
 > **Limite honesto:** a validade e o limite do convite são conferidos pelo **app** de quem entra. Hoje qualquer conta logada ainda consegue entrar num servidor sabendo o ID dele (as regras não exigem convite). Tornar servidores privados de verdade é um próximo passo.
 
+## Servidor privado de verdade (v1.6.0)
+- **Privado** (o padrão de todo servidor criado pelo app): as regras do Firestore só deixam entrar quem usar um **convite válido** — que existe, é daquele servidor, está no prazo e não esgotou. O uso do convite é contado **no mesmo lote** da entrada, então o limite vale mesmo com várias pessoas entrando ao mesmo tempo.
+- **Público:** aparece em Comunidades e qualquer pessoa entra sem convite. O dono alterna entre os dois em **Convites > Privacidade**.
+- Ninguém consegue "varrer" a lista de convites atrás de códigos: só dá para listar os que você criou (ou, se gerencia o servidor, os do servidor). Convites só podem ser criados por quem já é membro do servidor.
+
+### Como publicar sem trancar ninguém para fora
+1. **Primeiro** publique o app novo (Release `v1.6.0`) e espere seus amigos atualizarem. Versões antigas entram em servidor privado do jeito antigo, que as regras novas recusam.
+2. **Depois** publique o `firestore.rules` (Firestore > Regras > Publicar). Antes disso, copie as regras atuais para um arquivo — se algo der errado, é só publicar as antigas de volta.
+3. **Teste com uma segunda conta:** (a) entrar num servidor privado com um convite válido → deve entrar; (b) tentar de novo com o convite já esgotado → deve recusar; (c) entrar num servidor público pela aba Comunidades → deve entrar.
+
+> Esta é a única parte do projeto que mexe na regra de entrada de todo servidor. Não consegui testar as regras com o emulador do Firestore; o app foi testado com o Firebase simulado.
+

@@ -2866,3 +2866,9 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-msg-system-time { font-size: 11px; font-family: var(--gk-font-mono); color: var(--gk-gray-400); }
 .gk-sv-note { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--gk-gray-400); }
 .gk-invite-created .gk-sv-note { margin: 0; color: var(--gk-accent-strong); font-weight: 600; }
+
+/* privacidade do servidor (aba Convites) */
+.gk-privacy-card { padding: 8px 12px 12px; }
+.gk-privacy-card .gk-notif-opt { align-items: flex-start; }
+.gk-privacy-desc { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 400; color: var(--gk-gray-500); }
+.gk-privacy-card .gk-notif-opt.gk-active .gk-privacy-desc { color: var(--gk-accent-strong); opacity: .85; }

@@ -12,7 +12,7 @@ import {
   isServerOwner, getCategoriesAndChannels,
   updateServerInfo, deleteServerPermanently, leaveServer, kickMember, setMemberRole,
   createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel, setChannelNsfw, setChannelSlowmode,
-  listServerInvites, revokeInvite, inviteStatus, saveWelcomeSettings, renderWelcomeText, DEFAULT_WELCOME,
+  listServerInvites, revokeInvite, inviteStatus, saveWelcomeSettings, renderWelcomeText, DEFAULT_WELCOME, setServerVisibility,
   createInvite, openCreateChannelModal, openChannelPermissionsModal,
   PERMISSION_CATALOG, ROLE_COLOR_SWATCHES, getRoles, createRole, updateRole, deleteRole, assignRoleToMember,
   onServerDataChange,
@@ -737,6 +737,46 @@ function renderConvitesSection(content) {
   content.appendChild(sectionHeader('Convites', 'Gere códigos para outras pessoas entrarem. Defina por quanto tempo valem e quantas vezes podem ser usados.'));
   const stillHere = () => content.isConnected && activeSection === 'convites' && currentServerId === serverId;
 
+  // ----- privacidade: privado (só convite) x público (Comunidades) -----
+  const server = state.servers.get(serverId) || {};
+  const visibility = server.visibility === 'public' ? 'public' : 'private';
+  const privacyBody = [];
+  if (isServerOwner(serverId)) {
+    const setVis = async (value) => {
+      if (value === visibility) return;
+      const apply = async () => {
+        await setServerVisibility(serverId, value);
+        if (state.servers.get(serverId)) state.servers.get(serverId).visibility = value; // reflete já; o listener confirma
+        toast(value === 'public' ? 'Servidor público.' : 'Servidor privado.');
+        renderSection();
+      };
+      if (value === 'public') {
+        confirmDangerAction('Tornar o servidor público',
+          'Qualquer pessoa poderá entrar sem convite e o servidor aparecerá em Comunidades.',
+          apply, { confirmLabel: 'Tornar público', iconName: 'lock' });
+      } else {
+        try { await apply(); } catch (err) { toast(err.message || 'Não foi possível alterar.', 'danger'); }
+      }
+    };
+    const opt = (value, title, desc) => el('button', {
+      type: 'button', class: 'gk-notif-opt' + (visibility === value ? ' gk-active' : ''), role: 'radio',
+      'aria-checked': String(visibility === value), 'data-visibility': value,
+      onclick: () => setVis(value),
+    }, [el('span', {}, [el('b', {}, title), el('small', { class: 'gk-privacy-desc' }, desc)]), visibility === value ? icon('check', { size: 16 }) : null]);
+    privacyBody.push(el('div', { class: 'gk-notif-group', role: 'radiogroup' }, [
+      opt('private', 'Privado', 'Só entra quem tiver um convite válido. Não aparece em Comunidades.'),
+      opt('public', 'Público', 'Aparece em Comunidades e qualquer pessoa pode entrar. Convites continuam funcionando.'),
+    ]));
+  } else {
+    privacyBody.push(el('div', { class: 'gk-sv-note', style: 'margin:0;' }, visibility === 'public'
+      ? 'Este servidor é público: qualquer pessoa pode entrar pelas Comunidades. Só o dono muda isso.'
+      : 'Este servidor é privado: só entra quem tiver um convite válido. Só o dono muda isso.'));
+  }
+  content.appendChild(el('div', { class: 'gk-sv-card gk-privacy-card', id: 'gk-privacy-card' }, [
+    el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('lock', { size: 14 }), ' Privacidade'])]),
+    ...privacyBody,
+  ]));
+
   // ----- criar -----
   const expiry = el('select', { class: 'gk-sv-select', id: 'gk-invite-expiry' }, INVITE_EXPIRY.map(([v, l]) => el('option', { value: String(v) }, l)));
   expiry.value = '604800';
@@ -748,7 +788,7 @@ function renderConvitesSection(content) {
 
   const loadInvites = async () => {
     let invites;
-    try { invites = (await listServerInvites(serverId)).filter((i) => manage || i.createdBy === me); }
+    try { invites = (await listServerInvites(serverId, { all: manage })).filter((i) => manage || i.createdBy === me); }
     catch (err) { if (stillHere()) listBody.replaceChildren(el('div', { class: 'gk-sv-empty' }, 'Não foi possível carregar os convites.')); return; }
     if (!stillHere()) return;
     listBody.innerHTML = '';
@@ -811,8 +851,9 @@ function renderConvitesSection(content) {
     el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('link', { size: 14 }), manage ? ' Convites do servidor' : ' Seus convites'])]),
     listBody,
   ]));
-  content.appendChild(el('div', { class: 'gk-sv-note' },
-    'Validade e limite são conferidos pelo app de quem entra. Quem entra por um convite que já expirou ou esgotou recebe um aviso.'));
+  content.appendChild(el('div', { class: 'gk-sv-note' }, visibility === 'private'
+    ? 'Servidor privado: as regras do Firestore só deixam entrar quem usar um convite válido — dentro do prazo e do limite de usos.'
+    : 'Servidor público: validade e limite valem para quem entra por convite, mas qualquer pessoa também pode entrar pelas Comunidades.'));
   loadInvites();
 }
 

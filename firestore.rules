@@ -178,7 +178,10 @@ service cloud.firestore {
     // a permissão granular 'manageServer' (cargo personalizado).
     function isValidServerInfoEdit(serverId) {
       return (isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageServer'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId','visibility'])
+        // visibility ('public' | 'private'): só o dono muda
+        && (!('visibility' in request.resource.data.diff(resource.data).affectedKeys())
+            || (isServerOwner(serverId) && request.resource.data.visibility in ['public', 'private']))
         // welcome = { enabled, channelId, message } · autoRoleId = cargo dado a quem entra (ou null)
         && (!('welcome' in request.resource.data) || request.resource.data.welcome is map)
         && (!('autoRoleId' in request.resource.data) || request.resource.data.autoRoleId == null || request.resource.data.autoRoleId is string);
@@ -202,7 +205,15 @@ service cloud.firestore {
     function isSelfJoiningOnly(serverId) {
       return !(request.auth.uid in resource.data.memberIds)
         && !isBanned(serverId, request.auth.uid)
-        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
+        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
+        && (resource.data.get('visibility', 'private') != 'private' || isJoiningWithNewMemberDoc(serverId));
+    }
+    // Servidor privado: entrar na lista de membros só vale junto com a CRIAÇÃO do doc de membro
+    // (que carrega a prova do convite), na mesma gravação em lote. O `!exists` impede reaproveitar
+    // um doc de membro antigo que tenha sobrado.
+    function isJoiningWithNewMemberDoc(serverId) {
+      return !exists(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid))
+        && existsAfter(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid));
     }
     function isValidMemberIdsChange(serverId) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
@@ -218,7 +229,25 @@ service cloud.firestore {
               || request.resource.data.role == 'member')
         && (request.resource.data.get('roleIds', []) == [] || isAutoRoleGrant(serverId))
         && request.resource.data.get('permissions', {}) == {}
-        && !isBanned(serverId, request.auth.uid);
+        && !isBanned(serverId, request.auth.uid)
+        && (request.resource.data.role == 'owner' || !isPrivateServer(serverId) || isValidInviteJoin(serverId));
+    }
+    // Privado = visibility 'private' (e também servidores antigos sem o campo, como o app sempre tratou).
+    function isPrivateServer(serverId) {
+      return get(/databases/$(database)/documents/servers/$(serverId)).data.get('visibility', 'private') == 'private';
+    }
+    // Prova de convite no doc de membro (campo `inviteCode`): o convite existe, é DESTE servidor, está
+    // no prazo, não esgotou — e foi consumido (uses + 1) na mesma gravação em lote (getAfter), o que
+    // faz o limite de usos valer de verdade mesmo com várias pessoas entrando ao mesmo tempo.
+    function isValidInviteJoin(serverId) {
+      let code = request.resource.data.get('inviteCode', null);
+      let inv = get(/databases/$(database)/documents/invites/$(code)).data;
+      let invAfter = getAfter(/databases/$(database)/documents/invites/$(code)).data;
+      return code is string
+        && inv.serverId == serverId
+        && (inv.get('expiresAt', null) == null || inv.expiresAt > request.time)
+        && (inv.get('maxUses', null) == null || inv.get('uses', 0) < inv.maxUses)
+        && invAfter.get('uses', 0) == inv.get('uses', 0) + 1;
     }
     // Quem entra pode nascer SÓ com o cargo automático que o servidor configurou (autoRoleId) —
     // e sem permissões (permissions continua {}), então não dá para se autopromover.
@@ -357,8 +386,19 @@ service cloud.firestore {
 
     // ---------- Convites ----------
     match /invites/{code} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy;
+      // get: qualquer pessoa logada com o código (é assim que se entra). list: só os convites
+      // que você criou ou, se você administra/gerencia o servidor, os do servidor — ninguém
+      // consegue "varrer" a coleção atrás de códigos de servidores privados.
+      allow get: if signedIn();
+      allow list: if signedIn()
+        && (resource.data.createdBy == request.auth.uid
+            || isServerAdminOrOwner(resource.data.serverId)
+            || hasPermission(resource.data.serverId, 'manageServer'));
+      // Criar: só quem é membro do servidor do convite (senão qualquer conta fabricaria convites
+      // de qualquer servidor) e sempre com uses = 0.
+      allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy
+        && isServerMember(request.resource.data.serverId)
+        && request.resource.data.get('uses', 0) == 0;
       // Qualquer pessoa só pode registrar UM uso por vez (uses + 1), e só num convite ainda
       // válido (dentro do limite e do prazo). Ninguém reescreve limite nem validade.
       allow update: if signedIn()

@@ -5,7 +5,7 @@ import {
   db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc, channelMessagesCol,
   membersCol, memberDoc, invitesCol, inviteDoc, userDoc, rolesCol, roleDoc,
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
+  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch,
 } from './db.js';
 import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus, currentActivity } from './state.js';
 import { selectChannel } from './chat.js';
@@ -190,10 +190,27 @@ export function inviteStatus(inv) {
   return { state: 'active', expiresInMs: exp ? exp - Date.now() : null };
 }
 
-export async function listServerInvites(serverId) {
-  const snap = await getDocs(query(invitesCol(), where('serverId', '==', serverId)));
+// Quem gerencia o servidor pode listar todos os convites (all: true); os demais, só os seus.
+// As regras não deixam listar convites de outras pessoas — se a consulta "todos" for negada,
+// cai para "só os meus" em vez de quebrar a tela.
+export async function listServerInvites(serverId, { all = false } = {}) {
+  const mine = () => getDocs(query(invitesCol(), where('serverId', '==', serverId), where('createdBy', '==', auth.currentUser.uid)));
+  let snap;
+  if (all) {
+    try { snap = await getDocs(query(invitesCol(), where('serverId', '==', serverId))); }
+    catch (err) { if (err?.code !== 'permission-denied') throw err; snap = await mine(); }
+  } else {
+    snap = await mine();
+  }
   const ms = (i) => (i.createdAt?.toMillis ? i.createdAt.toMillis() : 0);
   return snap.docs.map((d) => ({ code: d.id, ...d.data() })).sort((a, b) => ms(b) - ms(a));
+}
+
+// Privacidade: 'private' = só entra com convite · 'public' = aparece em Comunidades e qualquer pessoa entra.
+export async function setServerVisibility(serverId, visibility) {
+  const value = visibility === 'public' ? 'public' : 'private';
+  await updateDoc(serverDoc(serverId), { visibility: value });
+  logAudit(serverId, 'server.visibility', { details: { visibility: value } });
 }
 
 export async function revokeInvite(serverId, code) {
@@ -218,13 +235,28 @@ export async function saveWelcomeSettings(serverId, { enabled, channelId, messag
 // Vira membro de um servidor — mesmo passo usado tanto ao entrar por
 // convite quanto ao entrar direto por uma comunidade pública (ver
 // js/communities.js). Sempre nasce como 'member' comum, nunca 'owner'.
-export async function joinServerAsMember(serverId) {
+// Entrar num servidor.
+//  · público ('public'): entra direto — doc do servidor + doc de membro (como sempre).
+//  · privado ('private', o padrão): só com convite. As regras do Firestore exigem a prova do
+//    convite no doc de membro e que ele seja consumido (uses + 1) na MESMA gravação em lote,
+//    então a entrada é UM lote atômico: convite + doc de membro + lista de membros.
+// Devolve { usesCounted }: true quando o uso do convite já foi contado no lote.
+export async function joinServerAsMember(serverId, { inviteCode = null, inviteUses = 0 } = {}) {
   const uid = auth.currentUser.uid;
+  let cfg = {};
+  try { const snap = await getDoc(serverDoc(serverId)); cfg = snap.exists() ? snap.data() : {}; } catch (e) { /* segue: as regras decidem */ }
+  const isPrivate = (cfg.visibility || 'private') === 'private';
+
+  if (isPrivate) {
+    if (!inviteCode) throw new Error('Este servidor é privado: só dá para entrar com um convite.');
+    await joinPrivateWithInvite(serverId, cfg, { inviteCode, inviteUses });
+    postWelcomeMessage(serverId, cfg);
+    return { usesCounted: true };
+  }
+
   try {
     await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
-    // Agora já somos membros, então dá para ler o servidor: cargo automático e boas-vindas.
-    let cfg = {};
-    try { const snap = await getDoc(serverDoc(serverId)); cfg = snap.exists() ? snap.data() : {}; } catch (e) { /* segue sem */ }
+    // Agora já somos membros, então dá para ler os cargos: cargo automático e boas-vindas.
     const roleIds = await autoRoleIdsFor(serverId, cfg);
     const base = { nickname: null, role: 'member', joinedAt: serverTimestamp() };
     try {
@@ -239,6 +271,45 @@ export async function joinServerAsMember(serverId) {
     // As regras barram quem foi banido (servers/{id}/bans/{uid}) — a pessoa não pode ler a
     // lista de bans, então não dá para confirmar; deixamos a pista na mensagem.
     if (err?.code === 'permission-denied') throw new Error('Não foi possível entrar neste servidor. Você pode ter sido banido dele.');
+    throw err;
+  }
+  return { usesCounted: false };
+}
+
+async function joinPrivateWithInvite(serverId, cfg, { inviteCode, inviteUses }) {
+  const uid = auth.currentUser.uid;
+  // Quem ainda não é membro não consegue ler os cargos, então não dá para conferir se o cargo
+  // automático ainda é "sem permissões" — se a leitura for negada, confiamos na configuração (o
+  // app apaga o autoRoleId quando o cargo ganha permissões ou é excluído).
+  let roleIds = [];
+  if (cfg.autoRoleId) {
+    roleIds = [cfg.autoRoleId];
+    try {
+      const r = await getDoc(roleDoc(serverId, cfg.autoRoleId));
+      if (!r.exists() || Object.values(r.data().permissions || {}).some(Boolean)) roleIds = [];
+    } catch (e) { /* sem acesso antes de entrar: mantém */ }
+  }
+  const attempt = async (withRoles) => {
+    const batch = writeBatch(db);
+    batch.update(inviteDoc(inviteCode), { uses: inviteUses + 1 });
+    batch.set(memberDoc(serverId, uid), {
+      nickname: null, role: 'member', joinedAt: serverTimestamp(), inviteCode,
+      ...(withRoles && roleIds.length ? { roleIds } : {}),
+    });
+    batch.update(serverDoc(serverId), { memberIds: arrayUnion(uid) });
+    await batch.commit();
+  };
+  try {
+    try {
+      await attempt(true);
+    } catch (err) {
+      // Regras sem o cargo automático: tenta de novo sem ele (o lote anterior não gravou nada).
+      if (err?.code === 'permission-denied' && roleIds.length) await attempt(false); else throw err;
+    }
+  } catch (err) {
+    if (err?.code === 'permission-denied') {
+      throw new Error('Não foi possível entrar com este convite. Ele pode ter expirado ou esgotado, ou você foi banido deste servidor.');
+    }
     throw err;
   }
 }
@@ -289,8 +360,10 @@ export async function joinServerByInviteCode(code) {
     toast(`Você já está em "${state.servers.get(inv.serverId).name}".`);
     return inv.serverId;
   }
-  await joinServerAsMember(inv.serverId);
-  try { await updateDoc(inviteDoc(code), { uses: (inv.uses || 0) + 1 }); } catch (e) { /* a contagem é só informativa */ }
+  const { usesCounted } = await joinServerAsMember(inv.serverId, { inviteCode: code, inviteUses: inv.uses || 0 });
+  if (!usesCounted) {
+    try { await updateDoc(inviteDoc(code), { uses: (inv.uses || 0) + 1 }); } catch (e) { /* a contagem é só informativa */ }
+  }
   const serverSnap = await getDoc(serverDoc(inv.serverId));
   toast(`Você entrou em "${serverSnap.data().name}".`);
   return inv.serverId;
