@@ -8,10 +8,11 @@ import { query, where, getDocs } from './db.js';
 import { el, toast, formatTime } from './state.js';
 import { icon } from './icons.js';
 import { messagePreview } from './message-utils.js';
+import { resetGenericModal } from './dialogs.js';
 
 export async function openPinnedPanel(ctx) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
+  const modal = resetGenericModal();
   const close = () => overlay.classList.remove('gk-open');
 
   modal.innerHTML = '';

@@ -8,7 +8,7 @@ import { state, el, toast, fallbackAvatar, formatTime } from './state.js';
 import { icon } from './icons.js';
 import { canKickMembers, isServerOwner, kickMember } from './servers.js';
 import { logAudit } from './audit.js';
-import { confirmDangerAction } from './dialogs.js';
+import { confirmDangerAction, resetGenericModal } from './dialogs.js';
 import { formatLong } from './message-utils.js';
 
 const bansCol = (serverId) => collection(db, 'servers', serverId, 'bans');
@@ -97,7 +97,7 @@ export async function listBans(serverId) {
 // ---------- Janela "Moderar" ----------
 export function openModerateModal(serverId, member) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
+  const modal = resetGenericModal();
   const close = () => overlay.classList.remove('gk-open');
   const name = displayNameOf(member);
   const run = async (fn, button) => {

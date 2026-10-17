@@ -2872,3 +2872,50 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-privacy-card .gk-notif-opt { align-items: flex-start; }
 .gk-privacy-desc { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 400; color: var(--gk-gray-500); }
 .gk-privacy-card .gk-notif-opt.gk-active .gk-privacy-desc { color: var(--gk-accent-strong); opacity: .85; }
+
+/* ============================================================
+   Diálogo "entrar na sala de voz" (tom de destaque) e criação de enquete
+   ============================================================ */
+/* confirmação com tom de destaque (ações normais, não destrutivas) */
+.gk-confirm.gk-accent .gk-confirm-icon {
+  background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--gk-accent) 12%, transparent);
+}
+.gk-confirm.gk-accent .gk-confirm-btn { background: var(--gk-accent); border-color: var(--gk-accent); }
+.gk-confirm-btn { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--gk-danger) 70%, transparent); }
+.gk-confirm.gk-accent .gk-confirm-btn { box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--gk-accent) 75%, transparent); }
+.gk-confirm-note {
+  display: flex; align-items: flex-start; gap: 8px; margin: -6px 0 20px; padding: 10px 12px; text-align: left;
+  background: color-mix(in srgb, var(--gk-warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gk-warning) 35%, transparent); border-radius: var(--gk-radius-sm);
+  font-size: 12.5px; line-height: 1.45; color: var(--gk-gray-700, var(--gk-gray-800));
+}
+.gk-confirm-note svg { flex-shrink: 0; margin-top: 1px; color: var(--gk-warning); }
+
+/* criação de enquete */
+.gk-poll-label { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.gk-poll-label label { font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--gk-gray-500); margin: 0; }
+.gk-poll-counter { font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--gk-gray-400); }
+.gk-poll-edit-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.gk-poll-edit-row { display: flex; align-items: center; gap: 8px; }
+.gk-poll-edit-row .gk-sv-input { flex: 1; min-width: 0; }
+.gk-poll-badge {
+  width: 24px; height: 24px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.gk-poll-edit-row .gk-sv-iconbtn:disabled { opacity: .25; cursor: default; pointer-events: none; }
+.gk-poll-add { width: 100%; justify-content: center; display: inline-flex; align-items: center; gap: 6px; border: 1px dashed var(--gk-gray-300, var(--gk-gray-200)); background: transparent; }
+.gk-poll-add:hover:not(:disabled) { border-color: var(--gk-accent); color: var(--gk-accent-strong); }
+.gk-poll-add:disabled { opacity: .45; cursor: default; }
+.gk-poll-switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0 0; padding: 12px 14px; cursor: pointer;
+  background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md);
+}
+.gk-poll-switch-row strong { display: block; font-size: 14px; color: var(--gk-gray-800); }
+.gk-poll-switch-row small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--gk-gray-500); }
+.gk-poll-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.gk-poll-hint { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gk-gray-400); }
+.gk-poll-hint.gk-ok { color: var(--gk-gray-500); }
+.gk-poll-footer-actions { display: flex; gap: 8px; flex-shrink: 0; }
+#gk-poll-create:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }

@@ -9,6 +9,7 @@
 import { auth, userDoc, updateDoc } from './db.js';
 import { state, el, toast } from './state.js';
 import { icon, iconHtml } from './icons.js';
+import { resetGenericModal } from './dialogs.js';
 
 const listeners = new Set();
 export function onNotifPrefsChange(cb) { listeners.add(cb); return () => listeners.delete(cb); }
@@ -72,7 +73,7 @@ export function refreshNotifButton(ctx) {
 
 export function openNotifModal({ serverId, channelId, dmId, channelName }, onChange) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
+  const modal = resetGenericModal();
   const ctx = dmId ? { dmId } : { serverId, channelId };
 
   const render = () => {

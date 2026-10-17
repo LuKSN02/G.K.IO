@@ -9,72 +9,126 @@
 import { auth, updateDoc, arrayUnion, arrayRemove } from './db.js';
 import { el, toast } from './state.js';
 import { icon } from './icons.js';
+import { resetGenericModal } from './dialogs.js';
 
 const MAX_OPTIONS = 8;
 const MIN_OPTIONS = 2;
 
 export function openPollModal(ctx) {
   const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
+  const modal = resetGenericModal();
   const close = () => overlay.classList.remove('gk-open');
-
   modal.innerHTML = '';
-  const question = el('input', { type: 'text', class: 'gk-sv-input', maxlength: '200', placeholder: 'Qual é a sua pergunta?' });
+
+  const QUESTION_MAX = 200;
+  const question = el('input', { type: 'text', class: 'gk-sv-input', id: 'gk-poll-question', maxlength: String(QUESTION_MAX), placeholder: 'Qual é a sua pergunta?', autocomplete: 'off' });
+  const questionCount = el('span', { class: 'gk-poll-counter' }, `0/${QUESTION_MAX}`);
   const optionsBox = el('div', { class: 'gk-poll-edit-options' });
-  const addBtn = el('button', { class: 'gk-btn gk-btn-ghost', type: 'button' }, [icon('plus', { size: 14 }), ' Adicionar opção']);
-  const multi = el('input', { type: 'checkbox' });
-  const createBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button' }, 'Criar enquete');
+  const optionsCount = el('span', { class: 'gk-poll-counter' });
+  const addBtn = el('button', { class: 'gk-btn gk-btn-ghost gk-poll-add', type: 'button' });
+  const hint = el('span', { class: 'gk-poll-hint', id: 'gk-poll-hint' });
+  const createBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button', id: 'gk-poll-create' }, 'Criar enquete');
+
+  // interruptor "várias respostas" (mesmo componente das configurações)
+  const multi = el('div', { class: 'gk-toggle', id: 'gk-poll-multi', role: 'switch', tabindex: '0', 'aria-checked': 'false' });
+  const setMulti = (on) => { multi.classList.toggle('gk-on', on); multi.setAttribute('aria-checked', String(on)); refresh(); };
+  const toggleMulti = () => setMulti(!multi.classList.contains('gk-on'));
+  const multiRow = el('div', { class: 'gk-poll-switch-row', onclick: toggleMulti }, [
+    el('span', {}, [el('strong', {}, 'Permitir várias respostas'), el('small', {}, 'Cada pessoa pode marcar mais de uma opção.')]),
+    multi,
+  ]);
+  multi.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); toggleMulti(); } });
 
   const rows = [];
-  const refreshRows = () => {
-    rows.forEach((r, i) => {
-      r.input.placeholder = `Opção ${i + 1}`;
-      r.remove.style.visibility = rows.length > MIN_OPTIONS ? 'visible' : 'hidden';
-    });
-    addBtn.disabled = rows.length >= MAX_OPTIONS;
-  };
-  const addOption = () => {
-    if (rows.length >= MAX_OPTIONS) return;
-    const input = el('input', { type: 'text', class: 'gk-sv-input', maxlength: '80' });
-    const remove = el('button', { class: 'gk-sv-iconbtn', type: 'button', title: 'Remover opção', 'aria-label': 'Remover opção' }, [icon('close', { size: 14 })]);
-    const row = el('div', { class: 'gk-poll-edit-row' }, [input, remove]);
-    const entry = { input, remove, row };
-    remove.addEventListener('click', () => {
-      if (rows.length <= MIN_OPTIONS) return;
-      rows.splice(rows.indexOf(entry), 1); row.remove(); refreshRows();
-    });
-    rows.push(entry); optionsBox.appendChild(row); refreshRows();
-    return input;
-  };
-  addBtn.addEventListener('click', () => addOption().focus());
-  addOption(); addOption();
+  const filledOptions = () => [...new Set(rows.map((r) => r.input.value.trim()).filter(Boolean))];
+  const isValid = () => question.value.trim().length > 0 && filledOptions().length >= MIN_OPTIONS;
 
-  createBtn.addEventListener('click', async () => {
+  function refresh() {
+    questionCount.textContent = `${question.value.length}/${QUESTION_MAX}`;
+    rows.forEach((r, i) => {
+      r.badge.textContent = String(i + 1);
+      r.input.placeholder = `Opção ${i + 1}`;
+      r.remove.disabled = rows.length <= MIN_OPTIONS; // fica no lugar (esmaecido) para as linhas não "pularem"
+    });
+    optionsCount.textContent = `${rows.length}/${MAX_OPTIONS}`;
+    addBtn.disabled = rows.length >= MAX_OPTIONS;
+    addBtn.replaceChildren(icon('plus', { size: 14 }), ' Adicionar opção');
+    const valid = isValid();
+    createBtn.disabled = !valid;
+    hint.textContent = valid
+      ? `${filledOptions().length} opções · ${multi.classList.contains('gk-on') ? 'múltipla' : 'única'}`
+      : 'Escreva a pergunta e pelo menos 2 opções.';
+    hint.classList.toggle('gk-ok', valid);
+  }
+
+  const submit = async () => {
+    if (!isValid()) return;
     const q = question.value.trim();
-    const options = [...new Set(rows.map((r) => r.input.value.trim()).filter(Boolean))];
-    if (!q) { toast('Escreva a pergunta da enquete.', 'danger'); question.focus(); return; }
-    if (options.length < MIN_OPTIONS) { toast('Coloque pelo menos 2 opções diferentes.', 'danger'); return; }
+    const options = filledOptions();
     createBtn.disabled = true;
     const ok = await ctx.postPayload({
       content: '',
-      poll: { question: q, options: options.map((text, i) => ({ id: `o${i + 1}`, text })), multi: multi.checked },
+      poll: { question: q, options: options.map((text, i) => ({ id: `o${i + 1}`, text })), multi: multi.classList.contains('gk-on') },
       votes: {},
     }, { preview: `📊 Enquete: ${q}` });
-    createBtn.disabled = false;
-    if (ok) close();
+    if (ok) close(); else refresh();
+  };
+
+  const addOption = () => {
+    if (rows.length >= MAX_OPTIONS) return null;
+    const badge = el('span', { class: 'gk-poll-badge' });
+    const input = el('input', { type: 'text', class: 'gk-sv-input', maxlength: '80', autocomplete: 'off' });
+    const remove = el('button', { class: 'gk-sv-iconbtn', type: 'button', title: 'Remover opção', 'aria-label': 'Remover opção' }, [icon('close', { size: 14 })]);
+    const row = el('div', { class: 'gk-poll-edit-row' }, [badge, input, remove]);
+    const entry = { badge, input, remove, row };
+    remove.addEventListener('click', () => {
+      if (rows.length <= MIN_OPTIONS) return;
+      const i = rows.indexOf(entry);
+      rows.splice(i, 1); row.remove(); refresh();
+      (rows[Math.max(0, i - 1)] || rows[0]).input.focus();
+    });
+    input.addEventListener('input', refresh);
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) { submit(); return; }
+      const i = rows.indexOf(entry);
+      if (rows[i + 1]) rows[i + 1].input.focus();
+      else if (input.value.trim()) { const next = addOption(); if (next) next.focus(); }
+    });
+    rows.push(entry); optionsBox.appendChild(row); refresh();
+    return input;
+  };
+  addBtn.addEventListener('click', () => { const i = addOption(); if (i) i.focus(); });
+  question.addEventListener('input', refresh);
+  question.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); if (e.ctrlKey || e.metaKey) submit(); else rows[0]?.input.focus(); }
   });
+  createBtn.addEventListener('click', submit);
+  addOption(); addOption();
 
   modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
     el('div', { class: 'gk-modal-icon' }, [icon('poll', { size: 22 })]),
     el('div', {}, [el('h2', {}, 'Criar enquete'), el('p', { class: 'gk-modal-sub' }, 'Todo mundo da conversa pode votar.')]),
   ]));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Pergunta'), question]));
-  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Opções'), optionsBox, addBtn]));
-  modal.appendChild(el('label', { class: 'gk-nsfw-option' }, [multi, el('span', {}, [el('strong', {}, 'Permitir várias respostas'), el('small', {}, 'Cada pessoa pode marcar mais de uma opção.')])]));
-  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: close }, 'Cancelar'),
-    createBtn,
+  modal.appendChild(el('div', { class: 'gk-field' }, [
+    el('div', { class: 'gk-poll-label' }, [el('label', { for: 'gk-poll-question' }, 'Pergunta'), questionCount]),
+    question,
   ]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [
+    el('div', { class: 'gk-poll-label' }, [el('label', {}, 'Opções'), optionsCount]),
+    optionsBox,
+    addBtn,
+  ]));
+  modal.appendChild(multiRow);
+  modal.appendChild(el('div', { class: 'gk-poll-footer' }, [
+    hint,
+    el('div', { class: 'gk-poll-footer-actions' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: close }, 'Cancelar'),
+      createBtn,
+    ]),
+  ]));
+  refresh();
   overlay.classList.add('gk-open');
   question.focus();
 }

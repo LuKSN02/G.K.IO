@@ -8,6 +8,7 @@ import { listenUserServers, openCreateServerModal, openJoinServerModal, selectSe
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById, hideFriendsHome, showFriendsHome } from './dms.js';
 import { wireComposer, sendAttachmentMessage } from './chat.js';
+import { wireGenericModalReset } from './dialogs.js';
 import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
 import { openSettingsModal, wireSettingsModal } from './settings.js';
@@ -37,6 +38,7 @@ wireComposer();
 wireCallBar();
 wireSettingsModal();
 wireServerSettingsModal();
+wireGenericModalReset();
 wireFriendsHome();
 wireGlobalTopbar();
 wireStaticUI();

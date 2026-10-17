@@ -17,6 +17,7 @@ import { openImageCropper } from './cropper.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
 import { logAudit } from './audit.js';
+import { confirmDialog, resetGenericModal } from './dialogs.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
 
@@ -833,27 +834,21 @@ function renderServerSidebar(serverId, categories, channels) {
 // outra chamada/sala, avisa que ela vai ser encerrada automaticamente
 // ao entrar nessa nova, pra não pegar ninguém de surpresa.
 function confirmJoinVoiceChannel(serverId, ch) {
-  const overlay = document.getElementById('gk-generic-modal-overlay');
-  const modal = document.getElementById('gk-generic-modal');
-  modal.innerHTML = '';
-
-  let warning = '';
+  let note = null;
   if (state.activeCall && !(state.activeCall.kind === 'voiceChannel' && state.activeCall.id === ch.id)) {
-    warning = state.activeCall.kind === 'dm'
-      ? ' Sua chamada em andamento será encerrada automaticamente.'
-      : ' Você vai sair da sala de voz atual automaticamente.';
+    note = state.activeCall.kind === 'dm'
+      ? 'Sua chamada em andamento será encerrada automaticamente.'
+      : 'Você vai sair da sala de voz atual automaticamente.';
   }
-
-  modal.appendChild(el('h2', {}, 'Entrar na sala de voz?'));
-  modal.appendChild(el('p', { class: 'gk-modal-sub' }, `Você está prestes a entrar em "${ch.name}".${warning}`));
-  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', onclick: () => overlay.classList.remove('gk-open') }, 'Cancelar'),
-    el('button', {
-      class: 'gk-btn gk-btn-primary',
-      onclick: () => { overlay.classList.remove('gk-open'); joinVoiceChannel(serverId, ch.id, ch.name); },
-    }, [icon('speaker', { size: 15 }), ' Entrar']),
-  ]));
-  overlay.classList.add('gk-open');
+  confirmDialog({
+    title: 'Entrar na sala de voz?',
+    message: `Você está prestes a entrar em "${ch.name}".`,
+    note,
+    confirmLabel: 'Entrar',
+    iconName: 'speaker',
+    tone: 'accent',
+    onConfirm: () => joinVoiceChannel(serverId, ch.id, ch.name),
+  });
 }
 
 function listenMembers(serverId) {
