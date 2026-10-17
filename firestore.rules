@@ -178,7 +178,10 @@ service cloud.firestore {
     // a permissão granular 'manageServer' (cargo personalizado).
     function isValidServerInfoEdit(serverId) {
       return (isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageServer'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId'])
+        // welcome = { enabled, channelId, message } · autoRoleId = cargo dado a quem entra (ou null)
+        && (!('welcome' in request.resource.data) || request.resource.data.welcome is map)
+        && (!('autoRoleId' in request.resource.data) || request.resource.data.autoRoleId == null || request.resource.data.autoRoleId is string);
     }
     // Quem pode remover QUALQUER outro membro de memberIds (expulsar):
     // dono, admin legado, ou permissão granular 'manageMembers'.
@@ -213,9 +216,15 @@ service cloud.firestore {
     function isValidSelfMemberJoin(serverId) {
       return (request.resource.data.role == 'owner' && isServerOwner(serverId)
               || request.resource.data.role == 'member')
-        && request.resource.data.get('roleIds', []) == []
+        && (request.resource.data.get('roleIds', []) == [] || isAutoRoleGrant(serverId))
         && request.resource.data.get('permissions', {}) == {}
         && !isBanned(serverId, request.auth.uid);
+    }
+    // Quem entra pode nascer SÓ com o cargo automático que o servidor configurou (autoRoleId) —
+    // e sem permissões (permissions continua {}), então não dá para se autopromover.
+    function isAutoRoleGrant(serverId) {
+      let autoRole = get(/databases/$(database)/documents/servers/$(serverId)).data.get('autoRoleId', null);
+      return autoRole != null && request.resource.data.get('roleIds', []) == [autoRole];
     }
     function isValidSelfMemberEdit() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']);
@@ -350,7 +359,18 @@ service cloud.firestore {
     match /invites/{code} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == request.resource.data.createdBy;
-      allow update: if signedIn();
+      // Qualquer pessoa só pode registrar UM uso por vez (uses + 1), e só num convite ainda
+      // válido (dentro do limite e do prazo). Ninguém reescreve limite nem validade.
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uses'])
+        && request.resource.data.uses == resource.data.get('uses', 0) + 1
+        && (resource.data.get('maxUses', null) == null || request.resource.data.uses <= resource.data.maxUses)
+        && (resource.data.get('expiresAt', null) == null || resource.data.expiresAt > request.time);
+      // Revogar: quem criou o convite, ou quem administra/gerencia o servidor.
+      allow delete: if signedIn()
+        && (resource.data.createdBy == request.auth.uid
+            || isServerAdminOrOwner(resource.data.serverId)
+            || hasPermission(resource.data.serverId, 'manageServer'));
     }
 
     // ---------- Chamadas (DM) ----------

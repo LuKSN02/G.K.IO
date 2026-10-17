@@ -2,7 +2,7 @@
 // G.K.IO — Servidores, categorias e canais (estilo Discord)
 // ============================================================
 import {
-  db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc,
+  db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc, channelMessagesCol,
   membersCol, memberDoc, invitesCol, inviteDoc, userDoc, rolesCol, roleDoc,
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
@@ -165,12 +165,54 @@ export async function createServer(name, description = '', iconUrl = '', bannerU
   return ref.id;
 }
 
-export async function createInvite(serverId) {
+// Validade e limite de usos são opcionais (null = sem limite). Quem usa o convite é barrado
+// pelo app (joinServerByInviteCode); o contador só sobe de 1 em 1 por causa das regras.
+export async function createInvite(serverId, { expiresInSeconds = null, maxUses = null } = {}) {
   const code = genInviteCode();
   await setDoc(inviteDoc(code), {
-    serverId, createdBy: auth.currentUser.uid, uses: 0, maxUses: null, createdAt: serverTimestamp(),
+    serverId, createdBy: auth.currentUser.uid, uses: 0,
+    maxUses: maxUses ? Math.max(1, Math.round(maxUses)) : null,
+    expiresAt: expiresInSeconds ? new Date(Date.now() + expiresInSeconds * 1000) : null,
+    createdAt: serverTimestamp(),
   });
+  if (canAuditHere(serverId)) logAudit(serverId, 'invite.create', { details: { code, maxUses: maxUses || null, seconds: expiresInSeconds || null } });
   return code;
+}
+
+// Quem tem permissão para escrever no log (evita avisos no console de quem só cria convite).
+const canAuditHere = (serverId) => canKickMembers(serverId) || canManageChannels(serverId) || canManageServerInfo(serverId);
+
+// 'active' | 'expired' | 'full' (+ tempo restante quando tem validade)
+export function inviteStatus(inv) {
+  const exp = inv.expiresAt?.toMillis ? inv.expiresAt.toMillis() : (inv.expiresAt instanceof Date ? inv.expiresAt.getTime() : 0);
+  if (exp && exp <= Date.now()) return { state: 'expired', expiresInMs: 0 };
+  if (inv.maxUses && (inv.uses || 0) >= inv.maxUses) return { state: 'full', expiresInMs: exp ? exp - Date.now() : null };
+  return { state: 'active', expiresInMs: exp ? exp - Date.now() : null };
+}
+
+export async function listServerInvites(serverId) {
+  const snap = await getDocs(query(invitesCol(), where('serverId', '==', serverId)));
+  const ms = (i) => (i.createdAt?.toMillis ? i.createdAt.toMillis() : 0);
+  return snap.docs.map((d) => ({ code: d.id, ...d.data() })).sort((a, b) => ms(b) - ms(a));
+}
+
+export async function revokeInvite(serverId, code) {
+  await deleteDoc(inviteDoc(code));
+  if (canAuditHere(serverId)) logAudit(serverId, 'invite.revoke', { details: { code } });
+}
+
+// Boas-vindas + cargo automático (campos do doc do servidor: `welcome` e `autoRoleId`).
+export const DEFAULT_WELCOME = 'Bem-vindo(a) ao {servidor}, {usuario}! 🎉';
+export function renderWelcomeText(template, { usuario, servidor }) {
+  return String(template || DEFAULT_WELCOME).slice(0, 300)
+    .replace(/\{usuario\}/gi, usuario).replace(/\{servidor\}/gi, servidor);
+}
+export async function saveWelcomeSettings(serverId, { enabled, channelId, message, autoRoleId }) {
+  await updateDoc(serverDoc(serverId), {
+    welcome: { enabled: !!enabled, channelId: channelId || null, message: (message || '').trim().slice(0, 300) },
+    autoRoleId: autoRoleId || null,
+  });
+  logAudit(serverId, 'server.welcome', { details: { enabled: !!enabled, autoRole: autoRoleId ? (lastRoles.get(autoRoleId)?.name || 'cargo') : null } });
 }
 
 // Vira membro de um servidor — mesmo passo usado tanto ao entrar por
@@ -180,7 +222,19 @@ export async function joinServerAsMember(serverId) {
   const uid = auth.currentUser.uid;
   try {
     await updateDoc(serverDoc(serverId), { memberIds: arrayUnion(uid) });
-    await setDoc(memberDoc(serverId, uid), { nickname: null, role: 'member', joinedAt: serverTimestamp() });
+    // Agora já somos membros, então dá para ler o servidor: cargo automático e boas-vindas.
+    let cfg = {};
+    try { const snap = await getDoc(serverDoc(serverId)); cfg = snap.exists() ? snap.data() : {}; } catch (e) { /* segue sem */ }
+    const roleIds = await autoRoleIdsFor(serverId, cfg);
+    const base = { nickname: null, role: 'member', joinedAt: serverTimestamp() };
+    try {
+      await setDoc(memberDoc(serverId, uid), roleIds.length ? { ...base, roleIds } : base);
+    } catch (err) {
+      // Regras ainda sem o cargo automático: entra mesmo assim, só sem o cargo.
+      if (!roleIds.length) throw err;
+      await setDoc(memberDoc(serverId, uid), base);
+    }
+    postWelcomeMessage(serverId, cfg); // sem await: a entrada não depende disso
   } catch (err) {
     // As regras barram quem foi banido (servers/{id}/bans/{uid}) — a pessoa não pode ler a
     // lista de bans, então não dá para confirmar; deixamos a pista na mensagem.
@@ -189,16 +243,57 @@ export async function joinServerAsMember(serverId) {
   }
 }
 
+// Cargo automático só vale se ainda existir e não tiver permissões (cosmético).
+async function autoRoleIdsFor(serverId, cfg) {
+  if (!cfg.autoRoleId) return [];
+  try {
+    const r = await getDoc(roleDoc(serverId, cfg.autoRoleId));
+    if (!r.exists()) return [];
+    const hasPerms = Object.values(r.data().permissions || {}).some(Boolean);
+    return hasPerms ? [] : [cfg.autoRoleId];
+  } catch (e) { return []; }
+}
+
+// Mensagem de boas-vindas no canal escolhido. É escrita pelo próprio app de quem entrou
+// (não há servidor para fazer isso), marcada como `system: 'welcome'` para aparecer como aviso.
+async function postWelcomeMessage(serverId, cfg) {
+  const w = cfg.welcome;
+  if (!w?.enabled || !w.channelId) return;
+  try {
+    const ch = await getDoc(channelDoc(serverId, w.channelId));
+    if (!ch.exists()) return;
+    const me = state.user || {};
+    const name = me.displayName || me.username || 'Alguém';
+    await addDoc(channelMessagesCol(serverId, w.channelId), {
+      system: 'welcome',
+      content: renderWelcomeText(w.message, { usuario: name, servidor: cfg.name || 'servidor' }),
+      authorId: auth.currentUser.uid, authorName: name, authorAvatar: me.avatarUrl || '',
+      createdAt: serverTimestamp(),
+    });
+    await updateDoc(channelDoc(serverId, w.channelId), { lastMessageAt: serverTimestamp(), lastMessageAuthorId: auth.currentUser.uid }).catch(() => {});
+  } catch (err) {
+    console.warn('[boas-vindas] não consegui enviar a mensagem', err.code || err.message);
+  }
+}
+
 export async function joinServerByInviteCode(code) {
   code = code.trim().toUpperCase();
   const snap = await getDoc(inviteDoc(code));
   if (!snap.exists()) throw new Error('Convite inválido ou expirado.');
-  const { serverId } = snap.data();
-  await joinServerAsMember(serverId);
-  await updateDoc(inviteDoc(code), { uses: (snap.data().uses || 0) + 1 });
-  const serverSnap = await getDoc(serverDoc(serverId));
+  const inv = snap.data();
+  const status = inviteStatus(inv);
+  if (status.state === 'expired') throw new Error('Este convite expirou.');
+  if (status.state === 'full') throw new Error('Este convite atingiu o limite de usos.');
+  // Quem já está no servidor não gasta um uso do convite.
+  if (state.servers.has(inv.serverId)) {
+    toast(`Você já está em "${state.servers.get(inv.serverId).name}".`);
+    return inv.serverId;
+  }
+  await joinServerAsMember(inv.serverId);
+  try { await updateDoc(inviteDoc(code), { uses: (inv.uses || 0) + 1 }); } catch (e) { /* a contagem é só informativa */ }
+  const serverSnap = await getDoc(serverDoc(inv.serverId));
   toast(`Você entrou em "${serverSnap.data().name}".`);
-  return serverId;
+  return inv.serverId;
 }
 
 // ---------- Cargos / permissões ----------
@@ -257,6 +352,10 @@ export async function updateRole(serverId, roleId, patch) {
   // já que as regras do Firestore leem esse campo direto do membro em vez
   // de "percorrer" a lista de cargos (o Firestore Rules não permite isso).
   if (patch.permissions !== undefined) await resyncMembersWithRole(serverId, roleId);
+  // Cargo automático precisa continuar sem permissões; se ganhou alguma, deixa de ser automático.
+  if (clean.permissions && Object.values(clean.permissions).some(Boolean) && state.servers.get(serverId)?.autoRoleId === roleId) {
+    await updateDoc(serverDoc(serverId), { autoRoleId: null }).catch(() => {});
+  }
   logAudit(serverId, 'role.update', { details: { name: clean.name || lastRoles.get(roleId)?.name || 'Cargo' } });
   toast('Cargo atualizado.');
 }
@@ -270,6 +369,7 @@ export async function deleteRole(serverId, roleId) {
     await writeMemberRoles(serverId, m.uid, newRoleIds);
   }
   await deleteDoc(roleDoc(serverId, roleId));
+  if (state.servers.get(serverId)?.autoRoleId === roleId) await updateDoc(serverDoc(serverId), { autoRoleId: null }).catch(() => {});
   logAudit(serverId, 'role.delete', { details: { name: roleName } });
   toast('Cargo excluído.');
 }

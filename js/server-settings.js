@@ -12,6 +12,7 @@ import {
   isServerOwner, getCategoriesAndChannels,
   updateServerInfo, deleteServerPermanently, leaveServer, kickMember, setMemberRole,
   createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel, setChannelNsfw, setChannelSlowmode,
+  listServerInvites, revokeInvite, inviteStatus, saveWelcomeSettings, renderWelcomeText, DEFAULT_WELCOME,
   createInvite, openCreateChannelModal, openChannelPermissionsModal,
   PERMISSION_CATALOG, ROLE_COLOR_SWATCHES, getRoles, createRole, updateRole, deleteRole, assignRoleToMember,
   onServerDataChange,
@@ -36,6 +37,7 @@ function sections(serverId) {
     list.push({ id: 'moderacao', label: 'Moderação', icon: 'block' });
   }
   list.push({ id: 'convites', label: 'Convites', icon: 'link' });
+  if (canManageServerInfo(serverId)) list.push({ id: 'boasvindas', label: 'Boas-vindas', icon: 'emojiSmile' });
   return list;
 }
 
@@ -81,6 +83,7 @@ function renderSection() {
   if (activeSection === 'cargos') return renderCargosSection(content);
   if (activeSection === 'membros') return renderMembrosSection(content);
   if (activeSection === 'moderacao') return renderModeracaoSection(content);
+  if (activeSection === 'boasvindas') return renderBoasVindasSection(content);
   if (activeSection === 'convites') return renderConvitesSection(content);
 }
 
@@ -720,30 +723,164 @@ function openAssignRolesPopover(serverId, member, roles) {
 // ============================================================
 // Seção: Convites
 // ============================================================
+const INVITE_EXPIRY = [[1800, '30 minutos'], [3600, '1 hora'], [21600, '6 horas'], [43200, '12 horas'], [86400, '1 dia'], [604800, '7 dias'], [0, 'Nunca expira']];
+const INVITE_USES = [[0, 'Sem limite'], [1, '1 uso'], [2, '2 usos'], [5, '5 usos'], [10, '10 usos'], [25, '25 usos'], [50, '50 usos'], [100, '100 usos']];
+
+function copyText(text, okMsg) {
+  navigator.clipboard.writeText(text).then(() => toast(okMsg), () => toast('Não consegui copiar.', 'danger'));
+}
+
 function renderConvitesSection(content) {
   const serverId = currentServerId;
-  content.appendChild(sectionHeader('Convites', 'Gere um código para outras pessoas entrarem no servidor.'));
+  const me = auth.currentUser?.uid;
+  const manage = canManageServerInfo(serverId);
+  content.appendChild(sectionHeader('Convites', 'Gere códigos para outras pessoas entrarem. Defina por quanto tempo valem e quantas vezes podem ser usados.'));
+  const stillHere = () => content.isConnected && activeSection === 'convites' && currentServerId === serverId;
 
-  const codeBox = el('input', { type: 'text', readonly: 'true', class: 'gk-mono gk-sensitive', placeholder: 'Clique em "Gerar" abaixo' });
-  const genBtn = el('button', {
-    class: 'gk-btn gk-btn-primary', type: 'button',
-    onclick: async () => {
-      genBtn.disabled = true;
-      const code = await createInvite(serverId);
-      codeBox.value = code;
-      genBtn.disabled = false;
-    },
-  }, 'Gerar novo código');
-  const copyBtn = el('button', {
-    class: 'gk-btn gk-btn-ghost', type: 'button',
-    onclick: () => { if (!codeBox.value) return; navigator.clipboard.writeText(codeBox.value); toast('Código copiado.'); },
-  }, 'Copiar');
+  // ----- criar -----
+  const expiry = el('select', { class: 'gk-sv-select', id: 'gk-invite-expiry' }, INVITE_EXPIRY.map(([v, l]) => el('option', { value: String(v) }, l)));
+  expiry.value = '604800';
+  const uses = el('select', { class: 'gk-sv-select', id: 'gk-invite-uses' }, INVITE_USES.map(([v, l]) => el('option', { value: String(v) }, l)));
+  const created = el('div', { class: 'gk-invite-created', id: 'gk-invite-created', style: 'display:none;' });
+  const createBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button', id: 'gk-invite-create' }, [icon('plus', { size: 14 }), ' Criar convite']);
 
-  content.appendChild(el('div', { class: 'gk-settings-card' }, [
-    el('div', { class: 'gk-field' }, [el('label', {}, 'Código de convite'), codeBox]),
-    el('div', { style: 'display:flex;gap:8px;' }, [genBtn, copyBtn]),
-    el('div', { class: 'gk-hint', style: 'margin-top:10px;' }, 'Cada clique em "Gerar" cria um código novo, sem limite de usos.'),
+  const listBody = el('div', { id: 'gk-invites-list' }, [el('div', { class: 'gk-sv-empty' }, 'Carregando…')]);
+
+  const loadInvites = async () => {
+    let invites;
+    try { invites = (await listServerInvites(serverId)).filter((i) => manage || i.createdBy === me); }
+    catch (err) { if (stillHere()) listBody.replaceChildren(el('div', { class: 'gk-sv-empty' }, 'Não foi possível carregar os convites.')); return; }
+    if (!stillHere()) return;
+    listBody.innerHTML = '';
+    if (!invites.length) { listBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhum convite criado ainda.')); return; }
+    const members = state.serverMembersCache.get(serverId);
+    for (const inv of invites) {
+      const st = inviteStatus(inv);
+      const who = members?.get(inv.createdBy);
+      const whoName = who ? (who.nickname || who.user?.displayName || who.user?.username) : 'alguém';
+      const usesText = `${inv.uses || 0}${inv.maxUses ? '/' + inv.maxUses : ''} ${inv.maxUses === 1 ? 'uso' : 'usos'}`;
+      const whenText = st.state === 'expired' ? 'expirado' : st.expiresInMs == null ? 'não expira' : `expira em ${formatLong(st.expiresInMs)}`;
+      const actions = [el('button', { class: 'gk-sv-pill', type: 'button', onclick: () => copyText(inv.code, 'Código copiado.') }, 'Copiar')];
+      if (inv.createdBy === me || manage) {
+        const revoke = el('button', { class: 'gk-sv-pill', type: 'button', 'data-code': inv.code }, 'Revogar');
+        revoke.addEventListener('click', async () => {
+          revoke.disabled = true;
+          try { await revokeInvite(serverId, inv.code); toast('Convite revogado.'); await loadInvites(); }
+          catch (err) { toast(err.message || 'Não foi possível revogar.', 'danger'); revoke.disabled = false; }
+        });
+        actions.push(revoke);
+      }
+      listBody.appendChild(el('div', { class: 'gk-sv-row gk-invite-row' + (st.state !== 'active' ? ' gk-off' : '') }, [
+        el('code', { class: 'gk-invite-code gk-sensitive' }, inv.code),
+        el('div', { class: 'gk-invite-meta' }, [
+          el('span', {}, `Criado por ${whoName} · ${usesText} · ${whenText}`),
+          st.state === 'full' ? el('span', { class: 'gk-status-chip gk-bad' }, 'Esgotado') : null,
+          st.state === 'expired' ? el('span', { class: 'gk-status-chip gk-bad' }, 'Expirado') : null,
+        ]),
+        el('div', { class: 'gk-invite-actions' }, actions),
+      ]));
+    }
+  };
+
+  createBtn.addEventListener('click', async () => {
+    createBtn.disabled = true;
+    try {
+      const code = await createInvite(serverId, { expiresInSeconds: Number(expiry.value) || null, maxUses: Number(uses.value) || null });
+      created.style.display = 'flex';
+      created.replaceChildren(
+        el('span', { class: 'gk-sv-note' }, 'Convite criado:'),
+        el('code', { class: 'gk-invite-code gk-sensitive', id: 'gk-invite-new-code' }, code),
+        el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: () => copyText(code, 'Código copiado.') }, 'Copiar'),
+      );
+      await loadInvites();
+    } catch (err) {
+      toast(err.message || 'Não foi possível criar o convite.', 'danger');
+    } finally { createBtn.disabled = false; }
+  });
+
+  content.appendChild(el('div', { class: 'gk-sv-card gk-invite-form' }, [
+    el('div', { class: 'gk-invite-fields' }, [
+      el('label', {}, [el('span', {}, 'Validade'), expiry]),
+      el('label', {}, [el('span', {}, 'Limite de usos'), uses]),
+      createBtn,
+    ]),
+    created,
   ]));
+
+  content.appendChild(el('div', { class: 'gk-sv-card' }, [
+    el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('link', { size: 14 }), manage ? ' Convites do servidor' : ' Seus convites'])]),
+    listBody,
+  ]));
+  content.appendChild(el('div', { class: 'gk-sv-note' },
+    'Validade e limite são conferidos pelo app de quem entra. Quem entra por um convite que já expirou ou esgotou recebe um aviso.'));
+  loadInvites();
+}
+
+// ============================================================
+// Seção: Boas-vindas (mensagem ao entrar + cargo automático)
+// ============================================================
+function renderBoasVindasSection(content) {
+  const serverId = currentServerId;
+  const server = state.servers.get(serverId) || {};
+  const welcome = server.welcome || {};
+  const { channels } = getCategoriesAndChannels();
+  const textChannels = channels.filter((c) => c.type === 'text');
+  content.appendChild(sectionHeader('Boas-vindas', 'O que acontece quando alguém entra no servidor.'));
+
+  // ----- mensagem -----
+  const enabled = el('input', { type: 'checkbox', id: 'gk-welcome-enabled' });
+  enabled.checked = !!welcome.enabled;
+  const channelSel = el('select', { class: 'gk-sv-select gk-sv-select-wide', id: 'gk-welcome-channel' },
+    textChannels.map((c) => el('option', { value: c.id }, `# ${c.name}`)));
+  if (welcome.channelId && textChannels.some((c) => c.id === welcome.channelId)) channelSel.value = welcome.channelId;
+  channelSel.disabled = textChannels.length === 0;
+  const message = el('textarea', { class: 'gk-sv-input gk-sv-textarea', id: 'gk-welcome-message', maxlength: '300', rows: '3', placeholder: DEFAULT_WELCOME });
+  message.value = welcome.message || '';
+  const preview = el('div', { class: 'gk-welcome-preview', id: 'gk-welcome-preview' });
+  const paint = () => {
+    const me = state.user || {};
+    preview.textContent = '👋 ' + renderWelcomeText(message.value.trim(), { usuario: me.displayName || me.username || 'Fulano', servidor: server.name || 'servidor' });
+  };
+  message.addEventListener('input', paint);
+  paint();
+
+  content.appendChild(el('div', { class: 'gk-sv-card gk-welcome-card' }, [
+    el('label', { class: 'gk-nsfw-option' }, [enabled, el('span', {}, [
+      el('strong', {}, 'Enviar mensagem de boas-vindas'),
+      el('small', {}, 'Quando alguém entrar, aparece um aviso no canal escolhido.'),
+    ])]),
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Canal'), channelSel]),
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Mensagem'), message,
+      el('div', { class: 'gk-hint' }, 'Use {usuario} para o nome de quem entrou e {servidor} para o nome do servidor. Vazio = mensagem padrão.')]),
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Prévia'), preview]),
+  ]));
+
+  // ----- cargo automático -----
+  const cosmetic = getRoles().filter((r) => !Object.values(r.permissions || {}).some(Boolean));
+  const withPerms = getRoles().length - cosmetic.length;
+  const roleSel = el('select', { class: 'gk-sv-select gk-sv-select-wide', id: 'gk-welcome-role' }, [
+    el('option', { value: '' }, 'Nenhum'),
+    ...cosmetic.map((r) => el('option', { value: r.id }, r.name)),
+  ]);
+  roleSel.value = cosmetic.some((r) => r.id === server.autoRoleId) ? server.autoRoleId : '';
+  content.appendChild(el('div', { class: 'gk-sv-card gk-welcome-card' }, [
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Cargo automático'), roleSel,
+      el('div', { class: 'gk-hint' }, 'Quem entrar já recebe este cargo. Só aparecem cargos sem permissões (como etiqueta/cor)'
+        + (withPerms ? ` — ${withPerms} ${withPerms === 1 ? 'cargo com permissões fica' : 'cargos com permissões ficam'} de fora, para ninguém entrar com poderes.` : '.'))]),
+  ]));
+
+  const saveBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button', id: 'gk-welcome-save' }, 'Salvar');
+  saveBtn.addEventListener('click', async () => {
+    if (enabled.checked && !channelSel.value) { toast('Escolha o canal das boas-vindas.', 'danger'); return; }
+    saveBtn.disabled = true;
+    try {
+      await saveWelcomeSettings(serverId, { enabled: enabled.checked, channelId: channelSel.value, message: message.value, autoRoleId: roleSel.value });
+      toast('Boas-vindas salvas.');
+    } catch (err) {
+      toast('Não foi possível salvar: ' + (err.message || err), 'danger');
+    } finally { saveBtn.disabled = false; }
+  });
+  content.appendChild(el('div', { class: 'gk-sv-role-footer' }, [saveBtn]));
 }
 
 // ============================================================

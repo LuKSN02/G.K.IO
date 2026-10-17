@@ -280,6 +280,7 @@ function notifyIfNewIncomingMessage(messages) {
   if (!isNew || isFirstSnapshotForConversation) { isFirstSnapshotForConversation = false; return false; }
   if (last.authorId === state.user?.uid) return false;
   // Silenciada / "só @menções": a mensagem aparece, mas sem som nem notificação.
+  if (last.system) return true; // aviso de boas-vindas: aparece, mas não toca som nem notifica
   const mentioned = (last.mentionedUids || []).includes(state.user?.uid);
   if (shouldAlert(effectiveLevel(currentConvCtx() || {}), mentioned)) {
     playNotifSound();
@@ -346,6 +347,19 @@ function renderMessages(messages, isNewIncoming = false) {
         el('span', {}, formatDateLabel(date)),
       ]));
       lastDayKey = dayKey;
+    }
+
+    // Aviso de boas-vindas (escrito pelo app de quem entrou): linha de sistema, sem avatar
+    // nem ações, e quebra o agrupamento.
+    if (msg.system === 'welcome') {
+      box.appendChild(el('div', { class: 'gk-msg-system', 'data-msg-id': msg.id }, [
+        el('span', { class: 'gk-msg-system-icon' }, '👋'),
+        el('span', { class: 'gk-msg-system-text' }, msg.content || ''),
+        el('span', { class: 'gk-msg-system-time' }, formatTime(msg.createdAt)),
+      ]));
+      renderedMessageIds.add(msg.id);
+      lastAuthor = null; lastGroup = null; lastTs = ts;
+      continue;
     }
 
     const sameGroup = !newDay && lastAuthor === msg.authorId && (ts - lastTs) < GROUP_WINDOW_MS;

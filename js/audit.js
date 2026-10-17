@@ -59,6 +59,9 @@ export function describeAudit(e) {
     case 'channel.slowmode': return { icon: 'clock', text: d.seconds ? `${a} ativou o modo lento de ${secs(d.seconds)} em #${d.name}` : `${a} desativou o modo lento em #${d.name}` };
     case 'category.create': return { icon: 'plus', text: `${a} criou a categoria "${d.name}"` };
     case 'category.delete': return { icon: 'trash', text: `${a} excluiu a categoria "${d.name}"` };
+    case 'invite.create': return { icon: 'link', text: `${a} criou um convite${d.maxUses ? ` (até ${d.maxUses} usos)` : ''}${d.seconds ? ` válido por ${secs(d.seconds)}` : ''}` };
+    case 'invite.revoke': return { icon: 'link', text: `${a} revogou o convite ${d.code}` };
+    case 'server.welcome': return { icon: 'edit', text: `${a} atualizou as boas-vindas${d.enabled ? ' (ativadas)' : ' (desativadas)'}${d.autoRole ? ` e o cargo automático "${d.autoRole}"` : ''}` };
     case 'message.delete': return { icon: 'trash', text: `${a} apagou uma mensagem de ${t} em #${d.channelName}${d.preview ? `: "${d.preview}"` : ''}` };
     default: return { icon: 'edit', text: `${a} fez uma ação (${e.type})` };
   }

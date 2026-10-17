@@ -2834,3 +2834,35 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 #gk-audit-list { max-height: 360px; overflow-y: auto; }
 .gk-ban-row .gk-avatar::after { display: none; }
 .gk-ban-row .gk-avatar img { width: 24px; height: 24px; border-radius: 7px; }
+
+/* ============================================================
+   Convites com validade/limite, boas-vindas e cargo automático
+   ============================================================ */
+.gk-invite-form { padding: 14px; }
+.gk-invite-fields { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.gk-invite-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-invite-fields .gk-sv-select, .gk-welcome-card .gk-sv-select { padding: 9px 12px; border-radius: var(--gk-radius-sm); font-size: 13.5px; font-weight: 500; min-width: 150px; }
+.gk-invite-fields .gk-btn { display: inline-flex; align-items: center; gap: 6px; }
+.gk-invite-created { align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; background: var(--gk-accent-soft); border-radius: var(--gk-radius-sm); }
+.gk-invite-code { padding: 3px 8px; border-radius: 6px; background: var(--gk-surface); border: 1px solid var(--gk-gray-200); font-family: var(--gk-font-mono); font-size: 13px; color: var(--gk-gray-800); letter-spacing: .5px; }
+.gk-invite-created .gk-invite-code { flex: 1; font-size: 15px; font-weight: 700; }
+.gk-invite-row { padding: 8px 8px; gap: 12px; }
+.gk-invite-row.gk-off .gk-invite-code, .gk-invite-row.gk-off .gk-invite-meta { opacity: .55; }
+.gk-invite-meta { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--gk-gray-500); }
+.gk-invite-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.gk-status-chip { padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--gk-gray-100); color: var(--gk-gray-500); }
+.gk-status-chip.gk-bad { background: var(--gk-danger-soft); color: var(--gk-danger); }
+
+.gk-welcome-card { padding: 14px 16px; }
+.gk-welcome-card .gk-field { margin-top: 12px; margin-bottom: 0; }
+.gk-welcome-card .gk-field > label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; color: var(--gk-gray-500); }
+.gk-sv-select-wide { min-width: 260px; }
+.gk-sv-textarea { resize: vertical; min-height: 70px; font-family: inherit; line-height: 1.45; }
+.gk-welcome-preview { padding: 10px 12px; border-left: 3px solid var(--gk-accent); background: var(--gk-surface); border-radius: 0 var(--gk-radius-sm) var(--gk-radius-sm) 0; font-size: 14px; color: var(--gk-gray-700, var(--gk-gray-800)); overflow-wrap: anywhere; }
+
+/* aviso de boas-vindas no chat */
+.gk-msg-system { display: flex; align-items: baseline; gap: 8px; margin: 6px 6px; padding: 8px 12px; border-left: 3px solid var(--gk-accent); background: var(--gk-accent-soft); border-radius: 0 var(--gk-radius-sm) var(--gk-radius-sm) 0; font-size: 14px; color: var(--gk-gray-700, var(--gk-gray-800)); }
+.gk-msg-system-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gk-msg-system-time { font-size: 11px; font-family: var(--gk-font-mono); color: var(--gk-gray-400); }
+.gk-sv-note { margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: var(--gk-gray-400); }
+.gk-invite-created .gk-sv-note { margin: 0; color: var(--gk-accent-strong); font-weight: 600; }

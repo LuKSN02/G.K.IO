@@ -137,3 +137,11 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 > **Importante:** publique o `firestore.rules` atualizado (Firestore > Regras > Publicar). É ele que barra banidos de voltar e mensagens durante o castigo.
 > O **modo lento** é aplicado pelo app (composer): um cliente adulterado consegue burlá-lo. O **castigo** e o **banimento** são garantidos pelas regras do Firestore.
 
+## Convites e entrada (v1.5.0)
+- **Convites com validade e limite de usos** (aba Convites): validade de 30 min a 7 dias (ou nunca) e limite de 1 a 100 usos (ou sem limite). A lista mostra usos, prazo e quem criou; dá para **revogar**. Quem só é membro vê apenas os próprios convites; quem gerencia o servidor vê todos.
+- **Boas-vindas** (aba Boas-vindas): mensagem automática no canal escolhido quando alguém entra (`{usuario}` e `{servidor}` são substituídos) e **cargo automático** para quem entra.
+- O cargo automático só aceita **cargos sem permissões** (etiqueta/cor) — assim, ninguém entra com poderes por engano. Se o cargo ganhar permissões ou for excluído, deixa de ser automático.
+
+> **Importante:** publique o `firestore.rules` atualizado. Ele protege o contador de usos (só sobe de 1 em 1, em convite válido), permite revogar e libera o cargo automático.
+> **Limite honesto:** a validade e o limite do convite são conferidos pelo **app** de quem entra. Hoje qualquer conta logada ainda consegue entrar num servidor sabendo o ID dele (as regras não exigem convite). Tornar servidores privados de verdade é um próximo passo.
+
