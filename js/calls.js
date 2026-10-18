@@ -32,7 +32,7 @@ import {
   callsCol, callDoc, userDoc,
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
-import { getMediaPrefs, getHotkeyPrefs } from './prefs.js';
+import { getMediaPrefs, getHotkeyPrefs, screenShareOptions } from './prefs.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 import { icon, iconHtml } from './icons.js';
@@ -792,7 +792,8 @@ export async function startScreenShare() {
       const localTrack = new LocalVideoTrack(videoTrack);
       await room.localParticipant.publishTrack(localTrack, { source: Track.Source.ScreenShare, name: 'screen' });
     } else {
-      await room.localParticipant.setScreenShareEnabled(true, { audio: true });
+      const { capture, publish } = screenShareOptions();
+      await room.localParticipant.setScreenShareEnabled(true, { audio: true, ...capture }, publish);
       const pub = findPublication(room.localParticipant, Track.Source.ScreenShare);
       if (pub?.track?.mediaStreamTrack) pub.track.mediaStreamTrack.onended = () => stopScreenShare();
     }

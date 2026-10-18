@@ -2974,3 +2974,13 @@ html[data-streamer] input[type=email]:focus { filter: none; }
   .gk-composer-box button { padding: 5px; }
   .gk-composer-box textarea { min-width: 0; flex: 1; }
 }
+
+/* Aviso de versão nova do APK (ver js/app-update.js) */
+.gk-update-banner {
+  position: fixed; left: 12px; right: 12px; z-index: 400;
+  bottom: calc(var(--gk-tabbar-h, 58px) + 12px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: var(--gk-radius-lg);
+  background: var(--gk-surface-raised); border: 1px solid var(--gk-gray-200); box-shadow: var(--gk-shadow-lg);
+}
+.gk-update-text { flex: 1 1 160px; font-size: 13.5px; color: var(--gk-gray-800); }

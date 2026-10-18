@@ -10,6 +10,7 @@ const NOTIF_KEY = 'gkio-notif-prefs';
 const mediaDefaults = {
   micId: '', camId: '', speakerId: '',
   noiseSuppression: true, echoCancellation: true, autoGainControl: true,
+  screenQuality: 'fluid',
 };
 // No app de desktop (Electron) o aviso do sistema já vem ligado — é o que se espera de um app instalado.
 const notifDefaults = { sound: true, desktop: !!window.gkioDesktop, preview: true };
@@ -34,6 +35,29 @@ let hotkeyPrefs = read(HOTKEY_KEY, hotkeyDefaults);
 let idlePrefs = read(IDLE_KEY, idleDefaults);
 
 export function getMediaPrefs() { return { ...mediaPrefs }; }
+
+// ---------- Qualidade da transmissão de tela ----------
+// O padrão do LiveKit (1080p, várias camadas de codificação, prioridade para
+// manter a resolução) sobrecarrega o PC de quem transmite e derruba os
+// quadros por segundo — dá a sensação de "lag". Estes perfis trocam
+// nitidez por fluidez conforme o uso. Vale para a próxima transmissão iniciada.
+export const SCREEN_QUALITIES = {
+  fluid:    { label: 'Fluida — jogos e vídeos (720p, 30 fps)', width: 1280, height: 720,  fps: 30, bitrate: 2_500_000, hint: 'motion', degrade: 'maintain-framerate' },
+  balanced: { label: 'Equilibrada (1080p, 30 fps)',            width: 1920, height: 1080, fps: 30, bitrate: 5_000_000, hint: 'motion', degrade: 'balanced' },
+  sharp:    { label: 'Nítida — texto e slides (1080p, 15 fps)', width: 1920, height: 1080, fps: 15, bitrate: 3_000_000, hint: 'detail', degrade: 'maintain-resolution' },
+};
+// Opções prontas para room.localParticipant.setScreenShareEnabled(true, { audio: true, ...capture }, publish)
+export function screenShareOptions() {
+  const q = SCREEN_QUALITIES[mediaPrefs.screenQuality] || SCREEN_QUALITIES.fluid;
+  return {
+    capture: { resolution: { width: q.width, height: q.height, frameRate: q.fps }, contentHint: q.hint },
+    publish: {
+      screenShareEncoding: { maxBitrate: q.bitrate, maxFramerate: q.fps },
+      screenShareSimulcastLayers: [], // uma camada só: codificar várias ao mesmo tempo pesa no PC
+      degradationPreference: q.degrade,
+    },
+  };
+}
 export function setMediaPrefs(patch) {
   mediaPrefs = { ...mediaPrefs, ...patch };
   write(MEDIA_KEY, mediaPrefs);

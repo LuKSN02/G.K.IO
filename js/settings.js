@@ -7,7 +7,7 @@ import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs,
 import { state, el, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage, applyWallpaper } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
-import { getMediaPrefs, setMediaPrefs, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
+import { getMediaPrefs, setMediaPrefs, SCREEN_QUALITIES, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
 import { openImageCropper } from './cropper.js';
 import { buildZoomCard, buildDesktopCard, buildHotkeysCard, buildIdleCard, renderExtensionsSection } from './settings-extras.js';
@@ -321,6 +321,19 @@ async function renderAudioVideoSection(content) {
     el('div', { class: 'gk-settings-card-title' }, 'Câmera'),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Dispositivo de vídeo'), camSelect]),
     el('div', { class: 'gk-field' }, [camPreview, camTestBtn]),
+  ]));
+
+  // Qualidade da transmissão de tela: se trava, escolha "Fluida".
+  const screenSelect = el('select', { class: 'gk-select' },
+    Object.entries(SCREEN_QUALITIES).map(([key, q]) => el('option', { value: key }, q.label)));
+  screenSelect.value = SCREEN_QUALITIES[mediaPrefs.screenQuality] ? mediaPrefs.screenQuality : 'fluid';
+  screenSelect.addEventListener('change', () => setMediaPrefs({ screenQuality: screenSelect.value }));
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Compartilhamento de tela'),
+    el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Qualidade da transmissão'), screenSelect,
+      el('small', { class: 'gk-field-hint' }, 'Se a transmissão estiver travando, use "Fluida". Vale a partir da próxima vez que você compartilhar a tela.'),
+    ]),
   ]));
 
   content.appendChild(buildHotkeysCard());

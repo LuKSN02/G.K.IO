@@ -9,6 +9,7 @@ import { openServerSettingsModal, wireServerSettingsModal } from './server-setti
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById, hideFriendsHome, showFriendsHome } from './dms.js';
 import { wireComposer, sendAttachmentMessage, selectChannel } from './chat.js';
 import { initMobileNav } from './mobile-nav.js';
+import { checkForApkUpdate } from './app-update.js';
 import { wireGenericModalReset } from './dialogs.js';
 import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
@@ -74,6 +75,7 @@ onAuthReady(() => {
   listenReadStates();
   goToHomeView();
   initPushNotifications();
+  checkForApkUpdate();
   initIdleDetection();
   pushActivity();
 });
