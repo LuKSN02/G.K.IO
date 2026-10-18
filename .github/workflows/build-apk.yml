@@ -1,0 +1,115 @@
+# Gera um APK novo do G.K.IO a cada atualização do projeto e o publica nas Releases.
+#
+# Dispara sozinho quando você sobe mudanças do app para a branch principal
+# (ou manualmente: aba Actions -> "Gerar APK Android" -> Run workflow).
+# O APK sai em Releases como "android-v1.6.N" (N sobe a cada geração) e os
+# celulares que já têm o app mostram o aviso "Nova versão disponível".
+name: Gerar APK Android
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'index.html'
+      - 'manifest.json'
+      - 'css/**'
+      - 'js/**'
+      - 'img/**'
+      - 'plugins/**'
+      - 'mobile/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # 1.6.N: "1.6" vem do mobile/package.json, N é o número desta execução.
+      # O versionCode precisa sempre crescer para o Android aceitar a atualização.
+      - name: Definir versão
+        id: ver
+        run: |
+          BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          echo "version=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Copiar o site para www/
+        run: npm run prepare-www
+
+      - name: Criar o projeto Android
+        run: npx cap add android
+
+      - name: Ajustar permissões, versão e ícones
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+          APP_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          node scripts/patch-android.js
+          bash scripts/make-icons.sh
+
+      # Opcional (push no celular): em Settings > Secrets > Actions crie o segredo
+      # GOOGLE_SERVICES_JSON com o CONTEÚDO do google-services.json do Firebase.
+      - name: google-services.json (se configurado)
+        env:
+          GSJ: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GSJ" ]; then echo "$GSJ" > android/app/google-services.json; echo "google-services.json aplicado"; else echo "sem google-services.json (push desligado)"; fi
+
+      # IMPORTANTE: um APK só atualiza por cima do anterior se for assinado com a
+      # MESMA chave. Sem isto, cada execução geraria uma chave nova e o Android
+      # recusaria a atualização ("conflito de assinatura").
+      - name: Usar a chave de assinatura fixa
+        run: |
+          mkdir -p ~/.android
+          cp keystore/debug.keystore ~/.android/debug.keystore
+
+      - name: Sincronizar
+        run: npx cap sync android
+
+      - name: Compilar APK
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Nomear o APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "G.K.IO-${{ steps.ver.outputs.version }}.apk"
+
+      - name: Guardar APK (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: G.K.IO-apk
+          path: mobile/G.K.IO-${{ steps.ver.outputs.version }}.apk
+
+      # Marcada como pré-lançamento e fora de "latest" DE PROPÓSITO: o app de PC
+      # (electron-updater) usa a release "latest" para se atualizar e não pode
+      # cair numa release que só tem APK.
+      - name: Publicar na Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v${{ steps.ver.outputs.version }}
+          name: G.K.IO ${{ steps.ver.outputs.version }} (Android)
+          prerelease: true
+          make_latest: false
+          files: mobile/G.K.IO-${{ steps.ver.outputs.version }}.apk
