@@ -26,6 +26,8 @@ import { levelFromPrefs, shouldAlert } from './notify-prefs.js';
 let onNotificationTap = null; // callback registrado por app.js (navega pra DM/canal certo)
 
 export function onPushNotificationTap(cb) { onNotificationTap = cb; }
+// Usado também pelas notificações de desktop (background-notify.js) para abrir a conversa certa.
+export function triggerNotificationTap(data) { if (data && onNotificationTap) onNotificationTap(data); }
 
 export async function initPushNotifications() {
   if (!isNativeAndroid()) return; // web fica só com showDesktopNotification (prefs.js)

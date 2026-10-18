@@ -204,6 +204,7 @@ export function selectDm(dmId, title, subtitle, otherUid = null) {
   hideOverlayViews();
   hideFriendsHome();
   state.currentView = 'dms';
+  state.currentServerId = null;
   state.currentDmId = dmId;
   state.currentChannelId = null;
   currentChannelName = '';

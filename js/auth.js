@@ -6,6 +6,7 @@ import {
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
   setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
 } from './db.js';
+import { stopBackgroundNotifications } from './background-notify.js';
 import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { showStartupSplash } from './splash.js';
 
@@ -131,6 +132,7 @@ export async function loginUser(email, password, keepSignedIn = true) {
 
 export async function logoutUser() {
   await setPresence('offline');
+  stopBackgroundNotifications();
   await signOut(auth);
 }
 

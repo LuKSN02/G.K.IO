@@ -1,0 +1,20 @@
+{
+  "name": "gkio-android",
+  "version": "1.6.1",
+  "private": true,
+  "description": "G.K.IO — empacotamento Android (APK) com Capacitor",
+  "scripts": {
+    "prepare-www": "node scripts/prepare-www.js",
+    "add-android": "cap add android && node scripts/patch-android.js && bash scripts/make-icons.sh",
+    "sync": "npm run prepare-www && cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/push-notifications": "^6.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

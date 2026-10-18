@@ -8,6 +8,7 @@ import {
 } from './db.js';
 import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername, effectiveStatus } from './state.js';
 import { selectDm } from './chat.js';
+import { checkDmsForNotifications } from './background-notify.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
@@ -75,6 +76,7 @@ export function listenFriendsAndDms() {
     state.dms.clear();
     dms.forEach((dm) => state.dms.set(dm.id, dm));
     renderDmSidebar();
+    checkDmsForNotifications();
   });
 }
 
@@ -161,6 +163,7 @@ export async function declineFriendRequest(friendshipId) {
 // carregado — usado ao tocar numa notificação push (ver push.js/app.js),
 // onde o app pode ter acabado de abrir "do zero" (cold start).
 export async function openDmById(dmId) {
+  ensureDmsView();
   const existing = state.dms.get(dmId);
   if (existing && existing.other) {
     selectDm(dmId, existing.other.displayName || existing.other.username, statusLabel(effectiveStatus(existing.other)), existing.other.uid);
@@ -178,6 +181,7 @@ export async function openDmById(dmId) {
 }
 
 export async function openOrCreateDm(otherUid) {
+  ensureDmsView();
   const uid = auth.currentUser.uid;
   const existing = [...state.dms.values()].find((dm) => dm.other && dm.other.uid === otherUid);
   if (existing) {
@@ -194,8 +198,22 @@ export async function openOrCreateDm(otherUid) {
   selectDm(ref.id, otherSnap.data().displayName || otherSnap.data().username, statusLabel(effectiveStatus(otherSnap.data())), otherUid);
 }
 
+// Abrir uma DM a partir de fora da tela de mensagens (ex.: "Enviar mensagem"
+// no perfil de alguém dentro de um servidor) precisa primeiro trocar de visão:
+// sem isso a sidebar/membros do servidor ficavam na tela e o listener de canais
+// do servidor sobrescrevia o chat da DM. Se já está em DMs, não mexe em nada.
+function ensureDmsView() {
+  if (state.currentView !== 'dms') goToDmsView();
+}
+
 export function goToDmsView() {
   stopTyping(); // saindo de qualquer conversa que estivesse aberta
+  // Sai do servidor de verdade: sem desligar estes listeners, o snapshot de
+  // canais/membros continuava redesenhando a sidebar do servidor por cima das DMs.
+  cleanupListener('categories');
+  cleanupListener('channels');
+  cleanupListener('members');
+  cleanupListener('roles');
   state.currentView = 'dms';
   state.currentServerId = null;
   state.currentChannelId = null;

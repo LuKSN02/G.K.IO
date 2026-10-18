@@ -8,6 +8,7 @@ import {
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch,
 } from './db.js';
 import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus, currentActivity } from './state.js';
+import { syncServerWatchers, registerChannelViewCheck } from './background-notify.js';
 import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
 import { joinVoiceChannel } from './calls.js';
@@ -537,6 +538,8 @@ export function canViewChannel(serverId, channel) {
   return computeChannelPermission(serverId, channel, 'viewChannel', true);
 }
 
+registerChannelViewCheck(canViewChannel);
+
 export function canSendInChannel(serverId, channel) {
   if (channel.type !== 'text') return true;
   return computeChannelPermission(serverId, channel, 'sendMessages', true);
@@ -653,6 +656,7 @@ export function listenUserServers() {
     state.servers.clear();
     snap.forEach((d) => state.servers.set(d.id, { id: d.id, ...d.data() }));
     if (state.currentView === 'server-picker') renderServerPicker();
+    syncServerWatchers();
   });
   state.unsubscribers._servers = () => unsubServers && unsubServers();
 }

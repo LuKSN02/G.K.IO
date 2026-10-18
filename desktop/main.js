@@ -29,6 +29,7 @@ const { toAccelerator } = require('./lib/accelerator');
 const games = require('./lib/games');
 const blur = require('./lib/blur');
 const updater = require('./lib/updater');
+const { imgPath } = require('./lib/assets');
 
 let win = null;
 let quitting = false;
@@ -36,6 +37,11 @@ let origin = null;
 let httpServer = null;
 const state = { unread: 0, muted: false, deafened: false, inCall: false };
 let shortcutMap = {};
+
+// Windows só exibe notificações de um app cujo AppUserModelID bate com o do atalho
+// criado pelo instalador (o appId do package.json). Sem isto as notificações do
+// app instalado simplesmente não aparecem.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'io.gkio.desktop' : process.execPath);
 
 const startHidden = process.argv.includes('--hidden');
 const safeMode = process.argv.includes('--safe');
@@ -128,7 +134,7 @@ async function createWindow() {
   win = new BrowserWindow({
     width: w.width || 1280, height: w.height || 800, x: w.x, y: w.y, minWidth: 420, minHeight: 600,
     show: false, backgroundColor: '#0b1020', title: profileArg ? `G.K.IO (${profileArg})` : 'G.K.IO',
-    icon: path.join(__dirname, '..', 'img', 'favicon-512.png'),
+    icon: imgPath('favicon-512.png') || undefined,
     autoHideMenuBar: true,
     ...blur.windowOptions(cfg.blur),
     webPreferences: {

@@ -11,7 +11,8 @@ const mediaDefaults = {
   micId: '', camId: '', speakerId: '',
   noiseSuppression: true, echoCancellation: true, autoGainControl: true,
 };
-const notifDefaults = { sound: true, desktop: false, preview: true };
+// No app de desktop (Electron) o aviso do sistema já vem ligado — é o que se espera de um app instalado.
+const notifDefaults = { sound: true, desktop: !!window.gkioDesktop, preview: true };
 const HOTKEY_KEY = 'gkio-hotkey-prefs';
 const IDLE_KEY = 'gkio-idle-prefs';
 const hotkeyDefaults = { mute: 'Ctrl+Shift+M', deafen: 'Ctrl+Shift+D', ptt: '', pttEnabled: false };
@@ -97,16 +98,19 @@ export async function requestDesktopPermission() {
   return Notification.requestPermission();
 }
 
-export function showDesktopNotification(title, body, icon) {
+export function showDesktopNotification(title, body, icon, onClick) {
   if (!notifPrefs.desktop) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  if (document.visibilityState === 'visible') return;
+  // Só fica quieto se a janela está visível E com foco: janela aberta atrás de
+  // outros programas continua "visible" para o navegador, e antes disso
+  // ninguém era avisado nesse caso.
+  if (document.visibilityState === 'visible' && document.hasFocus()) return;
   try {
     const hide = !notifPrefs.preview || document.documentElement.hasAttribute('data-streamer'); // modo streamer nunca mostra prévia
     const n = new Notification(title, { body: hide ? 'Nova mensagem' : body, icon });
     // No app de desktop (Electron), clicar na notificação restaura/foca
     // a janela — no navegador comum, foca a aba. window.focus() é a API
     // padrão pros dois casos.
-    n.onclick = () => { try { window.gkioDesktop?.showWindow(); window.focus(); } catch (e) {} };
+    n.onclick = () => { try { window.gkioDesktop?.showWindow(); window.focus(); if (onClick) onClick(); } catch (e) {} };
   } catch (e) {}
 }

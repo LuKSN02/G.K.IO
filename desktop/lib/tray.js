@@ -1,14 +1,20 @@
 // Bandeja do sistema (equivalente ao tray.rs do Dorion): ícone com estados
 // (normal / não lidas / mutado / ensurdecido) e menu de contexto.
 const { Tray, Menu, nativeImage } = require('electron');
-const path = require('path');
+const { imgPath } = require('./assets');
 
 let tray = null;
 let baseIcon = null;
 const cache = new Map();
 
 function base() {
-  if (!baseIcon) baseIcon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'img', 'favicon-32.png')).resize({ width: 32, height: 32 });
+  if (!baseIcon || baseIcon.isEmpty()) {
+    const p = imgPath('favicon-32.png');
+    const img = p ? nativeImage.createFromPath(p) : nativeImage.createEmpty();
+    // Se o arquivo não foi achado, devolve vazio SEM guardar no cache (tenta de novo depois).
+    if (img.isEmpty()) return img;
+    baseIcon = img.resize({ width: 32, height: 32 });
+  }
   return baseIcon;
 }
 
@@ -17,6 +23,7 @@ function badged(color) {
   if (!color) return base();
   if (cache.has(color)) return cache.get(color);
   const img = base();
+  if (img.isEmpty()) return img;
   const { width: w, height: h } = img.getSize();
   const buf = Buffer.from(img.toBitmap()); // BGRA
   const r = Math.round(w * 0.22), cx = w - r - 1, cy = r + 1;

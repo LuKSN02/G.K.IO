@@ -7,7 +7,8 @@ import { stopTyping } from './typing.js';
 import { listenUserServers, openCreateServerModal, openJoinServerModal, selectServer, goToServerPickerView } from './servers.js';
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById, hideFriendsHome, showFriendsHome } from './dms.js';
-import { wireComposer, sendAttachmentMessage } from './chat.js';
+import { wireComposer, sendAttachmentMessage, selectChannel } from './chat.js';
+import { initMobileNav } from './mobile-nav.js';
 import { wireGenericModalReset } from './dialogs.js';
 import { refreshMiniProfile } from './profile.js';
 import { wireCallBar, listenIncomingCalls } from './calls.js';
@@ -53,10 +54,15 @@ initZoom();
 initHotkeys();
 initExtensions();
 initDesktopIntegration();
+initMobileNav();
 
 onPushNotificationTap((data) => {
   if (data.type === 'dm' && data.dmId) openDmById(data.dmId);
-  else if (data.type === 'channel' && data.serverId) selectServer(data.serverId); // abre o servidor; escolher o canal exato ainda é manual
+  else if (data.type === 'channel' && data.serverId) {
+    selectServer(data.serverId);
+    // Notificações de desktop trazem o canal; as de push (APK) só o servidor.
+    if (data.channelId && data.channelName) selectChannel(data.serverId, data.channelId, data.channelName);
+  }
 });
 
 onAuthReady(() => {

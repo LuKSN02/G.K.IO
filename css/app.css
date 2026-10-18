@@ -2919,3 +2919,58 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-poll-hint.gk-ok { color: var(--gk-gray-500); }
 .gk-poll-footer-actions { display: flex; gap: 8px; flex-shrink: 0; }
 #gk-poll-create:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
+/* ============================================================
+   Navegação mobile (≤ 900px) — ver js/mobile-nav.js
+   Barra de abas embaixo, lista de conversas como tela própria e
+   conversa em tela cheia. O modo vem em <html data-mnav>.
+   ============================================================ */
+:root { --gk-tabbar-h: 58px; }
+.gk-mobile-back-btn, .gk-mobile-friends-btn { display: none; }
+
+@media (max-width: 900px) {
+  /* A gaveta antiga some: rail e sidebar viram filhos diretos do corpo do app */
+  .gk-nav-drawer, .gk-nav-drawer.gk-open { display: contents; position: static; transform: none; box-shadow: none; }
+  .gk-mobile-menu-btn { display: none !important; }
+
+  /* Rail → barra de abas fixa embaixo */
+  .gk-rail {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
+    width: auto; height: calc(var(--gk-tabbar-h) + env(safe-area-inset-bottom));
+    flex-direction: row; align-items: stretch; justify-content: space-around;
+    padding: 4px 6px env(safe-area-inset-bottom); gap: 2px; overflow: visible;
+    border-right: none; border-top: 1px solid var(--gk-gray-100); background-image: none;
+  }
+  .gk-rail-brand, .gk-rail-spacer { display: none; }
+  .gk-rail-item.gk-rail-nav-item { flex: 1 1 0; min-width: 0; width: auto; padding: 6px 2px; gap: 3px; }
+  .gk-rail-nav-icon { width: 22px; height: 22px; }
+  .gk-rail-nav-label { font-size: 10px; }
+  .gk-rail-nav-badge { top: 2px; right: calc(50% - 22px); }
+
+  /* Espaço para a barra de abas nas telas que a mostram */
+  html[data-mnav="list"] .gk-app-body,
+  html[data-mnav="page"] .gk-app-body { padding-bottom: calc(var(--gk-tabbar-h) + env(safe-area-inset-bottom)); box-sizing: border-box; }
+
+  /* Lista: a sidebar ocupa a tela toda e o chat sai de cena */
+  html[data-mnav="list"] .gk-main { display: none; }
+  html[data-mnav="list"] .gk-sidebar { display: flex; flex: 1; width: 100%; border-right: none; }
+  html[data-mnav="list"] .gk-sidebar-header { height: 52px; }
+  html[data-mnav="list"][data-mview="dms"] .gk-mobile-friends-btn { display: inline-flex; }
+
+  /* Página (Início, Arquivos, Comunidades, Amigos): só o conteúdo principal */
+  html[data-mnav="page"] .gk-sidebar, html[data-mnav="chat"] .gk-sidebar { display: none; }
+
+  /* Chat: tela cheia — sem barra de abas, sem barra global; botão ← no topo */
+  html[data-mnav="chat"] .gk-rail, html[data-mnav="chat"] .gk-topbar-global { display: none; }
+  html[data-mnav="chat"] .gk-mobile-back-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  html[data-mnav="chat"] .gk-topbar { height: 52px; padding-left: 4px; }
+  html[data-mnav="chat"] .gk-topbar .gk-title { max-width: 48vw; }
+
+  /* Toques mais fáceis nos botões do cabeçalho */
+  .gk-sidebar-header button, .gk-topbar button.gk-icon-btn { min-width: 40px; min-height: 40px; }
+
+  /* Campo de mensagem: mais espaço para o texto, ícones menos apertados */
+  .gk-composer-box { gap: 0; padding: 6px 6px 6px 10px; }
+  .gk-composer-box button { padding: 5px; }
+  .gk-composer-box textarea { min-width: 0; flex: 1; }
+}
