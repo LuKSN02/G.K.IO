@@ -62,6 +62,10 @@ jobs:
       - name: Criar o projeto Android
         run: npx cap add android
 
+      # O ubuntu-latest não vem mais com ImageMagick; o make-icons.sh precisa dele.
+      - name: Instalar ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Ajustar permissões, versão e ícones
         env:
           APP_VERSION: ${{ steps.ver.outputs.version }}
@@ -113,6 +117,3 @@ jobs:
           prerelease: true
           make_latest: false
           files: mobile/G.K.IO-${{ steps.ver.outputs.version }}.apk
-          
-      - name: Instalar ImageMagick
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
