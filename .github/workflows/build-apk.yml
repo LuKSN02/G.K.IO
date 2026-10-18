@@ -113,3 +113,6 @@ jobs:
           prerelease: true
           make_latest: false
           files: mobile/G.K.IO-${{ steps.ver.outputs.version }}.apk
+          
+      - name: Instalar ImageMagick
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
