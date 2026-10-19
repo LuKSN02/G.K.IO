@@ -136,13 +136,20 @@ export async function logoutUser() {
   await signOut(auth);
 }
 
+// Avisa a landing (js/landing.js) se há sessão ou não — é ela que decide
+// se mostra a tela inicial antes do login.
+function emitAuthGate(visible) {
+  document.dispatchEvent(new CustomEvent('gk:auth-gate', { detail: { visible } }));
+}
 function showAuthGate() {
   document.getElementById('gk-auth').style.display = 'flex';
   document.getElementById('gk-app').classList.remove('gk-ready');
+  emitAuthGate(true);
 }
 function hideAuthGate() {
   document.getElementById('gk-auth').style.display = 'none';
   document.getElementById('gk-app').classList.add('gk-ready');
+  emitAuthGate(false);
 }
 
 // ---------- Wiring da UI de autenticação ----------

@@ -1,6 +1,6 @@
 {
   "name": "gkio-desktop",
-  "version": "1.6.4",
+  "version": "1.6.1",
   "description": "G.K.IO — app desktop (Electron)",
   "main": "main.js",
   "author": "G.K.IO",
