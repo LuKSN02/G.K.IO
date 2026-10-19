@@ -14,6 +14,7 @@ gkio/
   css/
     tokens.css          - Paleta, tipografia, design tokens
     app.css              - Layout e componentes
+    landing.css          - Tela inicial (landing) mostrada no navegador antes do login
   js/
     firebase-config.js  - Preencha com suas credenciais do Firebase
     cloudinary-config.js  - Preencha com seu cloud name + upload preset do Cloudinary
@@ -21,6 +22,7 @@ gkio/
     state.js              - Estado global em memoria + utilitarios
     markdown.js            - Formatacao do texto das mensagens (negrito, codigo, citacao, spoiler, links)
     auth.js                - Login, registro, logout, presenca
+    landing.js             - Landing page: abre antes do login (so no navegador), botoes Abrir/Baixar
     servers.js              - Servidores, categorias, canais, convites
     chat.js                  - Mensagens (canais e DMs), anexos de midia
     dms.js                    - Amigos e mensagens diretas
