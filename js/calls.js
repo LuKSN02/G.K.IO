@@ -1000,7 +1000,7 @@ function minimizeCallScreen() {
   }
 }
 
-function expandCallScreen() {
+export function expandCallScreen() {
   if (!state.activeCall) return;
   document.getElementById('gk-call-bar').classList.remove('gk-open');
   if (state.activeCall.kind === 'voiceChannel') {

@@ -51,6 +51,25 @@
   .gk-topbar-global-search-wrap { max-width: none; }
 }
 
+/* A largura do chip de perfil muda conforme o status ("Online" / "Ausente" /
+   "Não perturbe"). Com flex, a busca ficava centralizada só no espaço que
+   sobrava entre a marca e as ações — então andava a cada troca de status.
+   Em desktop usamos 3 colunas (1fr | busca | 1fr): a busca fica sempre no
+   centro REAL da barra, não importa o tamanho dos lados. Em telas pequenas
+   (<=900px) a busca nem aparece, e o layout flex original continua valendo. */
+@media (min-width: 901px) {
+  .gk-topbar-global {
+    display: grid;
+    grid-template-columns: minmax(max-content, 1fr) minmax(160px, 420px) minmax(max-content, 1fr);
+  }
+  .gk-topbar-global-brand { justify-self: start; }
+  .gk-topbar-global-search-wrap { width: 100%; max-width: none; margin: 0; }
+  .gk-topbar-global-actions { justify-self: end; }
+}
+/* Largura fixa pro texto do chip: trocar o status não "pula" nem os botões ao lado. */
+.gk-topbar-global-profile-info { min-width: 84px; max-width: 150px; }
+.gk-topbar-global-profile-info b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Painel de notificações — pedidos de amizade pendentes por enquanto
    (ver js/topbar.js); mesmo padrão de abertura dos outros popovers do app. */
 .gk-notif-panel {

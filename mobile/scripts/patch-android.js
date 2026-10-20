@@ -20,6 +20,12 @@ for (const p of PERMS) if (!xml.includes(`"${p}"`)) add += `    <uses-permission
 for (const f of features) if (!xml.includes(`"${f}"`)) add += `    <uses-feature android:name="${f}" android:required="false" />\n`;
 if (add) xml = xml.replace('</manifest>', add + '</manifest>');
 
+// Canal padrão das notificações push (FCM): é o fallback quando o push chega com o app
+// fechado e sem channel_id no payload. O canal em si é criado em js/push.js.
+if (!xml.includes('default_notification_channel_id')) {
+  xml = xml.replace('</application>', '        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="gkio-messages" />\n    </application>');
+}
+
 fs.writeFileSync(manifestPath, xml);
 console.log('AndroidManifest.xml ajustado.');
 

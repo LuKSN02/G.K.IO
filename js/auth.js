@@ -7,6 +7,7 @@ import {
   setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
 } from './db.js';
 import { stopBackgroundNotifications } from './background-notify.js';
+import { clearPushToken } from './push.js';
 import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { showStartupSplash } from './splash.js';
 
@@ -131,6 +132,7 @@ export async function loginUser(email, password, keepSignedIn = true) {
 }
 
 export async function logoutUser() {
+  await clearPushToken(); // antes do signOut: ainda precisa estar autenticado pra gravar
   await setPresence('offline');
   stopBackgroundNotifications();
   await signOut(auth);

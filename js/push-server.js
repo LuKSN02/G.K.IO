@@ -77,7 +77,9 @@ export default {
             notification: { title: String(title || 'G.K.IO'), body: String(msgBody || '') },
             // FCM só aceita strings nos valores de "data" — stringifica tudo.
             data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
-            android: { priority: 'high' },
+            // channel_id: o mesmo canal de ALTA importância criado pelo app (js/push.js).
+            // Sem isso o Android usa o canal padrão do FCM e a notificação chega muda/escondida.
+            android: { priority: 'high', notification: { channel_id: 'gkio-messages', sound: 'default' } },
           },
         }),
       });

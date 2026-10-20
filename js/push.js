@@ -29,29 +29,30 @@ export function onPushNotificationTap(cb) { onNotificationTap = cb; }
 // Usado também pelas notificações de desktop (background-notify.js) para abrir a conversa certa.
 export function triggerNotificationTap(data) { if (data && onNotificationTap) onNotificationTap(data); }
 
-export async function initPushNotifications() {
-  if (!isNativeAndroid()) return; // web fica só com showDesktopNotification (prefs.js)
-  const Push = window.Capacitor?.Plugins?.PushNotifications;
-  if (!Push) return; // plugin não instalado nessa build do APK ainda
+// Canal de notificação do Android (8+). Sem um canal de importância ALTA, o
+// Android joga o push no canal padrão do FCM ("Diversos"): a notificação chega
+// calada, sem aparecer na tela e, em vários celulares (Xiaomi, Samsung...),
+// nem aparece. O mesmo id também vai em AndroidManifest (patch-android.js) e
+// no Worker (push-server.js), pra funcionar mesmo com um dos lados desatualizado.
+export const PUSH_CHANNEL_ID = 'gkio-messages';
+
+let listenersAttached = false;
+let registering = false;
+
+function attachListeners(Push) {
+  if (listenersAttached) return; // initPush pode rodar de novo (novo login) — não duplica listeners/toasts
+  listenersAttached = true;
 
   // IMPORTANTE: os listeners precisam ser registrados ANTES de chamar
   // Push.register() — o evento 'registration' pode disparar rápido
-  // demais (processo nativo já em andamento) e, se o listener ainda
-  // não estiver anexado, o token se perde silenciosamente. Foi
-  // exatamente isso que fazia o push "não funcionar": permissão
-  // concedida, token gerado do lado nativo, mas nunca capturado nem
-  // salvo no Firestore — então o app nunca tinha o que enviar pro
-  // Worker (por isso nenhum request chegava lá).
+  // demais e, se o listener ainda não estiver anexado, o token se perde.
   Push.addListener('registration', async (token) => {
-    if (!auth.currentUser || !token?.value) return;
-    try {
-      await updateDoc(userDoc(auth.currentUser.uid), { fcmToken: token.value });
-    } catch (e) {
-      console.warn('[push] Falhou ao salvar fcmToken:', e.message);
-    }
+    // Se o token chegar antes do login terminar, não perde: guarda e salva depois.
+    pendingToken = token?.value || pendingToken;
+    await savePendingToken();
   });
   Push.addListener('registrationError', (err) => {
-    console.warn('[push] registrationError:', err);
+    console.warn('[push] registrationError:', JSON.stringify(err));
   });
 
   // App aberto e em primeiro plano na hora que a notificação chega —
@@ -67,8 +68,35 @@ export async function initPushNotifications() {
     const data = action.notification?.data;
     if (data && onNotificationTap) onNotificationTap(data);
   });
+}
 
+let pendingToken = null;
+async function savePendingToken() {
+  if (!pendingToken || !auth.currentUser) return;
   try {
+    await updateDoc(userDoc(auth.currentUser.uid), { fcmToken: pendingToken });
+  } catch (e) {
+    console.warn('[push] Falhou ao salvar fcmToken:', e.message);
+  }
+}
+
+async function registerDevice(Push) {
+  if (registering) return;
+  registering = true;
+  try {
+    // Canal ANTES de registrar (e antes de qualquer push chegar).
+    try {
+      await Push.createChannel({
+        id: PUSH_CHANNEL_ID,
+        name: 'Mensagens',
+        description: 'Mensagens diretas e de canais',
+        importance: 5, // máxima: som + aparece na tela (heads-up)
+        visibility: 1,
+        vibration: true,
+        lights: true,
+      });
+    } catch (e) { console.warn('[push] createChannel:', e.message); }
+
     const perm = await Push.checkPermissions();
     if (perm.receive !== 'granted') {
       const req = await Push.requestPermissions();
@@ -77,8 +105,37 @@ export async function initPushNotifications() {
     await Push.register();
   } catch (e) {
     console.warn('[push] Erro em checkPermissions/register:', e.message);
-    return;
+  } finally {
+    registering = false;
   }
+}
+
+export async function initPushNotifications() {
+  if (!isNativeAndroid()) return; // web fica só com showDesktopNotification (prefs.js)
+  const Push = window.Capacitor?.Plugins?.PushNotifications;
+  if (!Push) return; // plugin não instalado nessa build do APK ainda
+
+  attachListeners(Push);
+  await savePendingToken(); // caso o token já tenha chegado antes deste login
+  await registerDevice(Push);
+
+  // O Android pode ter matado o app ou a pessoa pode ter liberado a permissão
+  // de notificações nas configurações: ao voltar pro app, confere de novo e
+  // garante que o token atual está salvo (o token do FCM também muda de vez em quando).
+  if (!initPushNotifications._resumeWired) {
+    initPushNotifications._resumeWired = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && auth.currentUser) registerDevice(Push);
+    });
+  }
+}
+
+// Ao sair da conta, solta o token deste aparelho — senão ele continuaria
+// no doc de quem saiu e as notificações dessa conta seguiriam chegando aqui.
+export async function clearPushToken() {
+  if (!isNativeAndroid() || !auth.currentUser) return;
+  try { await updateDoc(userDoc(auth.currentUser.uid), { fcmToken: null }); } catch (e) { /* best-effort */ }
+  pendingToken = null;
 }
 
 // Best-effort: nunca deixa uma falha no push derrubar o envio da

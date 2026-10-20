@@ -11,7 +11,7 @@ import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effec
 import { syncServerWatchers, registerChannelViewCheck } from './background-notify.js';
 import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
-import { joinVoiceChannel } from './calls.js';
+import { joinVoiceChannel, expandCallScreen } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { SERVER_TEMPLATES } from './server-templates.js';
 import { openImageCropper } from './cropper.js';
@@ -838,6 +838,12 @@ function renderServerSidebar(serverId, categories, channels) {
 // outra chamada/sala, avisa que ela vai ser encerrada automaticamente
 // ao entrar nessa nova, pra não pegar ninguém de surpresa.
 function confirmJoinVoiceChannel(serverId, ch) {
+  // Já está conectado NESTA sala: não pergunta de novo, abre o painel da
+  // chamada (participantes, mic, fone, tela, desligar), como no Discord.
+  if (state.activeCall?.kind === 'voiceChannel' && state.activeCall.id === ch.id) {
+    expandCallScreen();
+    return;
+  }
   let note = null;
   if (state.activeCall && !(state.activeCall.kind === 'voiceChannel' && state.activeCall.id === ch.id)) {
     note = state.activeCall.kind === 'dm'
