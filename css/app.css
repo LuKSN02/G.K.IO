@@ -3004,3 +3004,43 @@ html[data-streamer] input[type=email]:focus { filter: none; }
   background: var(--gk-surface-raised); border: 1px solid var(--gk-gray-200); box-shadow: var(--gk-shadow-lg);
 }
 .gk-update-text { flex: 1 1 160px; font-size: 13.5px; color: var(--gk-gray-800); }
+
+/* ============================================================
+   Barra de chamada no celular (≤ 900px)
+   Antes era uma pílula flutuando por cima do app: cobria o campo de
+   mensagem e a barra de abas, e o texto + 5 botões não cabiam (cortava
+   nas pontas). Agora ela é uma faixa fina ENCAIXADA no rodapé — o conteúdo
+   sobe para dar espaço (classe gk-call-bar-on no <html>, ver wireCallBar
+   em js/calls.js), então nada fica escondido atrás dela.
+   ============================================================ */
+:root { --gk-callbar-h: 52px; }
+@media (max-width: 900px) {
+  .gk-call-bar {
+    left: 0; right: 0; width: auto; transform: none; box-sizing: border-box;
+    height: var(--gk-callbar-h); padding: 0 10px; gap: 6px; justify-content: flex-start;
+    border-radius: 0; border-width: 1px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,0.18);
+    bottom: 0; z-index: 160; /* acima da barra de abas (150), abaixo de modais */
+  }
+  .gk-call-bar .gk-call-label {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    font-size: 12.5px; cursor: pointer; display: flex; align-items: center;
+  }
+  .gk-call-bar .gk-call-label::before {
+    content: ''; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px;
+    background: var(--gk-status-online); box-shadow: 0 0 0 3px rgba(60,200,120,0.18);
+  }
+  .gk-call-bar button { flex: 0 0 auto; width: clamp(34px, 10.4vw, 40px); height: clamp(34px, 10.4vw, 40px); }
+
+  /* Chat em tela cheia (sem barra de abas): faixa colada embaixo, respeitando o gesto do sistema */
+  html[data-mnav="chat"] .gk-call-bar { height: calc(var(--gk-callbar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
+  html.gk-call-bar-on[data-mnav="chat"] .gk-app-body { padding-bottom: calc(var(--gk-callbar-h) + env(safe-area-inset-bottom)); box-sizing: border-box; }
+  html.gk-call-bar-on[data-mnav="chat"] .gk-composer { padding-bottom: 10px; } /* o espaço do gesto já está na faixa */
+
+  /* Lista / páginas: a faixa fica logo ACIMA da barra de abas */
+  html[data-mnav="list"] .gk-call-bar, html[data-mnav="page"] .gk-call-bar { bottom: calc(var(--gk-tabbar-h) + env(safe-area-inset-bottom)); }
+  html.gk-call-bar-on[data-mnav="list"] .gk-app-body,
+  html.gk-call-bar-on[data-mnav="page"] .gk-app-body { padding-bottom: calc(var(--gk-tabbar-h) + var(--gk-callbar-h) + env(safe-area-inset-bottom)); }
+
+  /* Elementos flutuantes de chamada sobem junto, em vez de ficarem sob a faixa */
+  html.gk-call-bar-on .gk-call-video-grid, html.gk-call-bar-on .gk-screenshare-grid { bottom: calc(var(--gk-callbar-h) + 12px + env(safe-area-inset-bottom)); }
+}

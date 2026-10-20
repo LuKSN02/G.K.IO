@@ -1121,6 +1121,16 @@ export function wireCallBar() {
 
   document.getElementById('gk-call-minimize-btn').addEventListener('click', minimizeCallScreen);
   document.getElementById('gk-call-bar-expand-btn').addEventListener('click', expandCallScreen);
+  // Toque no texto da faixa também abre a chamada (alvo grande, bom no celular).
+  document.getElementById('gk-call-bar-label').addEventListener('click', expandCallScreen);
+
+  // Marca o <html> enquanto a faixa de chamada está visível: no celular o CSS
+  // reserva espaço pra ela (nada fica escondido atrás). Observar a classe
+  // cobre todos os pontos que mostram/escondem a faixa.
+  const callBar = document.getElementById('gk-call-bar');
+  const syncCallBarSpace = () => document.documentElement.classList.toggle('gk-call-bar-on', callBar.classList.contains('gk-open'));
+  new MutationObserver(syncCallBarSpace).observe(callBar, { attributes: true, attributeFilter: ['class'] });
+  syncCallBarSpace();
 
   document.getElementById('gk-call-btn').addEventListener('click', () => startDmCall(false));
   document.getElementById('gk-video-call-btn').addEventListener('click', () => startDmCall(true));
