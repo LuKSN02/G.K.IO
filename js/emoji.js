@@ -10,7 +10,7 @@
 // ============================================================
 import {
   db, auth, customEmojisCol, customEmojiDoc, customEmojiRequestsCol, customEmojiRequestDoc,
-  addDoc, getDocs, setDoc, deleteDoc, writeBatch, arrayUnion,
+  addDoc, getDocs, getDoc, setDoc, deleteDoc, writeBatch, arrayUnion, arrayRemove, userDoc,
   query, where, onSnapshot, orderBy, serverTimestamp,
 } from './db.js';
 import { state, el, toast } from './state.js';
@@ -157,6 +157,33 @@ async function requestEmojiAccess(emoji) {
     toast(`Pedido enviado ao criador de :${emoji.name}:`);
   } catch (err) {
     toast('Não foi possível enviar o pedido.', 'danger');
+  }
+}
+
+// Nome de quem tem acesso (carregado sob demanda e guardado).
+const accessNameCache = new Map();
+async function resolveUserName(uid) {
+  if (accessNameCache.has(uid)) return accessNameCache.get(uid);
+  let name = 'Usuário';
+  try {
+    const snap = await getDoc(userDoc(uid));
+    if (snap.exists()) name = snap.data().displayName || snap.data().username || name;
+  } catch (_) { /* sem permissão/offline: fica o nome genérico */ }
+  accessNameCache.set(uid, name);
+  return name;
+}
+
+// O criador tira o acesso de alguém. O pedido antigo também é apagado, então
+// a pessoa pode pedir de novo no futuro, se o criador mudar de ideia.
+async function revokeEmojiAccess(emoji, uid) {
+  try {
+    const batch = writeBatch(db);
+    batch.update(customEmojiDoc(emoji.id), { allowedUserIds: arrayRemove(uid) });
+    batch.delete(customEmojiRequestDoc(`${emoji.id}_${uid}`));
+    await batch.commit();
+    toast(`Acesso removido de :${emoji.name}:.`);
+  } catch (err) {
+    toast('Não foi possível remover o acesso.', 'danger');
   }
 }
 
@@ -403,6 +430,26 @@ function renderCustomTab() {
         el('div', { class: 'gk-emoji-req-text' }, `:${emoji.name}:`),
         action,
       ]));
+    }
+  }
+
+  // 4) Meus emojis liberados para outras pessoas: o criador pode tirar o acesso
+  const shared = usable.filter((e) => e.uploaderId === auth.currentUser?.uid && (e.allowedUserIds || []).length);
+  if (shared.length) {
+    bodyEl.appendChild(el('div', { class: 'gk-emoji-category-label' }, 'Seus emojis liberados'));
+    for (const emoji of shared) {
+      bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row' }, [
+        el('img', { src: emoji.url, alt: '' }),
+        el('div', { class: 'gk-emoji-req-text' }, `:${emoji.name}:`),
+      ]));
+      for (const uid of emoji.allowedUserIds) {
+        const nameEl = el('div', { class: 'gk-emoji-req-text' }, accessNameCache.get(uid) || 'Carregando...');
+        if (!accessNameCache.has(uid)) resolveUserName(uid).then((n) => { nameEl.textContent = n; });
+        bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row gk-emoji-req-sub' }, [
+          nameEl,
+          el('button', { class: 'gk-btn gk-btn-ghost gk-btn-sm', type: 'button', onclick: () => revokeEmojiAccess(emoji, uid) }, 'Remover acesso'),
+        ]));
+      }
     }
   }
 }

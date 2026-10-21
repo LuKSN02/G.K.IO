@@ -3058,3 +3058,5 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-emoji-req-state { font-size: 11.5px; color: var(--gk-gray-400); flex-shrink: 0; }
 .gk-emoji-req-row .gk-btn { flex-shrink: 0; }
 .gk-btn.gk-btn-sm { padding: 4px 10px; font-size: 12px; min-height: 0; height: auto; }
+.gk-emoji-req-sub { padding-left: 36px; }
+.gk-emoji-req-sub .gk-emoji-req-text { color: var(--gk-gray-500); }
