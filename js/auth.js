@@ -5,6 +5,7 @@ import {
   auth, db, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
   setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
+  sendEmailVerification, reload, deleteUser, getIdToken,
 } from './db.js';
 import { stopBackgroundNotifications } from './background-notify.js';
 import { clearPushToken } from './push.js';
@@ -24,42 +25,73 @@ export function onAuthReady(cb) { onReadyCallback = cb; }
 
 let beforeunloadRegistered = false;
 
+// ---------- Confirmação de e-mail ----------
+// Contas criadas A PARTIR desta data só entram no app depois de confirmar o
+// e-mail (link enviado no cadastro). Contas mais antigas continuam entrando
+// normalmente — senão todo mundo que já usa o G.K.IO ficaria trancado pra fora.
+// Ajuste para a data/hora em que você publicar esta versão.
+const EMAIL_VERIFICATION_REQUIRED_AFTER = Date.parse('2026-10-20T00:00:00Z');
+
+function needsEmailVerification(fbUser) {
+  if (!fbUser || fbUser.emailVerified) return false;
+  const created = Date.parse(fbUser.metadata?.creationTime || '');
+  return Number.isFinite(created) && created >= EMAIL_VERIFICATION_REQUIRED_AFTER;
+}
+
+let verifyPoll = null;
+let verifyCameFromForm = false;
+let enteringApp = false;
+
 export function initAuthListener() {
   onAuthStateChanged(auth, async (fbUser) => {
     if (!fbUser) {
       state.user = null;
       justAuthenticatedViaForm = false;
       if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+      hideVerifyPanel();
       showAuthGate();
       return;
     }
     const cameFromForm = justAuthenticatedViaForm;
     justAuthenticatedViaForm = false;
 
-    const profileSnap = await getDoc(userDoc(fbUser.uid));
-    if (!profileSnap.exists()) {
-      // Não deveria acontecer no fluxo normal (o registro já cria o doc), mas por segurança:
-      await bootstrapUserDoc(fbUser.uid, fbUser.displayName || 'novo-usuario', fbUser.email);
+    // Conta nova com e-mail ainda não confirmado: fica na tela de confirmação.
+    // Nada de perfil/presença/app até o link ser clicado.
+    if (needsEmailVerification(fbUser)) {
+      state.user = null;
+      showVerifyPanel(fbUser, cameFromForm);
+      showAuthGate();
+      return;
     }
-    await setPresence('online');
-    const snap = await getDoc(userDoc(fbUser.uid));
-    state.user = { uid: fbUser.uid, ...snap.data() };
-    hideAuthGate();
-    startPresenceHeartbeat();
-    // Sessão restaurada automaticamente (não veio de um submit do formulário)
-    // = a pessoa já tinha feito cadastro + primeiro login antes -> mostra a
-    // animação de abertura. No cadastro/login manual, pula direto pro app.
-    if (!cameFromForm) showStartupSplash();
-    onReadyCallback && onReadyCallback();
-
-    // Só registra uma vez: como esse callback do onAuthStateChanged pode
-    // disparar várias vezes numa mesma sessão (ex: relogin), sem esse
-    // guard cada disparo empilhava mais um listener de beforeunload.
-    if (!beforeunloadRegistered) {
-      beforeunloadRegistered = true;
-      window.addEventListener('beforeunload', () => { setPresence('offline'); });
-    }
+    await enterApp(fbUser, cameFromForm);
   });
+}
+
+async function enterApp(fbUser, cameFromForm) {
+  const profileSnap = await getDoc(userDoc(fbUser.uid));
+  if (!profileSnap.exists()) {
+    // Cadastro novo: o perfil só nasce aqui, depois da confirmação do e-mail
+    // (o nome de usuário escolhido fica guardado no displayName até lá).
+    await bootstrapUserDoc(fbUser.uid, fbUser.displayName || 'novo-usuario', fbUser.email);
+  }
+  await setPresence('online');
+  const snap = await getDoc(userDoc(fbUser.uid));
+  state.user = { uid: fbUser.uid, ...snap.data() };
+  hideAuthGate();
+  startPresenceHeartbeat();
+  // Sessão restaurada automaticamente (não veio de um submit do formulário)
+  // = a pessoa já tinha feito cadastro + primeiro login antes -> mostra a
+  // animação de abertura. No cadastro/login manual, pula direto pro app.
+  if (!cameFromForm) showStartupSplash();
+  onReadyCallback && onReadyCallback();
+
+  // Só registra uma vez: como esse callback do onAuthStateChanged pode
+  // disparar várias vezes numa mesma sessão (ex: relogin), sem esse
+  // guard cada disparo empilhava mais um listener de beforeunload.
+  if (!beforeunloadRegistered) {
+    beforeunloadRegistered = true;
+    window.addEventListener('beforeunload', () => { setPresence('offline'); });
+  }
 }
 
 async function bootstrapUserDoc(uid, username, email) {
@@ -118,9 +150,28 @@ function startPresenceHeartbeat() {
 export async function registerUser(username, email, password) {
   username = normalizeUsername(username);
   if (username.length < 3) throw new Error('O nome de usuário precisa ter ao menos 3 caracteres.');
-  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  let cred;
+  try {
+    cred = await createUserWithEmailAndPassword(auth, email, password);
+  } catch (err) {
+    // E-mail já cadastrado: pode ser uma conta criada antes e nunca confirmada
+    // (a pessoa fechou a aba). Se a senha bater, retoma a confirmação em vez de travar.
+    if (err?.code === 'auth/email-already-in-use') {
+      try {
+        const existing = await signInWithEmailAndPassword(auth, email, password);
+        if (needsEmailVerification(existing.user)) {
+          await fbUpdateProfile(existing.user, { displayName: username });
+          await sendEmailVerification(existing.user).catch(() => {});
+        }
+        return existing.user;
+      } catch (_) { /* senha não bate: mostra o erro original */ }
+    }
+    throw err;
+  }
   await fbUpdateProfile(cred.user, { displayName: username });
-  await bootstrapUserDoc(cred.user.uid, username, email);
+  // O perfil (doc em users/) só é criado depois que o e-mail for confirmado.
+  // Se o envio falhar (ex.: limite de envios), a tela de confirmação tem "Reenviar".
+  await sendEmailVerification(cred.user).catch((e) => console.warn('[auth] sendEmailVerification:', e.message));
   return cred.user;
 }
 
@@ -202,8 +253,10 @@ export function wireAuthForm() {
     justAuthenticatedViaForm = true;
     try {
       if (mode === 'register') {
-        await registerUser(username, email, password);
-        toast('Conta criada! Bem-vindo(a) ao G.K.IO.');
+        const newUser = await registerUser(username, email, password);
+        toast(needsEmailVerification(newUser)
+          ? 'Conta criada! Confirme seu e-mail para entrar.'
+          : 'Bem-vindo(a) de volta ao G.K.IO.');
       } else {
         await loginUser(email, password, !keepSignedInBox || keepSignedInBox.checked);
       }
@@ -227,6 +280,7 @@ export function wireAuthForm() {
   }
 
   wireForgotPasswordPanel();
+  wireVerifyPanel();
 }
 
 // ---------- Aba dedicada de "esqueci minha senha" ----------
@@ -298,6 +352,95 @@ function wireForgotPasswordPanel() {
   backBtn.addEventListener('click', hideForgotPanel);
 }
 
+// ---------- Tela de confirmação de e-mail ----------
+function showVerifyPanel(fbUser, cameFromForm) {
+  verifyCameFromForm = cameFromForm;
+  document.getElementById('gk-auth-form').style.display = 'none';
+  document.getElementById('gk-auth-mode-toggle').style.display = 'none';
+  document.getElementById('gk-auth-forgot-panel').style.display = 'none';
+  document.getElementById('gk-auth-verify-panel').style.display = 'block';
+  document.getElementById('gk-auth-verify-email').textContent = fbUser.email || '';
+  document.getElementById('gk-auth-verify-error').style.display = 'none';
+  // Entra sozinho assim que o link for clicado (mesmo em outra aba/aparelho).
+  if (!verifyPoll) verifyPoll = setInterval(() => checkVerified(true), 4000);
+}
+
+function hideVerifyPanel() {
+  if (verifyPoll) { clearInterval(verifyPoll); verifyPoll = null; }
+  const panel = document.getElementById('gk-auth-verify-panel');
+  if (!panel || panel.style.display !== 'block') return;
+  panel.style.display = 'none';
+  document.getElementById('gk-auth-form').style.display = 'block';
+  document.getElementById('gk-auth-mode-toggle').style.display = 'block';
+}
+
+async function checkVerified(silent) {
+  const user = auth.currentUser;
+  if (!user || enteringApp) return;
+  const errorBox = document.getElementById('gk-auth-verify-error');
+  try {
+    await reload(user); // sem isso o emailVerified local nunca muda
+  } catch (e) {
+    if (!silent) { errorBox.textContent = friendlyAuthError(e); errorBox.style.display = 'block'; }
+    return;
+  }
+  if (!user.emailVerified) {
+    if (!silent) { errorBox.textContent = 'Ainda não consta como confirmado. Clique no link do e-mail e tente de novo.'; errorBox.style.display = 'block'; }
+    return;
+  }
+  enteringApp = true;
+  try {
+    await getIdToken(user, true);
+    hideVerifyPanel();
+    await enterApp(user, verifyCameFromForm);
+  } finally {
+    enteringApp = false;
+  }
+}
+
+function wireVerifyPanel() {
+  const errorBox = document.getElementById('gk-auth-verify-error');
+  const msg = document.getElementById('gk-auth-verify-msg');
+  const checkBtn = document.getElementById('gk-auth-verify-check');
+  const resendBtn = document.getElementById('gk-auth-verify-resend');
+  const wrongBtn = document.getElementById('gk-auth-verify-wrong');
+
+  checkBtn.addEventListener('click', async () => {
+    errorBox.style.display = 'none';
+    checkBtn.disabled = true;
+    try { await checkVerified(false); } finally { checkBtn.disabled = false; }
+  });
+
+  resendBtn.addEventListener('click', async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    errorBox.style.display = 'none';
+    resendBtn.disabled = true;
+    try {
+      await sendEmailVerification(user);
+      msg.textContent = `Reenviamos o link para ${user.email}.`;
+      msg.style.display = 'block';
+    } catch (e) {
+      msg.style.display = 'none';
+      errorBox.textContent = friendlyAuthError(e);
+      errorBox.style.display = 'block';
+    }
+    // Pausa curta: o Firebase limita envios seguidos para o mesmo e-mail.
+    setTimeout(() => { resendBtn.disabled = false; }, 30000);
+  });
+
+  // E-mail digitado errado: apaga a conta ainda não confirmada (ela nunca virou
+  // perfil de verdade) e volta pro formulário; se não der, só sai da conta.
+  wrongBtn.addEventListener('click', async () => {
+    const user = auth.currentUser;
+    try { if (user) await deleteUser(user); }
+    catch (_) { try { await signOut(auth); } catch (__) { /* noop */ } }
+    if (auth.currentUser) { try { await signOut(auth); } catch (_) { /* noop */ } }
+    msg.style.display = 'none';
+    hideVerifyPanel();
+  });
+}
+
 function friendlyAuthError(err) {
   const code = err && err.code || '';
   const map = {
@@ -307,6 +450,7 @@ function friendlyAuthError(err) {
     'auth/user-not-found': 'E-mail ou senha incorretos.',
     'auth/wrong-password': 'E-mail ou senha incorretos.',
     'auth/invalid-credential': 'E-mail ou senha incorretos.',
+    'auth/too-many-requests': 'Muitas tentativas seguidas. Aguarde um pouco e tente de novo.',
   };
   return map[code] || err.message || 'Ocorreu um erro. Tente novamente.';
 }
