@@ -481,6 +481,19 @@
         </div>
       </div>
 
+      <!-- Confirmação de e-mail: conta nova só entra no app depois de clicar no link
+           enviado pro e-mail informado — assim e-mail que não existe não vira conta. -->
+      <div id="gk-auth-verify-panel" style="display:none;">
+        <h2>Confirme seu e-mail</h2>
+        <div class="gk-auth-forgot-sent-icon"><span data-icon="chatBubble" class="gk-inline-icon"></span></div>
+        <p class="gk-auth-forgot-sent-text">Enviamos um link de confirmação para <b id="gk-auth-verify-email"></b>. Clique nele (confira também o spam) e você entra aqui automaticamente.</p>
+        <div class="gk-error" id="gk-auth-verify-error"></div>
+        <p class="gk-auth-forgot-sent-text" id="gk-auth-verify-msg" style="display:none;"></p>
+        <button type="button" class="gk-btn gk-btn-primary gk-btn-block" id="gk-auth-verify-check">Já confirmei</button>
+        <button type="button" class="gk-btn gk-btn-ghost gk-btn-block" id="gk-auth-verify-resend" style="margin-top:8px;">Reenviar e-mail</button>
+        <button type="button" class="gk-auth-back" id="gk-auth-verify-wrong" style="margin:14px auto 0;">Errei o e-mail / usar outra conta</button>
+      </div>
+
       <p class="gk-auth-toggle" id="gk-auth-mode-toggle">Não tem conta? Criar conta</p>
     </div>
     <p class="gk-auth-panel-bottomline">G.K.IO <span>· Conectando mundos.</span></p>

@@ -1,14 +1,16 @@
 // ============================================================
 // G.K.IO — Emojis nativos, emojis personalizados e GIFs
 // ============================================================
-// Emojis personalizados são uma biblioteca compartilhada (qualquer
-// pessoa pode enviar/usar), guardada em customEmojis/{id} no
-// Firestore + Cloudinary para a imagem. São referenciados no texto
+// Emojis personalizados são PESSOAIS: só quem criou (uploaderId) pode usar.
+// Outra pessoa só usa se pedir acesso e o criador aceitar (o uid entra em
+// allowedUserIds do emoji; os pedidos ficam em customEmojiRequests/).
+// Guardados em customEmojis/{id} no Firestore + Cloudinary para a imagem. São referenciados no texto
 // da mensagem como :nome_do_emoji: e trocados por <img> na hora de
 // renderizar (ver renderMessageContent, usado por chat.js).
 // ============================================================
 import {
-  auth, customEmojisCol, addDoc, getDocs,
+  db, auth, customEmojisCol, customEmojiDoc, customEmojiRequestsCol, customEmojiRequestDoc,
+  addDoc, getDocs, setDoc, deleteDoc, writeBatch, arrayUnion,
   query, where, onSnapshot, orderBy, serverTimestamp,
 } from './db.js';
 import { state, el, toast } from './state.js';
@@ -54,7 +56,47 @@ let unsubCustomEmojis = null;
 // navegadores/extensões — por isso "nada acontecia" ao escolher a imagem).
 let pendingEmojiFile = null;
 
+// ---------- Acesso aos emojis personalizados ----------
+// Pode usar: quem criou, ou quem o criador liberou (allowedUserIds).
+// Emojis antigos (sem allowedUserIds) ficam só com o criador.
+export function canUseCustomEmoji(emoji) {
+  const uid = auth.currentUser?.uid;
+  if (!emoji || !uid) return false;
+  return emoji.uploaderId === uid || (emoji.allowedUserIds || []).includes(uid);
+}
+
+// Nomes de emojis personalizados citados no texto (:nome:) que a pessoa NÃO pode
+// usar. Usado por chat.js para barrar envio/edição — o emoji continua aparecendo
+// normalmente nas mensagens de quem tem acesso.
+export function lockedCustomEmojisIn(text) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/:([a-z0-9_]{2,32}):/g)) {
+    const emoji = getCustomEmojiByName(m[1]);
+    if (emoji && !canUseCustomEmoji(emoji) && !out.includes(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+
+export function isCustomEmojiNameLocked(name) {
+  const emoji = getCustomEmojiByName(name);
+  return !!emoji && !canUseCustomEmoji(emoji);
+}
+
 // ---------- Listener da biblioteca de emojis personalizados ----------
+let unsubMyRequests = null;
+let unsubIncomingRequests = null;
+const myRequests = new Map();      // emojiId -> 'pending' | 'approved' | 'denied' (pedidos que EU fiz)
+let incomingRequests = [];         // pedidos pendentes feitos a emojis MEUS
+let customTabBadge = null;
+
+function refreshCustomUi() {
+  if (customTabBadge) {
+    customTabBadge.textContent = incomingRequests.length ? String(incomingRequests.length) : '';
+    customTabBadge.style.display = incomingRequests.length ? 'inline-flex' : 'none';
+  }
+  if (panelEl && panelEl.classList.contains('gk-open') && currentTab === 'custom' && !pendingEmojiFile) renderTab();
+}
+
 export function listenCustomEmojis() {
   if (unsubCustomEmojis) unsubCustomEmojis();
   const q = query(customEmojisCol(), orderBy('name'));
@@ -63,6 +105,71 @@ export function listenCustomEmojis() {
     snap.forEach((d) => customEmojiCache.set(d.id, { id: d.id, ...d.data() }));
     if (panelEl && panelEl.classList.contains('gk-open') && currentTab === 'custom') renderTab();
   });
+
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+
+  // Pedidos que eu fiz: mostra "enviado/recusado" e avisa quando o criador libera.
+  if (unsubMyRequests) unsubMyRequests();
+  let firstMine = true;
+  unsubMyRequests = onSnapshot(query(customEmojiRequestsCol(), where('requesterId', '==', uid)), (snap) => {
+    myRequests.clear();
+    snap.forEach((d) => myRequests.set(d.data().emojiId, d.data().status));
+    if (!firstMine) {
+      snap.docChanges().forEach((c) => {
+        if (c.type === 'modified' && c.doc.data().status === 'approved') toast(`Acesso liberado: :${c.doc.data().emojiName}:`);
+      });
+    }
+    firstMine = false;
+    refreshCustomUi();
+  }, (e) => console.warn('[emoji] pedidos feitos:', e.message));
+
+  // Pedidos feitos aos MEUS emojis: aparecem no topo da aba Personalizados.
+  if (unsubIncomingRequests) unsubIncomingRequests();
+  let firstIncoming = true;
+  unsubIncomingRequests = onSnapshot(query(customEmojiRequestsCol(), where('ownerId', '==', uid)), (snap) => {
+    incomingRequests = [];
+    snap.forEach((d) => { if (d.data().status === 'pending') incomingRequests.push({ id: d.id, ...d.data() }); });
+    if (!firstIncoming) {
+      snap.docChanges().forEach((c) => {
+        const r = c.doc.data();
+        if (c.type === 'added' && r.status === 'pending') toast(`${r.requesterName || 'Alguém'} pediu acesso ao seu emoji :${r.emojiName}:`);
+      });
+    }
+    firstIncoming = false;
+    refreshCustomUi();
+  }, (e) => console.warn('[emoji] pedidos recebidos:', e.message));
+}
+
+async function requestEmojiAccess(emoji) {
+  const uid = auth.currentUser?.uid;
+  if (!uid || emoji.uploaderId === uid) return;
+  try {
+    await setDoc(customEmojiRequestDoc(`${emoji.id}_${uid}`), {
+      emojiId: emoji.id,
+      emojiName: emoji.name,
+      ownerId: emoji.uploaderId,
+      requesterId: uid,
+      requesterName: state.user?.displayName || state.user?.username || 'Alguém',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    });
+    toast(`Pedido enviado ao criador de :${emoji.name}:`);
+  } catch (err) {
+    toast('Não foi possível enviar o pedido.', 'danger');
+  }
+}
+
+async function answerEmojiRequest(req, approve) {
+  try {
+    const batch = writeBatch(db);
+    batch.update(customEmojiRequestDoc(req.id), { status: approve ? 'approved' : 'denied' });
+    if (approve) batch.update(customEmojiDoc(req.emojiId), { allowedUserIds: arrayUnion(req.requesterId) });
+    await batch.commit();
+    toast(approve ? `Acesso liberado para ${req.requesterName || 'a pessoa'}.` : 'Pedido recusado.');
+  } catch (err) {
+    toast('Não foi possível responder ao pedido.', 'danger');
+  }
 }
 
 // ---------- Renderização de mensagens com emoji personalizado ----------
@@ -181,7 +288,7 @@ function buildPanel() {
   gifsTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, [icon('clapperboard', { size: 15 }), ' GIFs']);
   const tabs = el('div', { class: 'gk-emoji-picker-tabs' }, [
     el('button', { class: 'gk-emoji-tab gk-active', 'data-tab': 'emojis', onclick: () => switchTab('emojis') }, [icon('emojiSmile', { size: 15 }), ' Emojis']),
-    el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, [icon('starOutline', { size: 15 }), ' Personalizados']),
+    el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, [icon('starOutline', { size: 15 }), ' Personalizados', customTabBadge = el('span', { class: 'gk-emoji-tab-badge', style: 'display:none;' })]),
     gifsTabBtn,
   ]);
 
@@ -242,22 +349,61 @@ function renderEmojisTab() {
 function renderCustomTab() {
   if (pendingEmojiFile) { renderEmojiNameForm(); return; }
   const filter = searchInputEl.value.trim().toLowerCase();
+
+  // 1) Pedidos de acesso aos MEUS emojis (só aparece se houver)
+  if (incomingRequests.length) {
+    bodyEl.appendChild(el('div', { class: 'gk-emoji-category-label' }, 'Pedidos de acesso'));
+    for (const req of incomingRequests) {
+      const emoji = customEmojiCache.get(req.emojiId);
+      bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row' }, [
+        emoji ? el('img', { src: emoji.url, alt: '' }) : el('span', {}),
+        el('div', { class: 'gk-emoji-req-text' }, [
+          el('b', {}, req.requesterName || 'Alguém'),
+          ` quer usar :${req.emojiName}:`,
+        ]),
+        el('button', { class: 'gk-btn gk-btn-ghost gk-btn-sm', type: 'button', onclick: () => answerEmojiRequest(req, false) }, 'Recusar'),
+        el('button', { class: 'gk-btn gk-btn-primary gk-btn-sm', type: 'button', onclick: () => answerEmojiRequest(req, true) }, 'Aceitar'),
+      ]));
+    }
+  }
+
+  // 2) Emojis que eu posso usar (meus + liberados) + botão de enviar novo
   const uploadTile = el('button', {
     class: 'gk-emoji-upload-tile', title: 'Enviar novo emoji', type: 'button', onclick: triggerUpload,
   }, [icon('plus', { size: 20 })]);
   const grid = el('div', { class: 'gk-emoji-grid gk-emoji-grid-custom' }, [uploadTile]);
-  const list = [...customEmojiCache.values()].filter((e) => !filter || e.name.includes(filter));
+  const all = [...customEmojiCache.values()].filter((e) => !filter || e.name.includes(filter));
+  const usable = all.filter(canUseCustomEmoji);
+  const locked = all.filter((e) => !canUseCustomEmoji(e));
   bodyEl.appendChild(grid);
-  if (list.length === 0) {
-    bodyEl.appendChild(el('div', { class: 'gk-empty-state gk-empty-state-sm' },
-      filter ? 'Nenhum emoji encontrado.' : 'Nenhum emoji personalizado ainda. Envie o primeiro!'));
-    return;
-  }
-  for (const emoji of list) {
+  for (const emoji of usable) {
     grid.appendChild(el('button', {
       class: 'gk-emoji-item gk-emoji-item-custom', title: `:${emoji.name}:`, type: 'button',
       onclick: () => pickEmoji('custom', emoji.name),
     }, [el('img', { src: emoji.url })]));
+  }
+  if (usable.length === 0 && locked.length === 0) {
+    bodyEl.appendChild(el('div', { class: 'gk-empty-state gk-empty-state-sm' },
+      filter ? 'Nenhum emoji encontrado.' : 'Nenhum emoji personalizado ainda. Envie o primeiro!'));
+    return;
+  }
+
+  // 3) Emojis de outras pessoas: não dá pra usar sem o OK do criador
+  if (locked.length) {
+    bodyEl.appendChild(el('div', { class: 'gk-emoji-category-label' }, 'De outras pessoas — peça acesso'));
+    for (const emoji of locked) {
+      const status = myRequests.get(emoji.id);
+      const action = status === 'pending'
+        ? el('span', { class: 'gk-emoji-req-state' }, 'Pedido enviado')
+        : status === 'denied'
+          ? el('span', { class: 'gk-emoji-req-state' }, 'Recusado')
+          : el('button', { class: 'gk-btn gk-btn-ghost gk-btn-sm', type: 'button', onclick: () => requestEmojiAccess(emoji) }, 'Pedir acesso');
+      bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row gk-emoji-req-locked' }, [
+        el('img', { src: emoji.url, alt: '' }),
+        el('div', { class: 'gk-emoji-req-text' }, `:${emoji.name}:`),
+        action,
+      ]));
+    }
   }
 }
 
@@ -339,7 +485,7 @@ async function confirmPendingEmoji(nameInput, errorBox, confirmBtn) {
   confirmBtn.textContent = 'Enviando...';
   try {
     const { url } = await uploadToCloudinary(file, `emojis/${auth.currentUser.uid}`);
-    await addDoc(customEmojisCol(), { name, url, uploaderId: auth.currentUser.uid, createdAt: serverTimestamp() });
+    await addDoc(customEmojisCol(), { name, url, uploaderId: auth.currentUser.uid, allowedUserIds: [], createdAt: serverTimestamp() });
     toast(`Emoji :${name}: adicionado!`);
     pendingEmojiFile = null;
     renderTab();

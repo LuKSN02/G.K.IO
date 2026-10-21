@@ -13,7 +13,7 @@ import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
-import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates } from './emoji.js';
+import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates, lockedCustomEmojisIn, isCustomEmojiNameLocked } from './emoji.js';
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead } from './unread.js';
@@ -651,6 +651,11 @@ async function toggleReaction(msg, key) {
   const ref = getMessageRef(msg.id);
   if (!ref || !uid) return;
   const already = (msg.reactions?.[key] || []).includes(uid);
+  // Emoji personalizado de outra pessoa: só reage quem tem acesso (remover a própria reação sempre pode).
+  if (!already && key.startsWith('custom:') && isCustomEmojiNameLocked(key.slice(7))) {
+    toast(`Você não tem acesso a :${key.slice(7)}: — peça ao criador em Emojis › Personalizados.`, 'danger');
+    return;
+  }
   try {
     await updateDoc(ref, { [`reactions.${key}`]: already ? arrayRemove(uid) : arrayUnion(uid) });
   } catch (err) {
@@ -836,6 +841,11 @@ async function saveEditMessage(msgId) {
   }
   const ref = getMessageRef(msgId);
   if (!ref) return;
+  const lockedInEdit = lockedCustomEmojisIn(newText);
+  if (lockedInEdit.length) {
+    toast(`Você não tem acesso a :${lockedInEdit[0]}: — peça ao criador em Emojis › Personalizados.`, 'danger');
+    return;
+  }
 
   editingMessageId = null;
   editingDraft = '';
@@ -872,6 +882,11 @@ export async function sendCurrentMessage() {
   if (!text && !pendingFile) return;
   const blocked = sendBlockReason();
   if (blocked) { toast(blocked, 'danger'); return; } // o texto continua no campo
+  const lockedEmojis = lockedCustomEmojisIn(text);
+  if (lockedEmojis.length) {
+    toast(`Você não tem acesso a :${lockedEmojis[0]}: — peça ao criador em Emojis › Personalizados.`, 'danger');
+    return; // o texto continua no campo
+  }
 
   const uid = auth.currentUser.uid;
   const payload = { ...basePayload(), content: text };

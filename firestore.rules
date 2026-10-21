@@ -425,10 +425,34 @@ service cloud.firestore {
     }
 
     // ---------- Emojis personalizados (biblioteca compartilhada) ----------
+    // Cada emoji é do criador (uploaderId). Leitura é aberta porque a imagem precisa
+    // aparecer nas mensagens de quem tem acesso; quem PODE USAR é decidido por
+    // allowedUserIds, que só o criador altera (ao aceitar um pedido).
     match /customEmojis/{emojiId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.uploaderId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.uploaderId == request.auth.uid
+        && request.resource.data.get('allowedUserIds', []) == [];
+      allow update: if signedIn() && resource.data.uploaderId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['allowedUserIds']);
       allow delete: if signedIn() && resource.data.uploaderId == request.auth.uid;
+    }
+
+    // Pedidos de acesso a emojis de outras pessoas. Quem pede cria (status 'pending');
+    // só o criador do emoji muda o status; os dois lados podem apagar o pedido.
+    match /customEmojiRequests/{requestId} {
+      allow read: if signedIn() && (resource.data.requesterId == request.auth.uid
+        || resource.data.ownerId == request.auth.uid);
+      allow create: if signedIn()
+        && requestId == request.resource.data.emojiId + '_' + request.auth.uid
+        && request.resource.data.requesterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.ownerId != request.auth.uid
+        && get(/databases/$(database)/documents/customEmojis/$(request.resource.data.emojiId)).data.uploaderId == request.resource.data.ownerId;
+      allow update: if signedIn() && resource.data.ownerId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['approved', 'denied'];
+      allow delete: if signedIn() && (resource.data.requesterId == request.auth.uid
+        || resource.data.ownerId == request.auth.uid);
     }
 
     // ---------- Estado de leitura (badge de "não lidas") ----------

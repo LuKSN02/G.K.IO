@@ -87,6 +87,10 @@ export const voicePresenceCol = (serverId, channelId) =>
 // qualquer conversa (servidores e DMs), como um "pacote" único do app.
 export const customEmojisCol = () => collection(db, 'customEmojis');
 export const customEmojiDoc = (emojiId) => doc(db, 'customEmojis', emojiId);
+// Pedidos de acesso a um emoji de outra pessoa. Um doc por (emoji, quem pede):
+// id = `${emojiId}_${requesterId}`. O criador aceita/recusa (ver js/emoji.js).
+export const customEmojiRequestsCol = () => collection(db, 'customEmojiRequests');
+export const customEmojiRequestDoc = (id) => doc(db, 'customEmojiRequests', id);
 
 export const attachmentsCol = () => collection(db, 'attachments');
 export const attachmentDoc = (id) => doc(db, 'attachments', id);

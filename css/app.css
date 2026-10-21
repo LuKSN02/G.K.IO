@@ -3044,3 +3044,17 @@ html[data-streamer] input[type=email]:focus { filter: none; }
   /* Elementos flutuantes de chamada sobem junto, em vez de ficarem sob a faixa */
   html.gk-call-bar-on .gk-call-video-grid, html.gk-call-bar-on .gk-screenshare-grid { bottom: calc(var(--gk-callbar-h) + 12px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- Emojis personalizados: pedidos de acesso ---------- */
+.gk-emoji-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px;
+  margin-left: 4px; border-radius: 999px; background: var(--gk-danger); color: #fff; font-size: 10px; font-weight: 700;
+}
+.gk-emoji-req-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
+.gk-emoji-req-row img { width: 28px; height: 28px; object-fit: contain; flex-shrink: 0; }
+.gk-emoji-req-text { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gk-gray-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-emoji-req-text b { color: var(--gk-gray-800); }
+.gk-emoji-req-locked img { opacity: .55; filter: grayscale(.4); }
+.gk-emoji-req-state { font-size: 11.5px; color: var(--gk-gray-400); flex-shrink: 0; }
+.gk-emoji-req-row .gk-btn { flex-shrink: 0; }
+.gk-btn.gk-btn-sm { padding: 4px 10px; font-size: 12px; min-height: 0; height: auto; }
