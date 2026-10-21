@@ -128,6 +128,50 @@ export function currentActivity(user) {
   return effectiveStatus(user) === 'offline' ? null : user.activity;
 }
 
+// ---------- Personalização de perfil ----------
+// Opções de efeito do cartão e de placa de nome (cosméticos — exclusivos Prime).
+export const PROFILE_EFFECTS = [
+  { id: 'none', label: 'Nenhum' },
+  { id: 'sparkles', label: 'Brilhos' },
+  { id: 'snow', label: 'Neve' },
+  { id: 'embers', label: 'Brasas' },
+];
+export const NAMEPLATES = [
+  { id: 'none', label: 'Nenhuma' },
+  { id: 'aurora', label: 'Aurora' },
+  { id: 'sunset', label: 'Pôr do sol' },
+  { id: 'neon', label: 'Neon' },
+  { id: 'midnight', label: 'Meia-noite' },
+  { id: 'ember', label: 'Brasa' },
+];
+
+// Status personalizado ({ text, emoji, expiresAt }) só vale enquanto não expirou.
+export function activeCustomStatus(user) {
+  const cs = user?.customStatus;
+  if (!cs || (!cs.text && !cs.emoji)) return null;
+  if (cs.expiresAt && cs.expiresAt <= Date.now()) return null;
+  return cs;
+}
+
+export function hexToRgba(hex, alpha = 1) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return `rgba(108,99,255,${alpha})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+// Cosméticos de perfil só aparecem para quem é Prime (se a assinatura acabar, voltam ao padrão).
+export function profileCosmetics(user) {
+  if (!user || user.role !== 'prime') return { theme: null, effect: 'none', nameplate: 'none' };
+  const t = user.profileTheme;
+  const okHex = (v) => /^#[0-9a-f]{6}$/i.test(v || '');
+  return {
+    theme: t && okHex(t.primary) && okHex(t.accent) ? t : null,
+    effect: user.profileEffect || 'none',
+    nameplate: user.nameplate || 'none',
+  };
+}
+
 export function genInviteCode(len = 8) {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let out = '';

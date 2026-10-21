@@ -4,7 +4,7 @@
 // com painel de conteúdo à direita, trocando de seção sem recarregar.
 // ============================================================
 import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs, addDoc, deleteDoc, query, where, serverTimestamp } from './db.js';
-import { state, el, toast, fallbackAvatar, normalizeUsername } from './state.js';
+import { state, el, toast, fallbackAvatar, normalizeUsername, PROFILE_EFFECTS, NAMEPLATES, activeCustomStatus, hexToRgba } from './state.js';
 import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage, applyWallpaper } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
 import { getMediaPrefs, setMediaPrefs, SCREEN_QUALITIES, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
@@ -96,6 +96,7 @@ async function renderPerfilSection(content) {
   const linksSnap = await getDocs(socialLinksCol(state.user.uid));
   const links = linksSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   let pendingAvatar = null;
+  let pendingAvatarUrl = null; // avatar reaproveitado da lista de recentes
   let pendingBanner = null;
   const isPrime = state.user.role === 'prime';
 
@@ -153,6 +154,7 @@ async function renderPerfilSection(content) {
   });
 
   const displayNameInput = el('input', { type: 'text', value: state.user.displayName || state.user.username });
+  const pronounsInput = el('input', { type: 'text', maxlength: '32', placeholder: 'ex: ela/dela, ele/dele, elu/delu', value: state.user.pronouns || '' });
   const bioInput = el('textarea', { placeholder: 'Conte algo sobre você...' }, state.user.bio || '');
   const usernameInput = el('input', { type: 'text', value: state.user.username, class: 'gk-mono', placeholder: 'nome-de-usuario' });
   const usernameError = el('div', { class: 'gk-error', style: 'display:none;' });
@@ -164,6 +166,7 @@ async function renderPerfilSection(content) {
       avatarWrap, avatarInput,
     ]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Nome de exibição'), displayNameInput]),
+    el('div', { class: 'gk-field' }, [el('label', {}, 'Pronomes'), pronounsInput, el('div', { class: 'gk-hint' }, 'Opcional — aparece ao lado do seu @ no cartão de perfil.')]),
     el('div', { class: 'gk-field' }, [
       el('label', {}, 'Nome de usuário'),
       el('div', { class: 'gk-field-row' }, [
@@ -214,6 +217,133 @@ async function renderPerfilSection(content) {
     ]),
   ]));
 
+
+  // --- Avatares recentes: reaproveita uma imagem que você já usou ---
+  const history = (state.user.avatarHistory || []).filter(Boolean);
+  if (history.length) {
+    const histRow = el('div', { class: 'gk-avatar-history-row' }, history.map((url) =>
+      el('button', {
+        type: 'button', class: 'gk-avatar-history-item', title: 'Usar este avatar',
+        onclick: () => {
+          pendingAvatar = null;
+          pendingAvatarUrl = url;
+          avatarPreview.src = url;
+          histRow.querySelectorAll('.gk-avatar-history-item').forEach((b) => b.classList.remove('gk-active'));
+          histRow.querySelector(`[data-url="${CSS.escape(url)}"]`)?.classList.add('gk-active');
+        },
+        'data-url': url,
+      }, [el('img', { src: url, alt: '' })])));
+    content.appendChild(el('div', { class: 'gk-settings-card' }, [
+      el('div', { class: 'gk-settings-card-title' }, 'Avatares recentes'),
+      histRow,
+      el('div', { class: 'gk-hint' }, 'Escolha um e clique em "Salvar alterações" para voltar a usá-lo.'),
+    ]));
+  }
+
+  // --- Status personalizado (texto + emoji + duração) ---
+  const currentCs = activeCustomStatus(state.user);
+  let csEmoji = currentCs?.emoji || '';
+  let csDirty = false;
+  const csText = el('input', { type: 'text', maxlength: '60', placeholder: 'O que está rolando?', value: currentCs?.text || '', oninput: () => { csDirty = true; } });
+  const csEmojiShow = el('span', { class: 'gk-cs-emoji-show' }, csEmoji || '🙂');
+  const csDuration = el('select', { class: 'gk-select', onchange: () => { csDirty = true; } }, [
+    el('option', { value: 'never' }, 'Não limpar'),
+    el('option', { value: '30' }, 'Em 30 minutos'),
+    el('option', { value: '60' }, 'Em 1 hora'),
+    el('option', { value: '240' }, 'Em 4 horas'),
+    el('option', { value: 'today' }, 'Hoje'),
+  ]);
+  const quickEmoji = ['🎮', '📚', '💻', '🎧', '💤', '🍕', '🔥', '🎨', '🚗', '🏠'];
+  const csQuick = el('div', { class: 'gk-cs-quick' }, quickEmoji.map((e) =>
+    el('button', { type: 'button', class: 'gk-cs-quick-btn', onclick: () => { csEmoji = e; csEmojiShow.textContent = e; csDirty = true; } }, e)));
+  const csClear = el('button', {
+    type: 'button', class: 'gk-btn gk-btn-ghost gk-btn-sm',
+    onclick: () => { csEmoji = ''; csText.value = ''; csEmojiShow.textContent = '🙂'; csDirty = true; },
+  }, 'Limpar status');
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Status personalizado'),
+    el('div', { class: 'gk-field-row' }, [csEmojiShow, csText]),
+    csQuick,
+    el('div', { class: 'gk-field', style: 'margin-top:8px;' }, [el('label', {}, 'Limpar depois de'), csDuration]),
+    csClear,
+  ]));
+
+  // --- Aparência do cartão: tema, efeito e placa de nome (Prime) ---
+  const cur = {
+    themeOn: !!(state.user.profileTheme && state.user.profileTheme.primary),
+    primary: state.user.profileTheme?.primary || '#6c63ff',
+    accent: state.user.profileTheme?.accent || '#38e0c8',
+    effect: state.user.profileEffect || 'none',
+    nameplate: state.user.nameplate || 'none',
+  };
+  let appearanceDirty = false;
+  const lockedMsg = () => toast('Tema, efeitos e placas de nome são exclusivos G.K.IO Prime.', 'danger');
+
+  const pv = el('div', { class: 'gk-pc-preview' });
+  const pvName = el('div', { class: 'gk-pc-preview-name' }, state.user.displayName || state.user.username);
+  const pvPlate = el('div', { class: 'gk-pc-preview-plate' }, [pvName]);
+  const pvFx = el('div', { class: 'gk-profile-fx' });
+  pv.append(pvFx, pvPlate);
+  function renderPreview() {
+    pv.style.backgroundImage = cur.themeOn ? `linear-gradient(135deg, ${cur.primary}, ${cur.accent})` : '';
+    pvPlate.setAttribute('data-nameplate', cur.nameplate);
+    pvFx.setAttribute('data-fx', cur.effect);
+    pvFx.innerHTML = '';
+    if (cur.effect !== 'none') for (let i = 0; i < 14; i++) pvFx.appendChild(el('i'));
+  }
+
+  const colorPrimary = el('input', { type: 'color', value: cur.primary, oninput: (e) => { if (!isPrime) { e.target.value = cur.primary; return lockedMsg(); } cur.primary = e.target.value; cur.themeOn = true; appearanceDirty = true; themeToggle.checked = true; renderPreview(); } });
+  const colorAccent = el('input', { type: 'color', value: cur.accent, oninput: (e) => { if (!isPrime) { e.target.value = cur.accent; return lockedMsg(); } cur.accent = e.target.value; cur.themeOn = true; appearanceDirty = true; themeToggle.checked = true; renderPreview(); } });
+  const themeToggle = el('input', { type: 'checkbox', onchange: (e) => { if (!isPrime) { e.target.checked = false; return lockedMsg(); } cur.themeOn = e.target.checked; appearanceDirty = true; renderPreview(); } });
+  themeToggle.checked = cur.themeOn;
+
+  function swatchRow(list, key, labelPrefix) {
+    const row = el('div', { class: 'gk-cosmetic-row' });
+    for (const o of list) {
+      row.appendChild(el('button', {
+        type: 'button', class: 'gk-cosmetic-swatch' + (cur[key] === o.id ? ' gk-active' : ''), 'data-id': o.id,
+        'data-nameplate': key === 'nameplate' ? o.id : null,
+        onclick: () => {
+          if (!isPrime && o.id !== 'none') return lockedMsg();
+          cur[key] = o.id; appearanceDirty = true;
+          row.querySelectorAll('.gk-cosmetic-swatch').forEach((b) => b.classList.toggle('gk-active', b.dataset.id === o.id));
+          renderPreview();
+        },
+      }, o.label));
+    }
+    return row;
+  }
+
+  renderPreview();
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, [icon('diamond', { size: 14 }), ' Aparência do cartão']),
+    !isPrime ? el('div', { class: 'gk-hint' }, 'Exclusivo G.K.IO Prime — você pode olhar as opções, mas só assinantes aplicam.') : null,
+    pv,
+    el('label', { class: 'gk-admin-badge-check', style: 'margin-top:12px;' }, [themeToggle, ' Usar cores personalizadas']),
+    el('div', { class: 'gk-field-row', style: 'gap:12px;margin-top:6px;' }, [
+      el('label', { class: 'gk-color-field' }, ['Cor principal ', colorPrimary]),
+      el('label', { class: 'gk-color-field' }, ['Cor de destaque ', colorAccent]),
+    ]),
+    el('div', { class: 'gk-settings-card-title', style: 'margin-top:14px;' }, 'Efeito ao abrir o perfil'),
+    swatchRow(PROFILE_EFFECTS, 'effect'),
+    el('div', { class: 'gk-settings-card-title', style: 'margin-top:14px;' }, 'Placa de nome'),
+    el('div', { class: 'gk-hint' }, 'Aparece atrás do seu nome na lista de membros, nas conversas diretas e no cartão.'),
+    swatchRow(NAMEPLATES, 'nameplate'),
+  ]));
+
+  // --- Privacidade do perfil ---
+  const priv = state.user.privacy || {};
+  const hideActivityCb = el('input', { type: 'checkbox' });
+  hideActivityCb.checked = !!priv.hideActivity;
+  const hideLinksCb = el('input', { type: 'checkbox' });
+  hideLinksCb.checked = !!priv.hideLinks;
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Privacidade do perfil'),
+    el('label', { class: 'gk-admin-badge-check' }, [hideActivityCb, ' Ocultar o jogo que estou jogando']),
+    el('label', { class: 'gk-admin-badge-check' }, [hideLinksCb, ' Ocultar meus links sociais no cartão']),
+    el('div', { class: 'gk-hint' }, 'Vale para o cartão de perfil das outras pessoas. Você continua vendo tudo no seu.'),
+  ]));
+
   const saveBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Salvar alterações');
   content.appendChild(el('div', { class: 'gk-settings-save-row' }, [saveBtn]));
 
@@ -243,8 +373,34 @@ async function renderPerfilSection(content) {
         displayName: displayNameInput.value.trim() || state.user.username,
         bio: bioInput.value.trim(),
         username: newUsername,
+        pronouns: pronounsInput.value.trim().slice(0, 32),
+        privacy: { hideActivity: hideActivityCb.checked, hideLinks: hideLinksCb.checked },
       };
-      if (pendingAvatar) updates.avatarUrl = await uploadProfileImage(pendingAvatar, 'avatars');
+      // Avatar novo (upload) ou reaproveitado (recentes): o anterior vai pro histórico (máx. 8).
+      const newAvatarUrl = pendingAvatar ? await uploadProfileImage(pendingAvatar, 'avatars') : pendingAvatarUrl;
+      if (newAvatarUrl && newAvatarUrl !== state.user.avatarUrl) {
+        updates.avatarUrl = newAvatarUrl;
+        const prev = state.user.avatarUrl;
+        updates.avatarHistory = [prev, ...(state.user.avatarHistory || [])]
+          .filter((u, i, a) => u && u !== newAvatarUrl && a.indexOf(u) === i)
+          .slice(0, 8);
+      }
+      if (csDirty) {
+        const text = csText.value.trim().slice(0, 60);
+        if (!text && !csEmoji) updates.customStatus = null;
+        else {
+          const dur = csDuration.value;
+          let expiresAt = null;
+          if (dur === 'today') { const d = new Date(); d.setHours(23, 59, 59, 999); expiresAt = d.getTime(); }
+          else if (dur !== 'never') expiresAt = Date.now() + Number(dur) * 60000;
+          updates.customStatus = { text, emoji: csEmoji, expiresAt };
+        }
+      }
+      if (isPrime && appearanceDirty) {
+        updates.profileTheme = cur.themeOn ? { primary: cur.primary, accent: cur.accent } : null;
+        updates.profileEffect = cur.effect;
+        updates.nameplate = cur.nameplate;
+      }
       if (pendingBanner) {
         updates.bannerUrl = await uploadProfileImage(pendingBanner, 'banners');
         updates.bannerType = pendingBanner.type.startsWith('video/') ? 'video' : 'image';

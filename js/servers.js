@@ -7,7 +7,7 @@ import {
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch,
 } from './db.js';
-import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus, currentActivity } from './state.js';
+import { state, el, toast, cleanupListener, fallbackAvatar, genInviteCode, effectiveStatus, currentActivity, profileCosmetics } from './state.js';
 import { syncServerWatchers, registerChannelViewCheck } from './background-notify.js';
 import { selectChannel } from './chat.js';
 import { openProfileCard } from './profile.js';
@@ -911,7 +911,7 @@ function renderMembersPanel(cache, serverId) {
       ]),
       el('div', { class: 'gk-member-text' }, [
         nameLine,
-        currentActivity(m.user) ? el('div', { class: 'gk-activity-line', title: 'Jogando ' + currentActivity(m.user).name }, 'Jogando ' + currentActivity(m.user).name) : null,
+        (currentActivity(m.user) && !(m.user.privacy?.hideActivity && m.uid !== auth.currentUser?.uid)) ? el('div', { class: 'gk-activity-line', title: 'Jogando ' + currentActivity(m.user).name }, 'Jogando ' + currentActivity(m.user).name) : null,
       ]),
     ];
 
@@ -924,7 +924,7 @@ function renderMembersPanel(cache, serverId) {
       }, [icon(role === 'admin' ? 'starFilled' : 'starOutline', { size: 14 })]));
     }
 
-    const row = el('div', { class: 'gk-member-row', onclick: () => openProfileCard(m.uid) }, rowChildren);
+    const row = el('div', { class: 'gk-member-row', 'data-nameplate': profileCosmetics(m.user).nameplate, onclick: () => openProfileCard(m.uid) }, rowChildren);
     panel.appendChild(row);
   }
 }

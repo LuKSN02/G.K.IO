@@ -2,7 +2,7 @@
 // G.K.IO — Perfil do usuário: edição e cartão público
 // ============================================================
 import { userDoc, socialLinksCol, getDoc, getDocs } from './db.js';
-import { state, el, fallbackAvatar, effectiveStatus, currentActivity } from './state.js';
+import { state, el, fallbackAvatar, effectiveStatus, currentActivity, activeCustomStatus, profileCosmetics, hexToRgba } from './state.js';
 import { openOrCreateDm } from './dms.js';
 import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
@@ -76,6 +76,18 @@ export async function openProfileCard(uid) {
   modal.className = 'gk-modal gk-profile-modal';
   modal.setAttribute('data-prime', user.role === 'prime' ? 'true' : 'false');
   modal.innerHTML = '';
+  modal.removeAttribute('style');
+  modal.removeAttribute('data-theme');
+
+  // Cosméticos Prime: cores do tema, efeito animado e placa de nome.
+  const cosmetics = profileCosmetics(user);
+  const privacy = user.privacy || {};
+  if (cosmetics.theme) {
+    modal.setAttribute('data-theme', 'custom');
+    modal.style.setProperty('--gk-pt-primary', cosmetics.theme.primary);
+    modal.style.setProperty('--gk-pt-accent', cosmetics.theme.accent);
+    modal.style.setProperty('--gk-pt-soft', hexToRgba(cosmetics.theme.primary, 0.22));
+  }
 
   const bannerEl = el('div', {
     class: 'gk-profile-banner',
@@ -96,17 +108,32 @@ export async function openProfileCard(uid) {
     bannerEl.prepend(bannerVideo);
   }
   modal.appendChild(bannerEl);
+  if (cosmetics.effect !== 'none') {
+    modal.appendChild(el('div', { class: 'gk-profile-fx', 'data-fx': cosmetics.effect },
+      Array.from({ length: 14 }, () => el('i'))));
+  }
 
   const body = el('div', { class: 'gk-profile-body' }, [
-    el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
+    el('div', { class: 'gk-profile-name-wrap', 'data-nameplate': cosmetics.nameplate }, [
+      el('div', { class: 'gk-profile-name' }, user.displayName || user.username),
+    ]),
     el('div', { class: 'gk-profile-handle' }, [
       el('span', {}, '@' + user.username),
+      user.pronouns ? el('span', { class: 'gk-profile-pronouns' }, user.pronouns) : null,
       el('span', { class: 'gk-profile-status-dot', 'data-status': effectiveStatus(user) }),
       el('span', {}, statusText(effectiveStatus(user))),
     ]),
   ]);
 
-  const activity = currentActivity(user);
+  const customStatus = activeCustomStatus(user);
+  if (customStatus) {
+    body.appendChild(el('div', { class: 'gk-profile-custom-status' }, [
+      customStatus.emoji ? el('span', { class: 'gk-profile-custom-status-emoji' }, customStatus.emoji) : null,
+      customStatus.text ? el('span', {}, customStatus.text) : null,
+    ]));
+  }
+
+  const activity = privacy.hideActivity && uid !== state.user.uid ? null : currentActivity(user);
   if (activity) {
     body.appendChild(el('div', { class: 'gk-profile-activity' }, [
       icon('gamepad', { size: 14 }),
@@ -133,7 +160,7 @@ export async function openProfileCard(uid) {
 
   if (user.bio) body.appendChild(el('div', { class: 'gk-profile-bio' }, user.bio));
 
-  if (links.length) {
+  if (links.length && !(privacy.hideLinks && uid !== state.user.uid)) {
     const linksBox = el('div', { class: 'gk-profile-links' });
     for (const link of links) {
       linksBox.appendChild(el('a', { class: 'gk-profile-link', href: link.url, target: '_blank', rel: 'noopener' }, [

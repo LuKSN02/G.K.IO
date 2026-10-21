@@ -6,7 +6,7 @@ import {
   collection, doc, addDoc, setDoc, updateDoc, getDoc, getDocs,
   query, where, onSnapshot, serverTimestamp,
 } from './db.js';
-import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername, effectiveStatus } from './state.js';
+import { state, el, toast, fallbackAvatar, cleanupListener, normalizeUsername, effectiveStatus, profileCosmetics } from './state.js';
 import { selectDm } from './chat.js';
 import { checkDmsForNotifications } from './background-notify.js';
 import { joinDmCall } from './calls.js';
@@ -111,6 +111,7 @@ function renderDmSidebar() {
     const row = el('div', {
       class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : '') + (isMuted({ dmId: dm.id }) ? ' gk-muted' : ''),
       'data-id': dm.id,
+      'data-nameplate': profileCosmetics(dm.other).nameplate,
       onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(effectiveStatus(dm.other)), dm.other.uid),
     }, [
       el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(dm.other), 'data-frame': dm.other.frameStyle || 'none' }, [

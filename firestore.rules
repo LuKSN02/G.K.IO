@@ -92,7 +92,22 @@ service cloud.firestore {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs'])
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs','pronouns','customStatus','avatarHistory','privacy','profileTheme','profileEffect','nameplate'])
+          // Personalização de perfil (tema/efeito/placa são cosméticos Prime — a checagem de Prime é no app;
+          // aqui só validamos formato e tamanho)
+          && (!('pronouns' in request.resource.data) || (request.resource.data.pronouns is string && request.resource.data.pronouns.size() <= 32))
+          && (!('customStatus' in request.resource.data) || request.resource.data.customStatus == null
+              || (request.resource.data.customStatus is map
+                  && request.resource.data.customStatus.text is string && request.resource.data.customStatus.text.size() <= 60
+                  && request.resource.data.customStatus.emoji is string && request.resource.data.customStatus.emoji.size() <= 16))
+          && (!('avatarHistory' in request.resource.data) || (request.resource.data.avatarHistory is list && request.resource.data.avatarHistory.size() <= 8))
+          && (!('privacy' in request.resource.data) || request.resource.data.privacy is map)
+          && (!('profileTheme' in request.resource.data) || request.resource.data.profileTheme == null
+              || (request.resource.data.profileTheme is map
+                  && request.resource.data.profileTheme.primary is string && request.resource.data.profileTheme.primary.matches('^#[0-9a-fA-F]{6}$')
+                  && request.resource.data.profileTheme.accent is string && request.resource.data.profileTheme.accent.matches('^#[0-9a-fA-F]{6}$')))
+          && (!('profileEffect' in request.resource.data) || (request.resource.data.profileEffect is string && request.resource.data.profileEffect.size() <= 16))
+          && (!('nameplate' in request.resource.data) || (request.resource.data.nameplate is string && request.resource.data.nameplate.size() <= 16))
           // notifPrefs = { servers:{id:nível}, channels:{id:nível}, dms:{id:nível} } (silenciar / só menções)
           && (!('notifPrefs' in request.resource.data) || request.resource.data.notifPrefs is map)
           // activity = { name, startedAt } ou null (jogo detectado pelo app desktop)
