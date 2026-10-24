@@ -15,6 +15,8 @@ import { isConversationUnread, onReadStatesChange } from './unread.js';
 import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
 import { icon } from './icons.js';
 import { refreshNotifDot } from './topbar.js';
+import { isBlocked } from './blocks.js';
+import { openCreateGroupModal } from './groups.js';
 
 // Sempre que o estado de leitura mudar (ex: outra aba marcou uma DM como
 // lida), re-renderiza a lista pra atualizar os indicadores de não lida.
@@ -68,6 +70,12 @@ export function listenFriendsAndDms() {
     // Mesma lógica: resolve o "outro participante" de cada DM em paralelo.
     const dms = await Promise.all(snap.docs.map(async (d) => {
       const data = d.data();
+      if (data.isGroup) {
+        // DM em grupo: carrega todo mundo; `other` vira um "perfil" sintético do grupo
+        // (nome, avatar), assim as telas que só conhecem DM 1:1 continuam funcionando.
+        const members = (await Promise.all(data.participantIds.map((id) => getUserCached(id)))).filter(Boolean);
+        return { id: d.id, ...data, members, other: groupAsOther(d.id, data, members, uid) };
+      }
       const otherId = data.participantIds.find((x) => x !== uid);
       const otherSnap = otherId ? await getDoc(userDoc(otherId)) : null;
       return { id: d.id, ...data, other: otherSnap && otherSnap.exists() ? { uid: otherId, ...otherSnap.data() } : null };
@@ -78,6 +86,51 @@ export function listenFriendsAndDms() {
     renderDmSidebar();
     checkDmsForNotifications();
   });
+}
+
+// ---------- DM em grupo ----------
+const USER_CACHE_MS = 30 * 1000;
+const userCache = new Map(); // uid -> { at, data }
+async function getUserCached(uid) {
+  const hit = userCache.get(uid);
+  if (hit && Date.now() - hit.at < USER_CACHE_MS) return hit.data;
+  try {
+    const s = await getDoc(userDoc(uid));
+    const data = s.exists() ? { uid, ...s.data() } : { uid, username: 'conta-removida', displayName: 'Conta removida' };
+    userCache.set(uid, { at: Date.now(), data });
+    return data;
+  } catch (e) { return hit?.data || null; }
+}
+
+export const GROUP_MAX_MEMBERS = 10; // mesmo limite das firestore.rules
+export const isGroupDm = (dm) => !!dm?.isGroup;
+
+// Nome do grupo: o que o dono escolheu ou, sem nome, os primeiros membros.
+export function groupTitle(data, members, myUid) {
+  const custom = (data?.name || '').trim();
+  if (custom) return custom;
+  const names = (members || []).filter((m) => m.uid !== myUid).map((m) => m.displayName || m.username).filter(Boolean);
+  if (!names.length) return 'Grupo';
+  return names.slice(0, 3).join(', ') + (names.length > 3 ? '…' : '');
+}
+
+function groupAsOther(id, data, members, myUid) {
+  const title = groupTitle(data, members, myUid);
+  return {
+    uid: '', isGroup: true, groupId: id, username: 'grupo', displayName: title,
+    avatarUrl: data.iconUrl || fallbackAvatar(title), statusPresence: 'online', frameStyle: 'none',
+  };
+}
+
+// Texto abaixo do título da conversa: status (1:1) ou número de membros (grupo).
+export function dmSubtitle(dm) {
+  if (isGroupDm(dm)) return `${(dm.participantIds || []).length} membros`;
+  return statusLabel(effectiveStatus(dm.other));
+}
+
+// Abre uma DM já carregada em state.dms (1:1 ou grupo).
+export function openDmFromState(dm) {
+  selectDm(dm.id, dm.other.displayName || dm.other.username, dmSubtitle(dm), dm.other.uid || null, { isGroup: isGroupDm(dm) });
 }
 
 // Badge vermelho no ícone da rail (Mensagens diretas), com a contagem de
@@ -111,14 +164,19 @@ function renderDmSidebar() {
     const row = el('div', {
       class: 'gk-dm-row' + (isActive ? ' gk-active' : '') + (unread ? ' gk-unread' : '') + (isMuted({ dmId: dm.id }) ? ' gk-muted' : ''),
       'data-id': dm.id,
-      'data-nameplate': profileCosmetics(dm.other).nameplate,
-      onclick: () => selectDm(dm.id, dm.other.displayName || dm.other.username, statusLabel(effectiveStatus(dm.other)), dm.other.uid),
+      'data-nameplate': isGroupDm(dm) ? 'none' : profileCosmetics(dm.other).nameplate,
+      onclick: () => openDmFromState(dm),
     }, [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(dm.other), 'data-frame': dm.other.frameStyle || 'none' }, [
+      el('div', {
+        class: 'gk-avatar gk-sz-32' + (isGroupDm(dm) ? ' gk-avatar-group' : ''),
+        ...(isGroupDm(dm) ? {} : { 'data-status': effectiveStatus(dm.other) }),
+        'data-frame': dm.other.frameStyle || 'none',
+      }, [
         el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.username) }),
       ]),
       el('div', {}, [
         el('div', { class: 'gk-name' }, dm.other.displayName || dm.other.username),
+        isGroupDm(dm) ? el('div', { class: 'gk-dm-sub' }, [icon('members', { size: 11 }), ` ${(dm.participantIds || []).length} membros`]) : null,
       ]),
     ]);
     body.appendChild(row);
@@ -138,6 +196,8 @@ export async function sendFriendRequestByUsername(username) {
   if (snap.empty) throw new Error('Usuário não encontrado.');
   const target = snap.docs[0];
   if (target.id === uid) throw new Error('Você não pode adicionar a si mesmo.');
+  if (isBlocked(target.id)) throw new Error('Você bloqueou este usuário. Desbloqueie em Configurações > Conta para adicioná-lo.');
+  if ((target.data().blockedUids || []).includes(uid)) throw new Error('Não foi possível enviar o pedido a este usuário.');
 
   const existingQ = query(friendshipsCol(), where('userIds', 'array-contains', uid));
   const existingSnap = await getDocs(existingQ);
@@ -166,13 +226,15 @@ export async function declineFriendRequest(friendshipId) {
 export async function openDmById(dmId) {
   ensureDmsView();
   const existing = state.dms.get(dmId);
-  if (existing && existing.other) {
-    selectDm(dmId, existing.other.displayName || existing.other.username, statusLabel(effectiveStatus(existing.other)), existing.other.uid);
-    return;
-  }
+  if (existing && existing.other) { openDmFromState(existing); return; }
   const dmSnap = await getDoc(dmDoc(dmId));
   if (!dmSnap.exists()) return;
   const data = dmSnap.data();
+  if (data.isGroup) {
+    const members = (await Promise.all(data.participantIds.map((id) => getUserCached(id)))).filter(Boolean);
+    selectDm(dmId, groupTitle(data, members, auth.currentUser.uid), `${data.participantIds.length} membros`, null, { isGroup: true });
+    return;
+  }
   const otherId = data.participantIds.find((x) => x !== auth.currentUser.uid);
   if (!otherId) return;
   const otherSnap = await getDoc(userDoc(otherId));
@@ -184,11 +246,8 @@ export async function openDmById(dmId) {
 export async function openOrCreateDm(otherUid) {
   ensureDmsView();
   const uid = auth.currentUser.uid;
-  const existing = [...state.dms.values()].find((dm) => dm.other && dm.other.uid === otherUid);
-  if (existing) {
-    selectDm(existing.id, existing.other.displayName || existing.other.username, statusLabel(effectiveStatus(existing.other)), existing.other.uid);
-    return;
-  }
+  const existing = [...state.dms.values()].find((dm) => !dm.isGroup && dm.other && dm.other.uid === otherUid);
+  if (existing) { openDmFromState(existing); return; }
   const ref = await addDoc(dmsCol(), {
     participantIds: [uid, otherUid],
     isGroup: false,
@@ -330,6 +389,7 @@ function renderPendingTab(list) {
 // Liga as abas ("Amigos" / "Pedidos") e o botão "+ Adicionar amigo" da
 // tela home — chamada uma única vez no bootstrap (ver app.js).
 export function wireFriendsHome() {
+  document.getElementById('gk-friends-group-btn')?.addEventListener('click', () => openCreateGroupModal());
   document.getElementById('gk-friends-tab-friends').addEventListener('click', () => switchFriendsTab('friends'));
   document.getElementById('gk-friends-tab-pending').addEventListener('click', () => switchFriendsTab('pending'));
   document.getElementById('gk-friends-add-btn').addEventListener('click', openAddFriendModal);

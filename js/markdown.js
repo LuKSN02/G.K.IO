@@ -168,7 +168,7 @@ function parseMarkup(text, resolveEmoji, resolveMention) {
         best = {
           index: men.index,
           length: men[0].length,
-          node: () => el('span', { class: 'gk-mention', title: `@${hit.username}` }, `@${hit.name}`),
+          node: () => el('span', { class: 'gk-mention' + (hit.special ? ' gk-mention-special' : ''), title: `@${hit.username}` }, `@${hit.name}`),
         };
       }
     }

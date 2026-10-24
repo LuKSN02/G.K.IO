@@ -2,12 +2,14 @@
 // G.K.IO — Perfil do usuário: edição e cartão público
 // ============================================================
 import { userDoc, socialLinksCol, getDoc, getDocs } from './db.js';
-import { state, el, fallbackAvatar, effectiveStatus, currentActivity, activeCustomStatus, profileCosmetics, hexToRgba } from './state.js';
+import { state, el, toast, fallbackAvatar, effectiveStatus, currentActivity, activeCustomStatus, profileCosmetics, hexToRgba } from './state.js';
 import { openOrCreateDm } from './dms.js';
 import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { openSettingsModal } from './settings.js';
 import { icon } from './icons.js';
+import { isBlocked, toggleBlock } from './blocks.js';
+import { confirmDangerAction } from './dialogs.js';
 import { refreshTopbarProfile } from './topbar.js';
 
 export const SOCIAL_ICONS = {
@@ -181,6 +183,19 @@ export async function openProfileCard(uid) {
         class: 'gk-btn gk-btn-ghost',
         onclick: () => { overlay.classList.remove('gk-open'); openOrCreateDm(uid).then(() => startDmCall()); },
       }, [icon('phoneCall', { size: 16 })]),
+      el('button', {
+        class: 'gk-btn gk-btn-ghost', type: 'button',
+        title: isBlocked(uid) ? 'Desbloquear usuário' : 'Bloquear usuário',
+        onclick: () => {
+          const doToggle = async () => {
+            try { await toggleBlock(uid); overlay.classList.remove('gk-open'); }
+            catch (err) { toast(err.message || 'Não foi possível concluir.', 'danger'); }
+          };
+          if (isBlocked(uid)) return doToggle();
+          overlay.classList.remove('gk-open');
+          confirmDangerAction('Bloquear usuário?', `Você não verá as mensagens de "${user.displayName || user.username}", não receberá avisos dela e a amizade será desfeita. Dá para desbloquear em Configurações > Conta.`, doToggle, { confirmLabel: 'Bloquear', iconName: 'block' });
+        },
+      }, [icon('block', { size: 16 })]),
     ]));
   } else {
     body.appendChild(el('div', { class: 'gk-profile-actions' }, [

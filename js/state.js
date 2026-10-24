@@ -1,6 +1,7 @@
 // ============================================================
 // G.K.IO — Estado global em memória + utilitários compartilhados
 // ============================================================
+import { hour12 } from './appearance.js';
 
 export const state = {
   user: null,          // { uid, username, displayName, avatarUrl, bannerUrl, bio, statusPresence }
@@ -81,7 +82,7 @@ export function fallbackAvatar(seed = 'GK') {
 export function formatTime(ts) {
   if (!ts) return '';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', hour12: hour12() });
 }
 
 export function toast(msg, kind = 'default') {

@@ -11,6 +11,7 @@ export function messagePreview(msg, max = 120) {
   };
   if (msg.poll) return clip('📊 Enquete: ' + msg.poll.question);
   if (msg.content) return clip(msg.content);
+  if (Array.isArray(msg.attachments) && msg.attachments.length > 1) return `📎 ${msg.attachments.length} anexos`;
   switch (msg.attachmentType) {
     case 'audio': return '🎤 Mensagem de voz';
     case 'image': return '🖼️ Imagem';

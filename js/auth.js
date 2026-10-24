@@ -77,6 +77,10 @@ async function enterApp(fbUser, cameFromForm) {
   await setPresence('online');
   const snap = await getDoc(userDoc(fbUser.uid));
   state.user = { uid: fbUser.uid, ...snap.data() };
+  // Depois de trocar o e-mail (Configurações > Conta) o Auth já tem o novo; o doc do perfil só acompanha no próximo login.
+  if (fbUser.email && state.user.email !== fbUser.email) {
+    updateDoc(userDoc(fbUser.uid), { email: fbUser.email }).then(() => { state.user.email = fbUser.email; }).catch(() => {});
+  }
   hideAuthGate();
   startPresenceHeartbeat();
   // Sessão restaurada automaticamente (não veio de um submit do formulário)

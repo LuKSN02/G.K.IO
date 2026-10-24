@@ -8,7 +8,7 @@ import { auth } from './db.js';
 import { state, el, toast, fallbackAvatar, effectiveStatus } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import {
-  canManageChannels, canManageServerInfo, canKickMembers, canManageRoles,
+  canManageChannels, canManageServerInfo, canKickMembers, canManageRoles, canViewAuditLog,
   isServerOwner, getCategoriesAndChannels,
   updateServerInfo, deleteServerPermanently, leaveServer, kickMember, setMemberRole,
   createCategory, renameCategory, deleteCategory, renameChannel, deleteChannel, setChannelNsfw, setChannelSlowmode,
@@ -33,7 +33,7 @@ function sections(serverId) {
   if (canManageChannels(serverId)) list.push({ id: 'canais', label: 'Canais', icon: '#', isText: true });
   if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: 'shield' });
   list.push({ id: 'membros', label: 'Membros', icon: 'members' });
-  if (canKickMembers(serverId) || canManageChannels(serverId) || canManageServerInfo(serverId)) {
+  if (canViewAuditLog(serverId)) {
     list.push({ id: 'moderacao', label: 'Moderação', icon: 'block' });
   }
   list.push({ id: 'convites', label: 'Convites', icon: 'link' });

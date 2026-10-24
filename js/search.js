@@ -14,7 +14,9 @@
 import { state, effectiveStatus } from './state.js';
 import { icon } from './icons.js';
 import { selectServer, getCategoriesAndChannels, canSendInChannel } from './servers.js';
-import { selectChannel, selectDm } from './chat.js';
+import { selectChannel, selectDm, getLoadedMessages, jumpToMessage } from './chat.js';
+import { filterMessages } from './search-core.js';
+import { messagePreview } from './message-utils.js';
 import { openOrCreateDm, goToDmsView } from './dms.js';
 
 const MAX_PER_GROUP = 5;
@@ -32,6 +34,18 @@ function buildResults(rawTerm) {
   if (!term) return null;
 
   const groups = [];
+
+  // ---- Mensagens da conversa aberta (as últimas 200 carregadas) ----
+  if (state.currentChannelId || state.currentDmId) {
+    const hits = filterMessages(getLoadedMessages(), { term: rawTerm }).slice(-MAX_PER_GROUP).reverse()
+      .map((m) => ({
+        kind: 'message',
+        id: m.id,
+        title: messagePreview(m, 70) || '(mensagem)',
+        subtitle: `${m.authorName || 'Usuário'} · mensagem nesta conversa`,
+      }));
+    if (hits.length) groups.push({ label: 'Mensagens nesta conversa', items: hits });
+  }
 
   // ---- Servidores ----
   const servers = [...state.servers.values()]
@@ -170,7 +184,9 @@ function renderResults(groups, rawTerm) {
 }
 
 function goToResult(item) {
-  if (item.kind === 'server') {
+  if (item.kind === 'message') {
+    jumpToMessage(item.id);
+  } else if (item.kind === 'server') {
     selectServer(item.id);
   } else if (item.kind === 'channel') {
     selectServer(item.serverId);

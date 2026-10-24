@@ -202,11 +202,14 @@ async function answerEmojiRequest(req, approve) {
 // ---------- Renderização de mensagens com emoji personalizado ----------
 // Troca ocorrências de :nome: (quando conhecido) por <img>. Usado por
 // chat.js ao montar cada linha de mensagem.
-export function renderMessageContent(text) {
+let everyoneChipAllowed = false;
+export function renderMessageContent(text, { everyone = false } = {}) {
   // A formatação em si (negrito, código, citação, links, spoiler) vive em
   // markdown.js; aqui só entramos com os resolvedores de emoji e @menção,
   // que dependem do estado local (cache de emojis, membros, amigos).
-  return renderRichText(text, getCustomEmojiByName, resolveMentionByName);
+  // @everyone / @here só viram chip quando a mensagem foi gravada com o aviso (autor tinha permissão).
+  everyoneChipAllowed = !!everyone;
+  try { return renderRichText(text, getCustomEmojiByName, resolveMentionByName); } finally { everyoneChipAllowed = false; }
 }
 
 // Junta quem está "à vista" no contexto atual (servidor aberto, DM aberta,
@@ -231,6 +234,7 @@ function mentionCandidates() {
 
 function resolveMentionByName(name) {
   const target = name.toLowerCase();
+  if (everyoneChipAllowed && (target === 'everyone' || target === 'here')) return { uid: null, name: target, username: target, special: true };
   const hit = mentionCandidates().find((u) => (u.username || '').toLowerCase() === target);
   if (!hit) return null;
   return { uid: hit.uid, name: hit.displayName || hit.username, username: hit.username };

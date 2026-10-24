@@ -84,11 +84,37 @@
     };
     // "cosmic" (derivado do ícone do app) é o accent padrão agora.
     var acc = accents[prefs.accent] || accents.cosmic;
+    // Cor livre (mesma conta de js/color-utils.js deriveAccent, em versão curta).
+    if (/^#[0-9a-f]{6}$/i.test(prefs.customAccent || '')) {
+      var n = parseInt(prefs.customAccent.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      var dk = mode === 'dark', lin = function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      var lum = function (r, g, b) { return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+      var guard = 0;
+      while (1.05 / (lum(r, g, b) + 0.05) < 3.2 && guard++ < 80) { r *= 0.97; g *= 0.97; b *= 0.97; }
+      var hex2 = function (r, g, b) { return '#' + [r, g, b].map(function (v) { return Math.round(v).toString(16).padStart(2, '0'); }).join('').toUpperCase(); };
+      var k = dk ? 1.18 : 0.82;
+      acc = { a: hex2(r, g, b), s: hex2(Math.min(255, r * k), Math.min(255, g * k), Math.min(255, b * k)),
+        so: 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + (dk ? 0.16 : 0.12) + ')',
+        g: 'rgba(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ',' + (dk ? 0.45 : 0.25) + ')' };
+    }
     var root = document.documentElement.style;
     root.setProperty('--gk-accent', acc.a);
     root.setProperty('--gk-accent-strong', acc.s);
     root.setProperty('--gk-accent-soft', acc.so);
     root.setProperty('--gk-accent-glow', acc.g);
+    // Aparência/acessibilidade (js/appearance.js refaz isto com validação depois do carregamento).
+    var ap = JSON.parse(localStorage.getItem('gkio-appearance') || '{}'), de = document.documentElement;
+    var pick = function (v, ok) { return ok.indexOf(v) > -1; };
+    if (pick(ap.uiFont, ['system', 'serif', 'mono', 'readable'])) de.setAttribute('data-ui-font', ap.uiFont);
+    if (ap.density === 'compact') de.setAttribute('data-density', 'compact');
+    if (pick(ap.radius, ['sharp', 'round'])) de.setAttribute('data-radius', ap.radius);
+    if (pick(ap.surface, ['amoled', 'graphite', 'midnight'])) de.setAttribute('data-surface', ap.surface);
+    if (ap.reduceMotion === 'on') de.setAttribute('data-motion', 'reduce'); else if (ap.reduceMotion === 'off') de.setAttribute('data-motion', 'full');
+    if (ap.contrast === 'high') de.setAttribute('data-contrast', 'high');
+    if (ap.colorblind === true) de.setAttribute('data-colorblind', 'true');
+    if (ap.underlineLinks === true) de.setAttribute('data-underline-links', 'true');
+    if (ap.strongFocus === true) de.setAttribute('data-strong-focus', 'true');
+    if (typeof ap.chatFontSize === 'number' && ap.chatFontSize >= 12 && ap.chatFontSize <= 22) root.setProperty('--gk-chat-font-size', ap.chatFontSize + 'px');
   } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
 })();
 </script>
@@ -96,6 +122,7 @@
 <link rel="stylesheet" href="css/tokens.css?v=4">
 <link rel="stylesheet" href="css/app.css?v=5">
 <link rel="stylesheet" href="css/landing.css?v=1">
+<link rel="stylesheet" href="css/features.css?v=1">
 </head>
 <body>
 
@@ -635,6 +662,7 @@
       <span class="gk-title" id="gk-topbar-title">Selecione uma conversa</span>
       <span class="gk-subtitle" id="gk-topbar-subtitle"></span>
       <div class="gk-spacer"></div>
+      <button class="gk-icon-btn" id="gk-msg-search-btn" title="Buscar mensagens (Ctrl+F)" style="display:none;" data-icon="search"></button>
       <button class="gk-icon-btn" id="gk-pins-btn" title="Mensagens fixadas" style="display:none;" data-icon="pin"></button>
       <button class="gk-icon-btn" id="gk-conv-notif-btn" title="Notificações da conversa" style="display:none;" data-icon="bell"></button>
       <button class="gk-icon-btn" id="gk-call-btn" title="Chamada de voz" style="display:none;" data-icon="phoneCall"></button>

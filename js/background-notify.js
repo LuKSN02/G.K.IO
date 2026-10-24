@@ -16,6 +16,7 @@ import { state } from './state.js';
 import { effectiveLevel, shouldAlert } from './notify-prefs.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
 import { triggerNotificationTap } from './push.js';
+import { isBlocked } from './blocks.js';
 
 const millisOf = (ts) => (ts && typeof ts.toMillis === 'function' ? ts.toMillis() : 0);
 const me = () => auth.currentUser?.uid;
@@ -35,6 +36,7 @@ export function checkDmsForNotifications() {
     dmSeen.set(dm.id, t);
     if (!dmSeeded) continue; // primeira carga: só registra, não avisa do passado
     if (!dm.lastMessageAuthorId || dm.lastMessageAuthorId === uid) continue;
+    if (isBlocked(dm.lastMessageAuthorId)) continue; // bloqueado: sem aviso
     if (state.currentDmId === dm.id) continue; // a conversa aberta já tem o próprio aviso (chat.js)
     if (!shouldAlert(effectiveLevel({ dmId: dm.id }), false)) continue;
     const name = dm.other?.displayName || dm.other?.username || 'Nova mensagem';
@@ -88,6 +90,7 @@ function handleChannelSnapshot(serverId, w, snap) {
     if (!w.seeded || chg.type === 'removed') return;
     if (ch.type !== 'text') return;
     if (!ch.lastMessageAuthorId || ch.lastMessageAuthorId === uid) return;
+    if (isBlocked(ch.lastMessageAuthorId)) return; // bloqueado: sem aviso
     if (state.currentChannelId === ch.id) return; // conversa aberta: aviso fica com chat.js
     if (!visibleToMe(serverId, ch)) return;
     const mentioned = Array.isArray(ch.lastMentionedUids) && ch.lastMentionedUids.includes(uid);

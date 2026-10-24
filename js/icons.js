@@ -47,6 +47,7 @@ const ICONS = {
   phoneEnd:     { path: '<path d="M6.6 10.2c1.5 3 4.2 5.7 7.2 7.2l2.4-2.4c.3-.3.7-.4 1-.3 1.1.4 2.3.6 3.5.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C11.6 21 3 12.4 3 2.7c0-.6.4-1 1-1h3.7c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.5.1.3 0 .7-.3 1L6.6 10.2z" transform="rotate(135 12 12)"/>', fill: true },
 
   attach:       { path: '<path d="M8 12.5l6.5-6.5a3 3 0 114.2 4.2L10.4 18.5a5 5 0 11-7-7L12 3"/>' },
+  eye:          { path: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>' },
   key:          { path: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 4l3 3M13 7l2 2"/>' },
   send:         { path: '<path d="M3 11l18-8-8 18-2-8-8-2z"/>', fill: true },
   emojiSmile:   { path: '<circle cx="12" cy="12" r="9"/><path d="M8.5 10.2h.01M15.5 10.2h.01M8 14.5c1 1.3 2.4 2 4 2s3-.7 4-2"/>' },

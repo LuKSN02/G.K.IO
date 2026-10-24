@@ -26,6 +26,7 @@ import { initHotkeys } from './hotkeys.js';
 import { initIdleDetection } from './idle.js';
 import { initDesktopIntegration, pushActivity } from './desktop.js';
 import './theme.js'; // aplica o tema salvo assim que o app carrega
+import { initAccessibility } from './appearance.js';
 
 // O #gk-server-menu nasce dentro de .gk-rail no HTML, mas .gk-rail tem
 // overflow-y:auto — isso corta (clipa) elementos position:fixed
@@ -52,6 +53,7 @@ initEmojiPicker({
 });
 initAuthListener();
 initZoom();
+initAccessibility();
 initHotkeys();
 initExtensions();
 initDesktopIntegration();

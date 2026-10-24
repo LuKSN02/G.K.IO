@@ -159,3 +159,14 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 
 > Esta é a única parte do projeto que mexe na regra de entrada de todo servidor. Não consegui testar as regras com o emulador do Firestore; o app foi testado com o Firebase simulado.
 
+
+## Conta, bloqueio, busca, personalização, cargos e grupos (v1.7.0)
+- **Configurações > Conta:** trocar senha, trocar e-mail (com verificação) e excluir a conta. **Bloquear usuário:** perfil/DM; mensagens de bloqueados ficam ocultas (dá para revelar uma a uma) e a DM 1:1 deixa de aceitar mensagens.
+- **Composer:** colar imagem (Ctrl+V), vários anexos de uma vez, `@everyone` e `@here` (exigem a permissão "Mencionar todos").
+- **Busca de mensagens** no conversa atual (ícone de lupa).
+- **Aparência e acessibilidade:** cor de destaque livre, tamanho da fonte do chat, fonte da interface, densidade (compacto), arredondamento, superfície (incl. AMOLED), formato de hora, reduzir animações, alto contraste, modo daltônico, sublinhar links e foco reforçado.
+- **Cargos:** novas permissões "Mencionar todos", "Gerenciar mensagens" e "Ver log de auditoria". **Canais privados de verdade:** as regras do Firestore agora barram leitura/escrita de mensagens, "digitando" e voz a quem não tem cargo com "Ver canal".
+- **DM em grupo** (3 a 10 pessoas): criar a partir da aba Amigos, renomear, adicionar/remover (dono) e sair (a posse passa a quem fica).
+- **Tópicos (threads):** botão de balão na mensagem abre o tópico com respostas ao vivo; a mensagem-mãe mostra "N respostas". Funciona em canais, DMs e grupos.
+
+> **Importante:** publique o `firestore.rules` atualizado (Firestore > Regras > Publicar). Antes, copie as regras atuais para um arquivo, caso precise voltar atrás. As regras novas **não foram testadas no emulador do Firestore** — teste com duas contas: (a) canal privado: quem não tem o cargo não lê; (b) grupo: criar, sair, dono removendo alguém; (c) tópico: responder e apagar resposta.

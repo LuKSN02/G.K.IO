@@ -1,0 +1,153 @@
+/* ============================================================
+   G.K.IO — estilos dos recursos novos (v1.7):
+   conta/bloqueio, anexos múltiplos, busca de mensagens, personalização,
+   permissões, DM em grupo e threads.
+   Carregado depois de app.css; só usa as variáveis de tokens.css.
+   ============================================================ */
+
+/* ---------- Mensagem de usuário bloqueado ---------- */
+.gk-msg-blocked {
+  display: flex; align-items: center; gap: 8px; margin: 4px 16px; padding: 6px 12px;
+  font-size: 12.5px; color: var(--gk-gray-500); border-radius: var(--gk-radius-sm);
+  background: var(--gk-surface-sunken);
+}
+.gk-msg-blocked-show {
+  margin-left: auto; border: 0; background: transparent; color: var(--gk-accent);
+  font-weight: 600; font-size: 12.5px; cursor: pointer; padding: 2px 6px; border-radius: var(--gk-radius-sm);
+}
+.gk-msg-blocked-show:hover { background: var(--gk-accent-soft); }
+
+/* ---------- Zona de perigo ---------- */
+.gk-danger-zone { border-color: color-mix(in srgb, var(--gk-danger) 45%, transparent); }
+.gk-danger-zone .gk-settings-card-title { color: var(--gk-danger); }
+
+/* ---------- Vários anexos ---------- */
+.gk-attach-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.gk-attach-list .gk-attach-chip { max-width: 100%; }
+.gk-msg-attachments { display: grid; gap: 4px; margin-top: 6px; max-width: 420px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gk-msg-attachments[data-count="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gk-msg-attachments .gk-msg-attachment img,
+.gk-msg-attachments .gk-msg-attachment video { width: 100%; height: 150px; max-width: none; max-height: none; object-fit: cover; margin-top: 0; }
+.gk-msg-attachments .gk-msg-file { margin-top: 0; grid-column: 1 / -1; }
+@media (max-width: 600px) { .gk-msg-attachments { max-width: 100%; } }
+
+/* Arrastar arquivos sobre a conversa */
+.gk-drop-active { outline: 2px dashed var(--gk-accent); outline-offset: -6px; background: var(--gk-accent-soft); }
+
+/* ---------- @everyone / @here ---------- */
+.gk-mention-special { background: color-mix(in srgb, var(--gk-warning) 22%, transparent); color: var(--gk-gray-900); }
+.gk-mention-item-special { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--gk-accent-soft); color: var(--gk-accent-strong); font-weight: 700; font-size: 13px; }
+
+/* ---------- Buscar mensagens ---------- */
+.gk-search-modal { width: min(560px, 94vw); }
+.gk-search-input { width: 100%; }
+.gk-search-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+.gk-search-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gk-gray-700); cursor: pointer; }
+.gk-search-status { font-size: 12px; color: var(--gk-gray-500); margin: 4px 0 8px; }
+.gk-search-results { max-height: min(46vh, 380px); overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.gk-search-hit { text-align: left; width: 100%; background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-md); padding: 8px 10px; cursor: pointer; color: inherit; }
+.gk-search-hit:hover { border-color: var(--gk-accent); }
+.gk-search-mark { background: color-mix(in srgb, var(--gk-warning) 40%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.gk-search-old { font-size: 10.5px; color: var(--gk-gray-500); border: 1px solid var(--gk-gray-200); border-radius: 999px; padding: 0 6px; }
+
+/* ============================================================
+   Personalização e acessibilidade (js/appearance.js grava os atributos
+   data-* no <html>; nada aqui depende do Firebase)
+   ============================================================ */
+
+/* Tamanho da fonte do chat (slider em Aparência > Leitura e layout) */
+.gk-msg-line { font-size: var(--gk-chat-font-size, 14.5px); }
+.gk-msg-line-jumbo { font-size: calc(var(--gk-chat-font-size, 14.5px) * 2.6); }
+
+/* Fonte do app */
+:root[data-ui-font="system"]   { --gk-font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; --gk-font-display: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+:root[data-ui-font="serif"]    { --gk-font-body: Georgia, 'Times New Roman', serif; --gk-font-display: Georgia, 'Times New Roman', serif; }
+:root[data-ui-font="mono"]     { --gk-font-body: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; --gk-font-display: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace; }
+:root[data-ui-font="readable"] { --gk-font-body: 'Atkinson Hyperlegible', 'Inter', sans-serif; --gk-font-display: 'Atkinson Hyperlegible', 'Inter', sans-serif; }
+
+/* Densidade: compacto = menos espaço entre mensagens, avatar menor */
+:root[data-density="compact"] .gk-msg-group { padding: 2px 6px; gap: 8px; }
+:root[data-density="compact"] .gk-msg-group > .gk-avatar img { width: 28px; height: 28px; }
+:root[data-density="compact"] .gk-msg-head { margin-bottom: 0; }
+:root[data-density="compact"] .gk-msg-line { line-height: 1.35; }
+:root[data-density="compact"] .gk-msg-row + .gk-msg-row { margin-top: 0; }
+
+/* Arredondamento dos cantos */
+:root[data-radius="sharp"] { --gk-radius-sm: 2px; --gk-radius-md: 3px; --gk-radius-lg: 4px; --gk-radius-xl: 6px; --gk-radius-hex: 8%; }
+:root[data-radius="round"] { --gk-radius-sm: 10px; --gk-radius-md: 16px; --gk-radius-lg: 22px; --gk-radius-xl: 28px; --gk-radius-hex: 38%; }
+
+/* Fundos do tema escuro */
+:root[data-theme="dark"][data-surface="amoled"] {
+  --gk-bg: #000; --gk-surface: #050507; --gk-surface-sunken: #000; --gk-surface-raised: #0C0C10; --gk-rail: #000;
+}
+:root[data-theme="dark"][data-surface="graphite"] {
+  --gk-bg: #131416; --gk-surface: #1B1C1F; --gk-surface-sunken: #111214; --gk-surface-raised: #232428; --gk-rail: #101113;
+}
+:root[data-theme="dark"][data-surface="midnight"] {
+  --gk-bg: #060A1C; --gk-surface: #0B1230; --gk-surface-sunken: #070C22; --gk-surface-raised: #111A3F; --gk-rail: #070C22;
+}
+
+/* Movimento reduzido (escolha manual; "Seguir o sistema" usa o @media já existente) */
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+}
+
+/* Alto contraste */
+:root[data-contrast="high"][data-theme="dark"] {
+  --gk-gray-400: #A4ACC8; --gk-gray-500: #C0C6DC; --gk-gray-600: #D4D8E8; --gk-gray-700: #E8EAF4; --gk-gray-200: #4A5370; --gk-gray-100: #343C57;
+}
+:root[data-contrast="high"][data-theme="light"] {
+  --gk-gray-400: #4A5258; --gk-gray-500: #3A4146; --gk-gray-600: #2C3237; --gk-gray-700: #1A1F23; --gk-gray-200: #9AA5AB; --gk-gray-100: #C5CDD1;
+}
+:root[data-contrast="high"] :focus-visible { outline: 3px solid var(--gk-accent-strong); outline-offset: 2px; }
+
+/* Cores de status para daltônicos (azul / laranja / magenta) */
+:root[data-colorblind="true"] {
+  --gk-status-online: #3B8BEB; --gk-status-idle: #F08A24; --gk-status-dnd: #D6409F; --gk-status-offline: #8A929A;
+}
+
+/* Links sublinhados e foco reforçado */
+:root[data-underline-links="true"] a,
+:root[data-underline-links="true"] .gk-msg-line a { text-decoration: underline; text-underline-offset: 2px; }
+:root[data-strong-focus="true"] :focus-visible { outline: 3px solid var(--gk-accent-strong); outline-offset: 2px; border-radius: var(--gk-radius-sm); }
+
+/* ---------- Telas de configuração de aparência ---------- */
+.gk-ap-row { display: flex; align-items: center; gap: 12px; margin: 6px 0 14px; flex-wrap: wrap; }
+.gk-ap-row input[type="range"] { flex: 1; min-width: 160px; accent-color: var(--gk-accent); }
+.gk-ap-value { min-width: 56px; text-align: right; font-size: 12.5px; color: var(--gk-gray-500); font-family: var(--gk-font-mono); }
+.gk-ap-subtitle { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--gk-gray-500); margin-top: 6px; }
+.gk-ap-select { background: var(--gk-surface-sunken); color: var(--gk-gray-800); border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm); padding: 8px 10px; font: inherit; min-width: 240px; }
+.gk-ap-seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--gk-surface-sunken); padding: 4px; border-radius: var(--gk-radius-md); }
+.gk-ap-seg button { border: 0; background: transparent; color: var(--gk-gray-600); padding: 7px 14px; border-radius: var(--gk-radius-sm); font: inherit; font-size: 13px; cursor: pointer; }
+.gk-ap-seg button:hover { background: var(--gk-gray-100); }
+.gk-ap-seg button.gk-on { background: var(--gk-accent); color: #fff; font-weight: 600; }
+.gk-ap-color { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.gk-ap-color input[type="color"] { width: 48px; height: 38px; padding: 2px; border: 1px solid var(--gk-gray-200); border-radius: var(--gk-radius-sm); background: var(--gk-surface-sunken); cursor: pointer; }
+.gk-ap-color input[type="text"] { width: 110px; font-family: var(--gk-font-mono); text-transform: uppercase; }
+.gk-ap-warn { margin-top: 8px; font-size: 12.5px; color: var(--gk-warning); }
+.gk-ap-preview { background: var(--gk-surface-sunken); border-radius: var(--gk-radius-md); padding: 8px; margin-bottom: 12px; }
+
+/* ---------- Tópicos (threads) ---------- */
+.gk-thread-link { display:inline-flex; align-items:center; gap:6px; margin:4px 0 2px 0; padding:3px 10px; border:1px solid var(--gk-border, rgba(255,255,255,.1)); border-radius:999px; background:var(--gk-accent-soft); color:var(--gk-accent-strong); font-size:var(--gk-text-sm); cursor:pointer; }
+.gk-thread-link:hover { filter:brightness(1.15); }
+.gk-thread-link:focus-visible { outline:2px solid var(--gk-accent); outline-offset:2px; }
+.gk-thread-modal { width:min(560px, 94vw); max-height:86vh; display:flex; flex-direction:column; gap:10px; padding:16px; }
+.gk-thread-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.gk-thread-title { display:flex; align-items:center; gap:8px; }
+.gk-thread-title h2 { margin:0; font-size:var(--gk-text-lg); }
+.gk-thread-count { font-size:var(--gk-text-sm); opacity:.7; }
+.gk-thread-parent { display:flex; gap:10px; padding:10px; border-radius:var(--gk-radius-md); background:var(--gk-surface-sunken); }
+.gk-thread-parent-body { min-width:0; overflow-wrap:anywhere; }
+.gk-thread-parent-text { font-size:var(--gk-text-base); opacity:.9; max-height:6.5em; overflow:auto; }
+.gk-thread-list { flex:1; min-height:120px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
+.gk-thread-reply { display:flex; gap:10px; align-items:flex-start; }
+.gk-thread-reply-body { flex:1; min-width:0; overflow-wrap:anywhere; }
+.gk-thread-reply-head { display:flex; gap:8px; align-items:baseline; }
+.gk-thread-reply-head small { opacity:.6; }
+.gk-thread-blocked { font-style:italic; opacity:.6; }
+.gk-thread-composer { display:flex; gap:8px; align-items:flex-end; }
+.gk-thread-input { flex:1; resize:none; padding:8px 10px; border-radius:var(--gk-radius-md); border:1px solid var(--gk-border, rgba(255,255,255,.12)); background:var(--gk-surface-sunken); color:inherit; font:inherit; max-height:140px; }
+.gk-thread-input:focus-visible { outline:2px solid var(--gk-accent); }

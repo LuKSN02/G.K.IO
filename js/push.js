@@ -148,6 +148,7 @@ async function sendPushToUid(uid, { title, body, data, filter }) {
     const snap = await getDoc(userDoc(uid));
     const userData = snap.exists() ? snap.data() : null;
     const fcmToken = userData ? userData.fcmToken : null;
+    if ((userData.blockedUids || []).includes(auth.currentUser.uid)) return; // quem recebe me bloqueou: sem push
     if (!fcmToken) return; // pessoa nunca abriu o APK (ou push ainda não registrou) — nada a fazer
     // Quem recebe pode ter silenciado essa conversa (ou pedido só @menções).
     if (filter && !shouldAlert(levelFromPrefs(userData.notifPrefs, filter.ctx), filter.mentioned)) return;

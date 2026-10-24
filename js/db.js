@@ -9,11 +9,12 @@ import {
   signInWithEmailAndPassword, signOut, updateProfile as fbUpdateProfile, getIdToken,
   setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
   sendEmailVerification, reload, deleteUser,
+  updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
   getDoc, getDocs, query, where, orderBy, limit, onSnapshot,
-  serverTimestamp, arrayUnion, arrayRemove, writeBatch,
+  serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 // Observação: o upload de mídia (avatar, banner, anexos) usa o Cloudinary
 // (ver js/cloudinary.js), não o Firebase Storage — o Storage exige o plano
@@ -29,15 +30,16 @@ export {
   signOut, fbUpdateProfile, getIdToken,
   setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail,
   sendEmailVerification, reload, deleteUser,
+  updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider,
   collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch,
+  query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment,
 };
 
 // ---------- Referências de coleção (schema do G.K.IO) ----------
 // users/{uid}                          -> perfil público do usuário
 // users/{uid}/socialLinks/{linkId}      -> links de redes sociais
 // friendships/{friendshipId}            -> { userIds: [a,b], requesterId, status }
-// directMessages/{dmId}                 -> { participantIds: [...], isGroup, lastMessageAt }
+// directMessages/{dmId}                 -> { participantIds: [...], isGroup, name?, ownerId? (grupo), lastMessageAt }
 // directMessages/{dmId}/messages/{id}   -> mensagens de DM
 // servers/{serverId}                    -> { name, iconUrl, ownerId, memberIds }
 // servers/{serverId}/categories/{id}    -> { name, position }
@@ -77,6 +79,15 @@ export const dmsCol = () => collection(db, 'directMessages');
 export const dmDoc = (dmId) => doc(db, 'directMessages', dmId);
 export const dmMessagesCol = (dmId) => collection(db, 'directMessages', dmId, 'messages');
 export const dmMessageDoc = (dmId, msgId) => doc(db, 'directMessages', dmId, 'messages', msgId);
+
+// Tópicos (threads): respostas a uma mensagem ficam numa subcoleção dela.
+// A mensagem-mãe guarda só threadCount/threadLastAt (para mostrar "N respostas").
+export const channelThreadCol = (serverId, channelId, msgId) =>
+  collection(db, 'servers', serverId, 'channels', channelId, 'messages', msgId, 'threadMessages');
+export const channelThreadDoc = (serverId, channelId, msgId, replyId) =>
+  doc(db, 'servers', serverId, 'channels', channelId, 'messages', msgId, 'threadMessages', replyId);
+export const dmThreadCol = (dmId, msgId) => collection(db, 'directMessages', dmId, 'messages', msgId, 'threadMessages');
+export const dmThreadDoc = (dmId, msgId, replyId) => doc(db, 'directMessages', dmId, 'messages', msgId, 'threadMessages', replyId);
 
 export const callsCol = () => collection(db, 'calls');
 export const callDoc = (callId) => doc(db, 'calls', callId);

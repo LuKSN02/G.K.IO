@@ -9,6 +9,7 @@
 // ============================================================
 
 import { state } from './state.js';
+import { isHex, deriveAccent } from './color-utils.js';
 
 const STORAGE_KEY = 'gkio-theme-prefs';
 
@@ -31,7 +32,8 @@ export const PREMIUM_ACCENTS = {
 
 const ALL_ACCENTS = { ...ACCENTS, ...PREMIUM_ACCENTS };
 
-const DEFAULTS = { mode: 'dark', accent: 'cosmic' };
+// customAccent: cor livre escolhida no seletor (hex) — quando existe, vence a paleta nomeada.
+const DEFAULTS = { mode: 'dark', accent: 'cosmic', customAccent: '' };
 
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 let prefs = loadPrefs();
@@ -54,7 +56,9 @@ export function resolvedMode() {
 
 export function applyTheme() {
   document.documentElement.setAttribute('data-theme', resolvedMode());
-  const a = ALL_ACCENTS[prefs.accent] || ACCENTS.cosmic;
+  const a = isHex(prefs.customAccent)
+    ? deriveAccent(prefs.customAccent, resolvedMode())
+    : (ALL_ACCENTS[prefs.accent] || ACCENTS.cosmic);
   const root = document.documentElement.style;
   root.setProperty('--gk-accent', a.accent);
   root.setProperty('--gk-accent-strong', a.strong);
@@ -74,6 +78,16 @@ export function setAccent(key) {
   // ter como validar isso — aqui é só pra não deixar a UI mentir).
   if (PREMIUM_ACCENTS[key] && (!state.user || state.user.role !== 'prime')) return;
   prefs.accent = key;
+  prefs.customAccent = '';
+  savePrefs();
+  applyTheme();
+}
+
+// Cor de destaque livre (qualquer hex #RRGGBB). Cores claras demais são escurecidas até o texto
+// branco dos botões continuar legível (ver deriveAccent). Passe '' para voltar às paletas.
+export function setCustomAccent(hex) {
+  if (hex && !isHex(hex)) return;
+  prefs.customAccent = hex ? hex.toUpperCase() : '';
   savePrefs();
   applyTheme();
 }

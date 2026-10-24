@@ -188,5 +188,6 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  /* "Manter" (Configurações > Acessibilidade) ignora o pedido do sistema */
+  :root:not([data-motion="full"]) * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }

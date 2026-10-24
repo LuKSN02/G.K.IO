@@ -10,12 +10,16 @@ import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from
 import { getMediaPrefs, setMediaPrefs, SCREEN_QUALITIES, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
 import { openImageCropper } from './cropper.js';
+import { renderAccountSection } from './settings-account.js';
+import { buildCustomAccentCard, buildReadingCard, buildSurfaceCard, renderAccessibilitySection } from './settings-appearance.js';
 import { buildZoomCard, buildDesktopCard, buildHotkeysCard, buildIdleCard, renderExtensionsSection } from './settings-extras.js';
 
 const SECTIONS = [
   { id: 'perfil', label: 'Perfil', icon: 'user' },
+  { id: 'conta', label: 'Conta', icon: 'lock' },
   { id: 'audio-video', label: 'Áudio & Vídeo', icon: 'mic' },
   { id: 'aparencia', label: 'Aparência', icon: 'palette' },
+  { id: 'acessibilidade', label: 'Acessibilidade', icon: 'eye' },
   { id: 'notificacoes', label: 'Notificações', icon: 'bell' },
   { id: 'extensoes', label: 'Temas & Plugins', icon: 'sparkles' },
   { id: 'prime', label: 'G.K.IO Prime', icon: 'diamond' },
@@ -79,8 +83,10 @@ function renderSection() {
   const content = document.getElementById('gk-settings-content');
   content.innerHTML = '';
   if (activeSection === 'perfil') return renderPerfilSection(content);
+  if (activeSection === 'conta') return renderAccountSection(content, { sectionHeader, toggleRow });
   if (activeSection === 'audio-video') return renderAudioVideoSection(content);
   if (activeSection === 'aparencia') return renderAparenciaSection(content);
+  if (activeSection === 'acessibilidade') return renderAccessibilitySection(content, sectionHeader);
   if (activeSection === 'notificacoes') return renderNotificacoesSection(content);
   if (activeSection === 'extensoes') return renderExtensionsSection(content, sectionHeader);
   if (activeSection === 'prime') return renderPrimeSection(content);
@@ -580,6 +586,9 @@ async function renderAparenciaSection(content) {
     ]),
     swatchRow,
   ]));
+  content.appendChild(buildCustomAccentCard(() => renderSection()));
+  content.appendChild(buildReadingCard());
+  content.appendChild(buildSurfaceCard());
   content.appendChild(buildWallpaperCard());
   content.appendChild(buildZoomCard());
   const desktopCard = await buildDesktopCard();

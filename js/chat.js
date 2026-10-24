@@ -7,7 +7,7 @@ import {
   addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   query, orderBy, limit, onSnapshot, serverTimestamp,
 } from './db.js';
-import { state, el, escapeHtml, fallbackAvatar, formatTime, cleanupListener, toast } from './state.js';
+import { state, el, escapeHtml, fallbackAvatar, formatTime, cleanupListener, toast, effectiveStatus } from './state.js';
 import { isEmojiOnly } from './markdown.js';
 import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
@@ -28,11 +28,16 @@ import { notifyDmMessage, notifyChannelMessage } from './push.js';
 // canManageChannels é uma declaração de função, então já existe no escopo do
 // módulo antes de qualquer chamada — só é usada em resposta a clique, muito
 // depois dos dois módulos terminarem de avaliar.
-import { canManageChannels, getCategoriesAndChannels, onServerDataChange } from './servers.js';
+import { canManageChannels, canManageMessages, canMentionEveryone, getCategoriesAndChannels, onServerDataChange } from './servers.js';
 import { getTimeoutUntilMs } from './moderation.js';
 import { logAudit } from './audit.js';
+import { isBlocked, isRevealed, revealMessage, onBlocksChange } from './blocks.js';
+import { openMessageSearch } from './message-search.js';
+import { openThread, buildThreadLink } from './threads.js';
 
-let pendingFile = null;
+let pendingFiles = []; // anexos escolhidos/colados e ainda não enviados (até MAX_ATTACHMENTS)
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 let lastSeenMessageId = null;
 let isFirstSnapshotForConversation = true;
 let currentChannelName = '';
@@ -186,13 +191,19 @@ function renderComposerNotice() {
   box.replaceChildren();
   if (text) { box.appendChild(icon('clock', { size: 14 })); box.appendChild(el('span', {}, text)); }
 
-  const disabled = composerReadOnly || timedOut > 0;
+  const dmBlocked = !!state.currentDmId && isBlocked(currentDmOtherUid);
+  if (dmBlocked) {
+    box.className = 'gk-composer-notice gk-danger';
+    box.style.display = 'flex';
+    box.replaceChildren(icon('block', { size: 14 }), el('span', {}, 'Você bloqueou este usuário. Desbloqueie em Configurações > Conta para voltar a conversar.'));
+  }
+  const disabled = composerReadOnly || timedOut > 0 || dmBlocked;
   textarea.disabled = disabled;
   for (const id of ['gk-send-btn', 'gk-attach-btn', 'gk-poll-btn', 'gk-voice-btn', 'gk-emoji-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = disabled;
   }
-  textarea.placeholder = composerReadOnly ? 'Você não pode enviar mensagens neste canal.'
+  textarea.placeholder = dmBlocked ? 'Usuário bloqueado.' : composerReadOnly ? 'Você não pode enviar mensagens neste canal.'
     : timedOut > 0 ? 'Você está de castigo.' : 'Escreva uma mensagem...';
 
   if (timedOut > 0 || wait > 0) restrictionTimer = setTimeout(renderComposerNotice, 1000);
@@ -280,6 +291,7 @@ function notifyIfNewIncomingMessage(messages) {
   lastSeenMessageId = last.id;
   if (!isNew || isFirstSnapshotForConversation) { isFirstSnapshotForConversation = false; return false; }
   if (last.authorId === state.user?.uid) return false;
+  if (isBlocked(last.authorId)) return false; // bloqueado: sem som, sem aviso
   // Silenciada / "só @menções": a mensagem aparece, mas sem som nem notificação.
   if (last.system) return true; // aviso de boas-vindas: aparece, mas não toca som nem notifica
   const mentioned = (last.mentionedUids || []).includes(state.user?.uid);
@@ -307,6 +319,36 @@ function renderMessagesSkeleton() {
       ]),
     ]));
   }
+}
+
+// Anexo(s) da mensagem: `attachments` (vários) ou os campos antigos attachmentUrl/Type/Name (um só).
+function attachmentList(msg) {
+  if (Array.isArray(msg.attachments) && msg.attachments.length) return msg.attachments;
+  if (msg.attachmentUrl) return [{ url: msg.attachmentUrl, type: msg.attachmentType, name: msg.attachmentName }];
+  return [];
+}
+
+function buildAttachmentNode(att, msg, single) {
+  const isGif = att.type === 'gif';
+  if (att.type === 'image' || isGif) {
+    return el('div', { class: 'gk-msg-attachment' + (isGif ? ' gk-msg-attachment-gif' : '') }, [
+      el('img', { src: att.url, class: 'gk-msg-image-zoomable', alt: att.name || '', onclick: () => openImageLightbox(att.url) }),
+    ]);
+  }
+  if (att.type === 'video') return el('div', { class: 'gk-msg-attachment' }, [el('video', { src: att.url, controls: 'true' })]);
+  if (att.type === 'audio' && single) return buildVoicePlayer(msg);
+  return el('a', { class: 'gk-msg-file', href: att.url, target: '_blank', rel: 'noopener' }, [
+    icon('attach', { size: 14 }), el('span', {}, att.name || 'Arquivo anexado'),
+  ]);
+}
+
+function renderMessageAttachments(row, msg) {
+  const list = attachmentList(msg);
+  if (!list.length) return;
+  if (list.length === 1) { row.appendChild(buildAttachmentNode(list[0], msg, true)); return; }
+  const grid = el('div', { class: 'gk-msg-attachments', 'data-count': String(Math.min(list.length, 4)) },
+    list.map((att) => buildAttachmentNode(att, msg, false)));
+  row.appendChild(grid);
 }
 
 function renderMessages(messages, isNewIncoming = false) {
@@ -363,6 +405,18 @@ function renderMessages(messages, isNewIncoming = false) {
       continue;
     }
 
+    // Quem você bloqueou: a mensagem fica recolhida, com opção de mostrar.
+    if (isBlocked(msg.authorId) && msg.authorId !== state.user?.uid && !isRevealed(msg.id)) {
+      box.appendChild(el('div', { class: 'gk-msg-blocked', 'data-msg-id': msg.id }, [
+        icon('block', { size: 14 }),
+        el('span', {}, 'Mensagem de um usuário bloqueado'),
+        el('button', { class: 'gk-msg-blocked-show', type: 'button', onclick: () => revealMessage(msg.id) }, 'Mostrar'),
+      ]));
+      renderedMessageIds.add(msg.id);
+      lastAuthor = null; lastGroup = null; lastTs = ts;
+      continue;
+    }
+
     const sameGroup = !newDay && lastAuthor === msg.authorId && (ts - lastTs) < GROUP_WINDOW_MS;
     if (!sameGroup) {
       lastGroup = el('div', { class: 'gk-msg-group' }, [
@@ -409,7 +463,7 @@ function renderMessages(messages, isNewIncoming = false) {
         const classes = ['gk-msg-line'];
         if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
         if (isEmojiOnly(msg.content)) classes.push('gk-msg-line-jumbo');
-        const line = el('div', { class: classes.join(' ') }, renderMessageContent(msg.content));
+        const line = el('div', { class: classes.join(' ') }, renderMessageContent(msg.content, { everyone: !!msg.mentionEveryone }));
         if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag', title: 'Mensagem editada' }, '(editado)'));
         row.appendChild(line);
       }
@@ -427,6 +481,10 @@ function renderMessages(messages, isNewIncoming = false) {
         class: 'gk-msg-action-btn', type: 'button', title: 'Responder',
         onclick: () => startReply(msg),
       }, [icon('reply', { size: 15 })]));
+      actionButtons.push(el('button', {
+        class: 'gk-msg-action-btn', type: 'button', title: 'Abrir tópico',
+        onclick: () => openThread(msg),
+      }, [icon('chatBubble', { size: 14 })]));
       if (msg.content) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Copiar texto',
@@ -452,7 +510,7 @@ function renderMessages(messages, isNewIncoming = false) {
           onclick: () => startEditMessage(msg.id, msg.content || ''),
         }, [icon('edit', { size: 14 })]));
       }
-      if (isOwn || canModerateCurrentChannel()) {
+      if (isOwn || canModerateMessagesHere()) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn gk-msg-action-danger', type: 'button',
           title: isOwn ? 'Apagar mensagem' : 'Apagar mensagem (moderação)',
@@ -468,30 +526,15 @@ function renderMessages(messages, isNewIncoming = false) {
     // altura), então passar o mouse sobre a foto nunca "tocava" a row e
     // reagir/editar/apagar ficavam inacessíveis. Fica visível mesmo
     // editando, pra dar pra ver o que está ganhando legenda.
-    if (msg.attachmentUrl) {
-      if (msg.attachmentType === 'image' || msg.attachmentType === 'gif') {
-        row.appendChild(el('div', { class: 'gk-msg-attachment' + (msg.attachmentType === 'gif' ? ' gk-msg-attachment-gif' : '') }, [
-          el('img', {
-            src: msg.attachmentUrl, class: 'gk-msg-image-zoomable',
-            onclick: () => openImageLightbox(msg.attachmentUrl),
-          }),
-        ]));
-      } else if (msg.attachmentType === 'video') {
-        row.appendChild(el('div', { class: 'gk-msg-attachment' }, [el('video', { src: msg.attachmentUrl, controls: 'true' })]));
-      } else if (msg.attachmentType === 'audio') {
-        row.appendChild(buildVoicePlayer(msg));
-      } else {
-        row.appendChild(el('a', { class: 'gk-msg-file', href: msg.attachmentUrl, target: '_blank' }, [
-          icon('attach', { size: 14 }), el('span', {}, msg.attachmentName || 'Arquivo anexado'),
-        ]));
-      }
-    }
+    renderMessageAttachments(row, msg);
     if (msg.poll && !isEditingThis) row.appendChild(buildPollCard(msg, buildCtx()));
     body.appendChild(row);
 
     if (!isEditingThis) {
       const reactionsBar = buildReactionsBar(msg);
       if (reactionsBar) body.appendChild(reactionsBar);
+      const threadLink = buildThreadLink(msg);
+      if (threadLink) body.appendChild(threadLink);
     }
 
     lastAuthor = msg.authorId;
@@ -572,6 +615,12 @@ async function copyMessageText(text) {
 function canModerateCurrentChannel() {
   if (!state.currentServerId || !state.currentChannelId) return false;
   return canManageChannels(state.currentServerId);
+}
+
+// Apagar mensagem de outra pessoa / fixar: permissão "Gerenciar mensagens" (ou gerenciar canais).
+function canModerateMessagesHere() {
+  if (!state.currentServerId || !state.currentChannelId) return false;
+  return canManageMessages(state.currentServerId);
 }
 
 function confirmDeleteMessage(msg, asModerator = false) {
@@ -715,7 +764,7 @@ function jumpToMessage(id) {
 // ---------- Fixar ----------
 function canPinHere() {
   if (state.currentDmId) return true; // DM: qualquer um dos dois
-  return canModerateCurrentChannel();
+  return canModerateMessagesHere();
 }
 
 async function togglePin(msg) {
@@ -742,7 +791,7 @@ function getMessagesCol() {
 
 function buildCtx() {
   return {
-    getMessageRef, getMessagesCol, canPin: canPinHere, jumpToMessage, togglePin,
+    getMessageRef, getMessagesCol, canPin: canPinHere, jumpToMessage, togglePin, getLoadedMessages,
     setUploading: setAttachmentUploading,
     // Enquete/voz também carregam a resposta em andamento e as menções.
     postPayload: async (extra, opts) => {
@@ -756,6 +805,12 @@ function buildCtx() {
 }
 
 // ---------- Notificações da conversa aberta ----------
+// Mensagens carregadas da conversa aberta (últimas 200) — usado pela busca de mensagens.
+function getLoadedMessages() {
+  const conv = state.currentChannelId || state.currentDmId;
+  return conv && lastRenderedConv === conv ? lastRenderedMessages : [];
+}
+
 function currentConvCtx() {
   if (state.currentChannelId && state.currentServerId) return { serverId: state.currentServerId, channelId: state.currentChannelId };
   if (state.currentDmId) return { dmId: state.currentDmId };
@@ -763,7 +818,7 @@ function currentConvCtx() {
 }
 
 function showConversationButtons() {
-  for (const id of ['gk-pins-btn', 'gk-conv-notif-btn']) {
+  for (const id of ['gk-msg-search-btn', 'gk-pins-btn', 'gk-conv-notif-btn']) {
     const b = document.getElementById(id);
     if (b) b.style.display = 'inline-flex';
   }
@@ -862,24 +917,29 @@ async function saveEditMessage(msgId) {
 // uma falha aqui nunca derruba o envio da mensagem em si, que já saiu.
 async function indexAttachment(payload, context) {
   if (!payload.attachmentUrl) return;
-  try {
-    await addDoc(attachmentsCol(), {
-      uid: payload.authorId,
-      url: payload.attachmentUrl,
-      name: payload.attachmentName || '',
-      type: payload.attachmentType || 'file',
-      ...context,
-      createdAt: serverTimestamp(),
-    });
-  } catch (err) {
-    console.warn('[attachments] Falhou ao indexar anexo:', err.message);
+  const list = payload.attachments?.length
+    ? payload.attachments
+    : [{ url: payload.attachmentUrl, name: payload.attachmentName, type: payload.attachmentType }];
+  for (const att of list) {
+    try {
+      await addDoc(attachmentsCol(), {
+        uid: payload.authorId,
+        url: att.url,
+        name: att.name || '',
+        type: att.type || 'file',
+        ...context,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('[attachments] Falhou ao indexar anexo:', err.message);
+    }
   }
 }
 
 export async function sendCurrentMessage() {
   const textarea = document.getElementById('gk-composer-input');
   const text = textarea.value.trim();
-  if (!text && !pendingFile) return;
+  if (!text && !pendingFiles.length) return;
   const blocked = sendBlockReason();
   if (blocked) { toast(blocked, 'danger'); return; } // o texto continua no campo
   const lockedEmojis = lockedCustomEmojisIn(text);
@@ -891,17 +951,32 @@ export async function sendCurrentMessage() {
   const uid = auth.currentUser.uid;
   const payload = { ...basePayload(), content: text };
   applyReplyAndMentions(payload);
+  if (!payload.mentionEveryone && /(^|\s)@(everyone|here)(?![a-zA-Z0-9_-])/i.test(text) && state.currentServerId) {
+    toast('Você não tem permissão para usar @everyone/@here neste servidor — a mensagem vai como texto comum.');
+  }
 
-  if (pendingFile) {
+  if (pendingFiles.length) {
     setAttachmentUploading(true);
     try {
-      const { url } = await uploadToCloudinary(pendingFile, `attachments/${uid}`);
-      payload.attachmentUrl = url;
-      payload.attachmentName = pendingFile.name;
-      payload.attachmentType = pendingFile.type.startsWith('image/') ? 'image'
-        : pendingFile.type.startsWith('video/') ? 'video' : 'file';
+      // Sobe todos ao mesmo tempo; a ordem escolhida é mantida.
+      const uploaded = await Promise.all(pendingFiles.map(async (file) => {
+        const { url } = await uploadToCloudinary(file, `attachments/${uid}`);
+        return {
+          url, name: file.name,
+          type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
+        };
+      }));
+      // Campos antigos (attachmentUrl/Name/Type) = primeiro anexo: mantêm "Arquivos", prévias e
+      // versões antigas do app funcionando. A lista completa vai em `attachments` quando há mais de um.
+      payload.attachmentUrl = uploaded[0].url;
+      payload.attachmentName = uploaded[0].name;
+      payload.attachmentType = uploaded[0].type;
+      if (uploaded.length > 1) payload.attachments = uploaded;
     } catch (err) {
+      // Falhou: nada é enviado e os anexos continuam na caixa para tentar de novo.
       toast(err.message || 'Falha ao enviar anexo.', 'danger');
+      setAttachmentUploading(false);
+      return;
     }
     setAttachmentUploading(false);
     clearPendingFile();
@@ -913,7 +988,7 @@ export async function sendCurrentMessage() {
   cancelReply();
 
   await postPayload(payload, {
-    preview: text || (payload.attachmentUrl ? 'Enviou um anexo.' : ''),
+    preview: text || (payload.attachments ? `Enviou ${payload.attachments.length} anexos.` : payload.attachmentUrl ? 'Enviou um anexo.' : ''),
     dmPreview: text.slice(0, 80),
   });
 }
@@ -940,8 +1015,40 @@ function applyReplyAndMentions(payload) {
     payload.replyTo = { id: replyingTo.id, authorId: replyingTo.authorId || '', authorName: replyingTo.authorName, preview: replyingTo.preview };
     if (replyingTo.authorId) mentioned.add(replyingTo.authorId);
   }
+  // @everyone / @here: só vale com permissão (no servidor) — sem ela o texto vai como texto comum.
+  const all = /(^|\s)@(everyone|here)(?![a-zA-Z0-9_-])/i.exec(payload.content || '');
+  if (all && canMentionEveryoneHere()) {
+    const kind = all[2].toLowerCase();
+    payload.mentionEveryone = kind;
+    for (const uid of everyoneTargets(kind)) mentioned.add(uid);
+  }
   mentioned.delete(payload.authorId);
   if (mentioned.size) payload.mentionedUids = [...mentioned];
+}
+
+// Quem pode usar @everyone/@here na conversa aberta: servidor = permissão do cargo; DM em grupo = todo mundo.
+function canMentionEveryoneHere() {
+  if (state.currentServerId && state.currentChannelId) return canMentionEveryone(state.currentServerId);
+  if (state.currentDmId) return !!state.dms.get(state.currentDmId)?.isGroup;
+  return false;
+}
+
+// uids avisados por @everyone (todos) ou @here (só quem não está offline).
+function everyoneTargets(kind) {
+  const uids = [];
+  if (state.currentServerId) {
+    for (const [uid, m] of state.serverMembersCache.get(state.currentServerId) || []) {
+      if (kind === 'here' && effectiveStatus(m.user) === 'offline') continue;
+      uids.push(uid);
+    }
+  } else if (state.currentDmId) {
+    const dm = state.dms.get(state.currentDmId);
+    for (const uid of dm?.participantIds || []) {
+      if (kind === 'here') { const u = dm.members?.find((x) => x.uid === uid); if (u && effectiveStatus(u) === 'offline') continue; }
+      uids.push(uid);
+    }
+  }
+  return uids;
 }
 
 // Grava a mensagem na conversa aberta (canal ou DM), atualiza o "ponteiro" de
@@ -1001,52 +1108,78 @@ function otherServerMemberUids(serverId, exceptUid) {
   return [...membersMap.keys()].filter((uid) => uid !== exceptUid);
 }
 
-// O arquivo escolhido fica visível acima do composer até ser enviado —
-// antes ele virava só um toast, então dava pra esquecer que havia um
-// anexo engatilhado e não havia como desistir dele.
-export function setPendingFile(file) {
-  pendingFile = file;
-  renderPendingFile();
+// Os arquivos escolhidos/colados ficam visíveis acima do composer até serem
+// enviados — cada um com miniatura, nome, tamanho e botão de remover.
+export function setPendingFile(file) { addPendingFiles([file]); }
+
+export function addPendingFiles(files) {
+  const incoming = [...files].filter(Boolean);
+  if (!incoming.length) return;
+  if (composerLocked()) { toast('Não dá para anexar agora nesta conversa.', 'danger'); return; }
+  let skippedBig = 0;
+  let skippedLimit = 0;
+  for (const f of incoming) {
+    if (f.size > MAX_ATTACHMENT_BYTES) { skippedBig++; continue; }
+    if (pendingFiles.length >= MAX_ATTACHMENTS) { skippedLimit++; continue; }
+    pendingFiles.push(f);
+  }
+  if (skippedBig) toast(`${skippedBig} arquivo(s) passam de ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB e foram ignorados.`, 'danger');
+  if (skippedLimit) toast(`No máximo ${MAX_ATTACHMENTS} anexos por mensagem.`, 'danger');
+  renderPendingFiles();
+  document.getElementById('gk-composer-input')?.focus();
+}
+
+function composerLocked() {
+  const t = document.getElementById('gk-composer-input');
+  return !!t && t.disabled;
 }
 
 function clearPendingFile() {
-  if (pendingFile?.previewUrl) URL.revokeObjectURL(pendingFile.previewUrl);
-  pendingFile = null;
+  for (const f of pendingFiles) if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+  pendingFiles = [];
   const box = document.getElementById('gk-composer-attachment');
   if (box) { box.innerHTML = ''; box.style.display = 'none'; }
 }
 
-function renderPendingFile() {
+function removePendingFile(file) {
+  if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
+  pendingFiles = pendingFiles.filter((f) => f !== file);
+  renderPendingFiles();
+}
+
+function renderPendingFiles() {
   const box = document.getElementById('gk-composer-attachment');
-  if (!box || !pendingFile) return;
+  if (!box) return;
   box.innerHTML = '';
+  if (!pendingFiles.length) { box.style.display = 'none'; return; }
 
-  const isImage = pendingFile.type.startsWith('image/');
-  let thumb;
-  if (isImage) {
-    pendingFile.previewUrl = URL.createObjectURL(pendingFile);
-    thumb = el('img', { class: 'gk-attach-thumb', src: pendingFile.previewUrl, alt: '' });
-  } else {
-    thumb = el('div', { class: 'gk-attach-thumb gk-attach-thumb-file' }, [icon('attach', { size: 18 })]);
+  const list = el('div', { class: 'gk-attach-list' });
+  for (const file of pendingFiles) {
+    let thumb;
+    if (file.type.startsWith('image/')) {
+      if (!file.previewUrl) file.previewUrl = URL.createObjectURL(file);
+      thumb = el('img', { class: 'gk-attach-thumb', src: file.previewUrl, alt: '' });
+    } else {
+      thumb = el('div', { class: 'gk-attach-thumb gk-attach-thumb-file' }, [icon('attach', { size: 18 })]);
+    }
+    list.appendChild(el('div', { class: 'gk-attach-chip' }, [
+      thumb,
+      el('div', { class: 'gk-attach-meta' }, [
+        el('div', { class: 'gk-attach-name', title: file.name }, file.name),
+        el('div', { class: 'gk-attach-size' }, formatFileSize(file.size)),
+      ]),
+      el('button', {
+        class: 'gk-attach-remove', type: 'button', title: 'Remover anexo',
+        onclick: () => removePendingFile(file),
+      }, [icon('close', { size: 14 })]),
+    ]));
   }
-
-  box.appendChild(el('div', { class: 'gk-attach-chip', id: 'gk-attach-chip' }, [
-    thumb,
-    el('div', { class: 'gk-attach-meta' }, [
-      el('div', { class: 'gk-attach-name', title: pendingFile.name }, pendingFile.name),
-      el('div', { class: 'gk-attach-size' }, formatFileSize(pendingFile.size)),
-    ]),
-    el('button', {
-      class: 'gk-attach-remove', type: 'button', title: 'Remover anexo',
-      onclick: clearPendingFile,
-    }, [icon('close', { size: 14 })]),
-  ]));
+  box.appendChild(list);
   box.style.display = 'block';
 }
 
 function setAttachmentUploading(on) {
-  const chip = document.getElementById('gk-attach-chip');
-  if (chip) chip.classList.toggle('gk-uploading', on);
+  document.querySelectorAll('#gk-composer-attachment .gk-attach-chip').forEach((chip) => chip.classList.toggle('gk-uploading', on));
   const sendBtn = document.getElementById('gk-send-btn');
   if (sendBtn) sendBtn.disabled = on;
 }
@@ -1106,7 +1239,15 @@ function currentMentionToken(textarea) {
 function updateMentionAutocomplete(textarea) {
   const token = currentMentionToken(textarea);
   if (!token) { closeMentionAutocomplete(); return; }
-  const matches = searchMentionCandidates(token.query);
+  let matches = searchMentionCandidates(token.query);
+  if (canMentionEveryoneHere()) {
+    const q = token.query.toLowerCase();
+    const specials = [
+      { special: true, username: 'everyone', displayName: 'everyone', hint: 'Avisar todo mundo' },
+      { special: true, username: 'here', displayName: 'here', hint: 'Avisar quem está online' },
+    ].filter((x) => x.username.startsWith(q));
+    matches = [...specials, ...matches];
+  }
   if (!matches.length) { closeMentionAutocomplete(); return; }
 
   mentionMatches = matches;
@@ -1124,9 +1265,11 @@ function renderMentionPanel(textarea) {
       onmousedown: (e) => e.preventDefault(), // não tira o foco do textarea antes do click disparar
       onclick: () => applyMentionSelection(textarea, u),
     }, [
-      el('img', { class: 'gk-mention-item-avatar', src: u.avatarUrl || fallbackAvatar(u.displayName || u.username) }),
-      el('span', {}, u.displayName || u.username),
-      el('span', { class: 'gk-mention-item-username' }, `@${u.username}`),
+      u.special
+        ? el('span', { class: 'gk-mention-item-avatar gk-mention-item-special' }, '@')
+        : el('img', { class: 'gk-mention-item-avatar', src: u.avatarUrl || fallbackAvatar(u.displayName || u.username) }),
+      el('span', {}, u.special ? `@${u.username}` : (u.displayName || u.username)),
+      el('span', { class: 'gk-mention-item-username' }, u.special ? u.hint : `@${u.username}`),
     ]));
   });
 
@@ -1184,6 +1327,16 @@ function applyMentionSelection(textarea, user) {
   autoResizeComposer();
 }
 
+// Prints colados vêm todos como "image.png": dá um nome que não colide e diz quando foi.
+function nameClipboardFile(file) {
+  if (!/^image\.(png|jpe?g|gif|webp)$/i.test(file.name || 'image.png')) return file;
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  const name = `captura-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+  return new File([file], name, { type: file.type });
+}
+
 export function autoResizeComposer() {
   const textarea = document.getElementById('gk-composer-input');
   textarea.style.height = 'auto';
@@ -1223,11 +1376,43 @@ export function wireComposer() {
   document.getElementById('gk-voice-btn').addEventListener('click', () => startVoiceRecording(buildCtx()));
   document.getElementById('gk-poll-btn').addEventListener('click', () => openPollModal(buildCtx()));
   document.getElementById('gk-pins-btn').addEventListener('click', () => openPinnedPanel(buildCtx()));
+  document.getElementById('gk-msg-search-btn').addEventListener('click', () => openMessageSearch(buildCtx()));
+  // Ctrl+F (ou Cmd+F) com uma conversa aberta abre a busca de mensagens em vez da busca do navegador.
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && (state.currentChannelId || state.currentDmId)) {
+      if (document.getElementById('gk-generic-modal-overlay')?.classList.contains('gk-open')) return;
+      e.preventDefault();
+      openMessageSearch(buildCtx());
+    }
+  });
   document.getElementById('gk-conv-notif-btn').addEventListener('click', openNotifPanel);
+  fileInput.multiple = true;
   fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) setPendingFile(fileInput.files[0]);
+    addPendingFiles(fileInput.files);
     fileInput.value = '';
   });
+  // Ctrl+V com imagem/arquivo na área de transferência (print de tela, arquivo copiado).
+  // Só intercepta quando não há texto junto — colar texto continua normal.
+  textarea.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (!files.length || e.clipboardData.getData('text/plain')) return;
+    e.preventDefault();
+    addPendingFiles(files.map(nameClipboardFile));
+  });
+  // Arrastar arquivos para cima da conversa ou do composer.
+  const dropZones = [document.getElementById('gk-messages'), document.getElementById('gk-composer')];
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  for (const zone of dropZones) {
+    if (!zone) continue;
+    zone.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); zone.classList.add('gk-drop-active'); } });
+    zone.addEventListener('dragleave', (e) => { if (e.target === zone) zone.classList.remove('gk-drop-active'); });
+    zone.addEventListener('drop', (e) => {
+      zone.classList.remove('gk-drop-active');
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      addPendingFiles(e.dataTransfer.files);
+    });
+  }
 
   // Se a pessoa rolar de volta pro fim por conta própria (sem clicar no
   // pill), some com o aviso de "novas mensagens" também.
@@ -1237,3 +1422,11 @@ export function wireComposer() {
     if (atBottom) hideJumpToBottomPill();
   }, { passive: true });
 }
+
+export { getLoadedMessages, jumpToMessage };
+
+// Bloquear / desbloquear / "mostrar" uma mensagem recolhida: redesenha a conversa aberta.
+onBlocksChange(() => {
+  if (lastRenderedConv && lastRenderedConv === (state.currentChannelId || state.currentDmId)) renderMessages(lastRenderedMessages);
+  renderComposerNotice();
+});

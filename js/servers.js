@@ -76,6 +76,9 @@ export const PERMISSION_CATALOG = [
   { key: 'manageChannels', label: 'Gerenciar canais', desc: 'Criar, renomear e excluir categorias e canais.' },
   { key: 'manageServer', label: 'Gerenciar servidor', desc: 'Editar nome, descrição, ícone e banner do servidor.' },
   { key: 'manageMembers', label: 'Moderar membros', desc: 'Expulsar, banir, dar castigo e ver o log de auditoria.' },
+  { key: 'mentionEveryone', label: 'Mencionar @everyone e @here', desc: 'Avisar todos os membros (ou só quem está online) numa mensagem.' },
+  { key: 'manageMessages', label: 'Gerenciar mensagens', desc: 'Apagar mensagens de outras pessoas e fixar/desafixar mensagens nos canais.' },
+  { key: 'viewAuditLog', label: 'Ver log de auditoria', desc: 'Abrir a aba Moderação e ler o histórico de ações do servidor (sem poder moderar).' },
 ];
 
 export const ROLE_COLOR_SWATCHES = [
@@ -105,7 +108,7 @@ export const CHANNEL_OVERWRITE_PERMISSIONS = {
 };
 
 function emptyPermissions() {
-  return { manageChannels: false, manageServer: false, manageMembers: false };
+  return { manageChannels: false, manageServer: false, manageMembers: false, mentionEveryone: false, manageMessages: false, viewAuditLog: false };
 }
 
 // Combina (OR) as permissões de todos os cargos atribuídos a um membro.
@@ -182,7 +185,7 @@ export async function createInvite(serverId, { expiresInSeconds = null, maxUses 
 }
 
 // Quem tem permissão para escrever no log (evita avisos no console de quem só cria convite).
-const canAuditHere = (serverId) => canKickMembers(serverId) || canManageChannels(serverId) || canManageServerInfo(serverId);
+const canAuditHere = (serverId) => canViewAuditLog(serverId);
 
 // 'active' | 'expired' | 'full' (+ tempo restante quando tem validade)
 export function inviteStatus(inv) {
@@ -486,6 +489,22 @@ export function canManageServerInfo(serverId) {
   return hasServerPermission(serverId, 'manageServer');
 }
 
+// Usar @everyone / @here (dono e admin sempre; demais precisam do cargo com a permissão).
+export function canMentionEveryone(serverId) {
+  return hasServerPermission(serverId, 'mentionEveryone');
+}
+
+// Apagar mensagens de outras pessoas e fixar mensagens (quem gerencia canais também pode).
+export function canManageMessages(serverId) {
+  return hasServerPermission(serverId, 'manageMessages') || hasServerPermission(serverId, 'manageChannels');
+}
+
+// Ler o log de auditoria (aba Moderação).
+export function canViewAuditLog(serverId) {
+  return canKickMembers(serverId) || canManageChannels(serverId) || canManageServerInfo(serverId)
+    || hasServerPermission(serverId, 'viewAuditLog');
+}
+
 // Expulsar membros do servidor.
 export function canKickMembers(serverId) {
   return hasServerPermission(serverId, 'manageMembers');
@@ -523,6 +542,14 @@ function computeChannelPermission(serverId, channel, key, defaultValue = true) {
   if (!member) return false;
   if (member.role === 'admin') return true;
 
+  // Canal privado: só enxerga quem gerencia canais ou tem um cargo marcado como "permitir".
+  // É o mesmo cálculo das firestore.rules (viewRoleIds), então a interface não mente.
+  if (key === 'viewChannel' && channel.private) {
+    if (member.permissions?.manageChannels) return true;
+    const allowed = channel.viewRoleIds || [];
+    return (member.roleIds || []).some((r) => allowed.includes(r));
+  }
+
   const overwrites = channel.overwrites || {};
   let result = defaultValue;
   const myRoles = getRoles().filter((r) => (member.roleIds || []).includes(r.id));
@@ -555,7 +582,23 @@ export async function setChannelOverwrite(serverId, channelId, roleId, key, valu
   else roleOverwrite[key] = value;
   if (Object.keys(roleOverwrite).length === 0) delete overwrites[roleId];
   else overwrites[roleId] = roleOverwrite;
-  await updateDoc(channelDoc(serverId, channelId), { overwrites });
+  // viewRoleIds = cargos com "Ver canal: permitir" — cópia que as firestore.rules conseguem
+  // conferir (elas não leem o mapa de overwrites). Só vale quando o canal é privado.
+  await updateDoc(channelDoc(serverId, channelId), { overwrites, viewRoleIds: viewRoleIdsFrom(overwrites) });
+}
+
+export function viewRoleIdsFrom(overwrites = {}) {
+  return Object.entries(overwrites).filter(([, v]) => v?.viewChannel === 'allow').map(([rid]) => rid);
+}
+
+// Liga/desliga o modo privado de um canal: privado = só os cargos marcados com "Ver canal: permitir"
+// (e quem gerencia canais) enxergam. As firestore.rules barram a leitura e o envio de verdade.
+export async function setChannelPrivate(serverId, channelId, isPrivate) {
+  const channel = lastChannels.find((c) => c.id === channelId);
+  await updateDoc(channelDoc(serverId, channelId), {
+    private: !!isPrivate,
+    viewRoleIds: viewRoleIdsFrom(channel?.overwrites || {}),
+  });
 }
 
 export function isServerOwner(serverId) {
@@ -1042,7 +1085,23 @@ export function openChannelPermissionsModal(serverId, channel) {
     const roles = getRoles();
 
     modal.appendChild(el('h2', {}, ['Permissões — ', current.type === 'text' ? '#' : icon('speaker', { size: 16 }), ` ${current.name}`]));
-    modal.appendChild(el('p', { class: 'gk-modal-sub' }, 'Restrinja este canal por cargo. Sem nenhuma marcação, o canal fica visível a todo mundo (dono e admin sempre veem tudo).'));
+    modal.appendChild(el('p', { class: 'gk-modal-sub' }, current.private
+      ? 'Canal privado: só enxerga quem tem um cargo marcado com ✓ em “Ver canal” (e quem gerencia canais). O ✗ não faz diferença aqui.'
+      : 'Restrinja este canal por cargo. Sem nenhuma marcação, o canal fica visível a todo mundo (dono e admin sempre veem tudo).'));
+    if (current.type === 'text' || current.type === 'voice') {
+      const privToggle = el('label', { class: 'gk-role-perm-row' }, [
+        el('input', { type: 'checkbox', ...(current.private ? { checked: 'true' } : {}) }),
+        el('div', {}, [
+          el('div', { class: 'gk-role-perm-label' }, 'Canal privado'),
+          el('div', { class: 'gk-hint' }, 'Esconde o canal de todo mundo, menos dos cargos marcados com ✓. Vale também no servidor do Firebase (as mensagens não podem ser lidas por quem não tem acesso).'),
+        ]),
+      ]);
+      privToggle.querySelector('input').addEventListener('change', async (e) => {
+        try { await setChannelPrivate(serverId, current.id, e.target.checked); } catch (err) { toast('Não foi possível alterar o canal.', 'danger'); }
+        render();
+      });
+      modal.appendChild(privToggle);
+    }
 
     if (roles.length === 0) {
       modal.appendChild(el('div', { class: 'gk-empty-state gk-empty-state-sm' }, 'Crie um cargo primeiro, na aba Cargos, para poder restringir este canal por ele.'));

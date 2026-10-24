@@ -72,6 +72,21 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollClosed'])
         && request.resource.data.createdAt == resource.data.createdAt;
     }
+    // Tópicos (threads): quem enxerga a conversa pode mexer SÓ no contador de respostas da
+    // mensagem-mãe (threadCount / threadLastAt), de 1 em 1 — +1 ao responder, -1 ao apagar.
+    function isValidThreadCounterUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['threadCount', 'threadLastAt'])
+        && request.resource.data.threadCount is int
+        && request.resource.data.threadCount >= 0
+        && math.abs(request.resource.data.threadCount - resource.data.get('threadCount', 0)) <= 1
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+    function isValidThreadReply() {
+      return request.resource.data.authorId == request.auth.uid
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0 && request.resource.data.content.size() <= 2000;
+    }
     // Fixar/desafixar mensagem: só os campos de pin. QUEM pode fixar é decidido
     // por quem chama (canal: quem gerencia canais; DM: qualquer participante).
     function isValidPinUpdate() {
@@ -92,7 +107,7 @@ service cloud.firestore {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs','pronouns','customStatus','avatarHistory','privacy','profileTheme','profileEffect','nameplate'])
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs','pronouns','customStatus','avatarHistory','privacy','profileTheme','profileEffect','nameplate','blockedUids','email'])
           // Personalização de perfil (tema/efeito/placa são cosméticos Prime — a checagem de Prime é no app;
           // aqui só validamos formato e tamanho)
           && (!('pronouns' in request.resource.data) || (request.resource.data.pronouns is string && request.resource.data.pronouns.size() <= 32))
@@ -102,6 +117,9 @@ service cloud.firestore {
                   && request.resource.data.customStatus.emoji is string && request.resource.data.customStatus.emoji.size() <= 16))
           && (!('avatarHistory' in request.resource.data) || (request.resource.data.avatarHistory is list && request.resource.data.avatarHistory.size() <= 8))
           && (!('privacy' in request.resource.data) || request.resource.data.privacy is map)
+          // blockedUids = lista de uids que a pessoa bloqueou (máx. 200); email espelha o e-mail do Auth
+          && (!('blockedUids' in request.resource.data) || (request.resource.data.blockedUids is list && request.resource.data.blockedUids.size() <= 200))
+          && (!('email' in request.resource.data) || (request.resource.data.email is string && request.resource.data.email.size() <= 254))
           && (!('profileTheme' in request.resource.data) || request.resource.data.profileTheme == null
               || (request.resource.data.profileTheme is map
                   && request.resource.data.profileTheme.primary is string && request.resource.data.profileTheme.primary.matches('^#[0-9a-fA-F]{6}$')
@@ -139,6 +157,8 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isSelf(uid);
       allow update: if (isSelf(uid) && isValidSelfProfileEdit()) || isValidAdminBadgeEdit();
+      // Excluir a própria conta (Configurações > Conta)
+      allow delete: if isSelf(uid);
 
       match /socialLinks/{linkId} {
         allow read: if signedIn();
@@ -154,22 +174,89 @@ service cloud.firestore {
     }
 
     // ---------- Mensagens diretas ----------
+    // Bloqueio numa DM 1:1: se qualquer um dos dois bloqueou o outro, ninguém envia mensagem.
+    function dmBlockedEitherWay(dmId) {
+      let dm = get(/databases/$(database)/documents/directMessages/$(dmId)).data;
+      return dm.participantIds.size() == 2
+        && (request.auth.uid in get(/databases/$(database)/documents/users/$(dm.participantIds[0] == request.auth.uid ? dm.participantIds[1] : dm.participantIds[0])).data.get('blockedUids', [])
+            || (dm.participantIds[0] == request.auth.uid ? dm.participantIds[1] : dm.participantIds[0]) in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blockedUids', []));
+    }
+    // DM em grupo (isGroup == true): 3 a 10 pessoas, com nome (até 40) e dono (ownerId).
+    //  · qualquer participante atualiza só o "ponteiro" da última mensagem;
+    //  · o dono renomeia, adiciona e remove pessoas;
+    //  · qualquer participante pode SAIR (remover só a si mesmo); se o dono sai, passa a posse a quem fica.
+    // Numa DM 1:1 ninguém altera quem participa.
+    function dmPointerOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['lastMessageAt', 'lastMessageAuthorId', 'lastMessagePreview']);
+    }
+    function isValidDmCreate() {
+      let d = request.resource.data;
+      return request.auth.uid in d.participantIds
+        && d.participantIds is list
+        && d.participantIds.size() >= 2 && d.participantIds.size() <= 10
+        && (d.get('isGroup', false) != true
+            ? d.participantIds.size() == 2
+            : (d.participantIds.size() >= 3
+               && d.get('ownerId', '') == request.auth.uid
+               && d.get('name', '') is string && d.get('name', '').size() <= 40));
+    }
+    function isValidGroupUpdate() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys();
+      return before.get('isGroup', false) == true
+        && after.get('isGroup', false) == true
+        && after.participantIds.size() >= 1 && after.participantIds.size() <= 10
+        && (
+          dmPointerOnly()
+          // dono: nome, participantes
+          || (before.get('ownerId', '') == request.auth.uid
+              && changed.hasOnly(['name', 'participantIds'])
+              && after.get('name', '') is string && after.get('name', '').size() <= 40
+              && after.participantIds.size() >= 2
+              && request.auth.uid in after.participantIds
+              && after.get('ownerId', before.get('ownerId', '')) == before.get('ownerId', ''))
+          // sair do grupo: só tira a si mesmo; se era o dono, a posse vai para alguém que fica
+          || (changed.hasOnly(['participantIds', 'ownerId'])
+              && !(request.auth.uid in after.participantIds)
+              && after.participantIds.size() == before.participantIds.size() - 1
+              && after.participantIds.hasAll(before.participantIds.removeAll([request.auth.uid]))
+              && (before.get('ownerId', '') != request.auth.uid
+                  ? !('ownerId' in changed)
+                  : (after.participantIds.size() == 0 || after.get('ownerId', '') in after.participantIds)))
+        );
+    }
     match /directMessages/{dmId} {
       allow read: if signedIn() && request.auth.uid in resource.data.participantIds;
-      allow create: if signedIn() && request.auth.uid in request.resource.data.participantIds;
-      allow update: if signedIn() && request.auth.uid in resource.data.participantIds;
+      allow create: if signedIn() && isValidDmCreate();
+      allow update: if signedIn() && request.auth.uid in resource.data.participantIds
+        && (resource.data.get('isGroup', false) == true
+            ? isValidGroupUpdate()
+            : request.resource.data.participantIds == resource.data.participantIds);
 
       match /messages/{msgId} {
         allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds;
         allow create: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
-          && request.resource.data.authorId == request.auth.uid;
+          && request.resource.data.authorId == request.auth.uid
+          && !dmBlockedEitherWay(dmId);
         allow update: if signedIn()
           && (isValidMessageEdit() || isValidPollClose()
               || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
-                  && (isValidReactionUpdate() || isValidVoteUpdate() || isValidPinUpdate())));
+                  && (isValidReactionUpdate() || isValidVoteUpdate() || isValidPinUpdate() || isValidThreadCounterUpdate())));
         // Numa DM não existe moderação: só o próprio autor apaga o que escreveu.
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+        // Respostas do tópico numa DM (1:1 ou grupo): só participantes; bloqueio vale como nas mensagens.
+        match /threadMessages/{replyId} {
+          allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds;
+          allow create: if signedIn()
+            && request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
+            && isValidThreadReply()
+            && !dmBlockedEitherWay(dmId);
+          allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+        }
       }
 
       // "Digitando..." — cada pessoa só escreve no próprio doc (id = uid).
@@ -297,7 +384,23 @@ service cloud.firestore {
     }
     // Quem enxerga (e alimenta) o log de auditoria: quem modera, gerencia canais ou o servidor.
     function canViewAuditLog(serverId) {
-      return canKickMembers(serverId) || canManageChannels(serverId) || hasPermission(serverId, 'manageServer');
+      return canKickMembers(serverId) || canManageChannels(serverId) || hasPermission(serverId, 'manageServer')
+        || hasPermission(serverId, 'viewAuditLog');
+    }
+    // Apagar mensagem de outra pessoa e fixar mensagem: cargo com "Gerenciar mensagens" ou quem gerencia canais.
+    function canModerateMessages(serverId) {
+      return canManageChannels(serverId) || hasPermission(serverId, 'manageMessages');
+    }
+    // Canal privado (channels/{id}.private == true): só lê/escreve quem gerencia canais ou tem um
+    // cargo listado em viewRoleIds (cópia, gravada pelo app, dos cargos com "Ver canal: permitir").
+    // O doc do canal em si continua legível por todo membro (a lista de canais precisa dele);
+    // o que fica protegido é o CONTEÚDO: mensagens, "digitando", presença e sinalização de voz.
+    function canAccessChannel(serverId, channelId) {
+      let ch = get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data;
+      return !ch.get('private', false)
+        || isServerOwner(serverId)
+        || canManageChannels(serverId)
+        || myMemberDoc(serverId).get('roleIds', []).hasAny(ch.get('viewRoleIds', []));
     }
 
     match /servers/{serverId} {
@@ -335,34 +438,46 @@ service cloud.firestore {
           && request.resource.data.get('lastMentionedUids', []) is list;
 
         match /messages/{msgId} {
-          allow read: if signedIn() && isServerMember(serverId);
+          allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid
+            && canAccessChannel(serverId, channelId)
             && !isTimedOut(serverId);
-          allow update: if signedIn() && isServerMember(serverId)
+          allow update: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
             && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidPollClose()
-                || (isValidPinUpdate() && canManageChannels(serverId)));
-          // O autor apaga a própria mensagem; quem modera o canal apaga a de
-          // qualquer um (mesma régua usada para gerenciar canais).
-          allow delete: if signedIn() && isServerMember(serverId)
-            && (resource.data.authorId == request.auth.uid || canManageChannels(serverId));
+                || (isValidThreadCounterUpdate() && !isTimedOut(serverId))
+                || (isValidPinUpdate() && canModerateMessages(serverId)));
+          // O autor apaga a própria mensagem; quem tem "Gerenciar mensagens" (ou gerencia
+          // canais) apaga a de qualquer um.
+          allow delete: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
+            && (resource.data.authorId == request.auth.uid || canModerateMessages(serverId));
+
+          // Respostas do tópico: leem/escrevem quem enxerga o canal; castigo barra responder;
+          // o autor apaga a própria resposta e quem modera apaga a de qualquer um.
+          match /threadMessages/{replyId} {
+            allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
+            allow create: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
+              && !isTimedOut(serverId) && isValidThreadReply();
+            allow delete: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
+              && (resource.data.authorId == request.auth.uid || canModerateMessages(serverId));
+          }
         }
 
         match /voicePresence/{uid} {
-          allow read: if signedIn() && isServerMember(serverId);
-          allow write: if signedIn() && isSelf(uid);
+          allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
+          allow write: if signedIn() && isSelf(uid) && canAccessChannel(serverId, channelId);
         }
 
         // "Digitando..." — cada pessoa só escreve no próprio doc (id = uid).
         match /typing/{uid} {
-          allow read: if signedIn() && isServerMember(serverId);
-          allow write: if signedIn() && isSelf(uid);
+          allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
+          allow write: if signedIn() && isSelf(uid) && canAccessChannel(serverId, channelId);
         }
 
         match /voiceSignaling/{pairId} {
-          allow read, write: if signedIn() && isServerMember(serverId);
+          allow read, write: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
 
           match /candidates/{candId} {
-            allow read, write: if signedIn() && isServerMember(serverId);
+            allow read, write: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
           }
         }
       }
