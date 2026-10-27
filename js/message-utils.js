@@ -10,6 +10,7 @@ export function messagePreview(msg, max = 120) {
     return s.length > max ? s.slice(0, max - 1) + '…' : s;
   };
   if (msg.poll) return clip('📊 Enquete: ' + msg.poll.question);
+  if (msg.sticker && !msg.content) return '🏷️ Figurinha';
   if (msg.content) return clip(msg.content);
   if (Array.isArray(msg.attachments) && msg.attachments.length > 1) return `📎 ${msg.attachments.length} anexos`;
   switch (msg.attachmentType) {

@@ -18,6 +18,7 @@ import { uploadToCloudinary } from './cloudinary.js';
 import { giphyConfig } from './gif-config.js';
 import { icon } from './icons.js';
 import { renderRichText } from './markdown.js';
+import { renderStickersTab } from './stickers.js';
 
 // ---------- Emojis nativos (curadoria por categoria) ----------
 const EMOJI_CATEGORIES = {
@@ -42,6 +43,7 @@ let onSendGifCallback = null;
 let gifSearchDebounce = null;
 let uploadFileInput = null;
 let gifsTabBtn = null;
+let stickersTabBtn = null;
 // 'insert' (padrão, escreve no composer) ou 'react' (o painel foi aberto
 // pra escolher o emoji de uma reação numa mensagem — ver openEmojiPickerForReaction,
 // usado por chat.js). Em modo 'react' o clique num emoji chama reactionCallback
@@ -50,6 +52,8 @@ let pickerMode = 'insert';
 let reactionCallback = null;
 
 const customEmojiCache = new Map(); // id -> { id, name, url, uploaderId }
+let customEmojiVersion = 0; // sobe a cada snapshot: o chat usa para invalidar linhas já desenhadas
+export const getCustomEmojiVersion = () => customEmojiVersion;
 let unsubCustomEmojis = null;
 // Arquivo selecionado aguardando um nome antes do upload (substitui o antigo
 // fluxo com window.prompt(), que fica bloqueado silenciosamente em vários
@@ -62,6 +66,8 @@ let pendingEmojiFile = null;
 export function canUseCustomEmoji(emoji) {
   const uid = auth.currentUser?.uid;
   if (!emoji || !uid) return false;
+  // Emoji de servidor: todo membro daquele servidor pode usar.
+  if (emoji.serverId && state.servers.has(emoji.serverId)) return true;
   return emoji.uploaderId === uid || (emoji.allowedUserIds || []).includes(uid);
 }
 
@@ -102,6 +108,7 @@ export function listenCustomEmojis() {
   const q = query(customEmojisCol(), orderBy('name'));
   unsubCustomEmojis = onSnapshot(q, (snap) => {
     customEmojiCache.clear();
+    customEmojiVersion++;
     snap.forEach((d) => customEmojiCache.set(d.id, { id: d.id, ...d.data() }));
     if (panelEl && panelEl.classList.contains('gk-open') && currentTab === 'custom') renderTab();
   });
@@ -262,6 +269,7 @@ export function initEmojiPicker({ textarea, triggerBtn, onSendGif }) {
     pickerMode = 'insert';
     reactionCallback = null;
     if (gifsTabBtn) gifsTabBtn.style.display = '';
+    if (stickersTabBtn) stickersTabBtn.style.display = '';
     const rect = triggerBtn.getBoundingClientRect();
     // position:fixed calculado a partir do botão real — evita o mesmo tipo
     // de corte por overflow que já resolvemos no menu de servidores.
@@ -289,6 +297,7 @@ export function openEmojiPickerForReaction(anchorEl, onPick) {
   pickerMode = 'react';
   reactionCallback = onPick;
   if (gifsTabBtn) gifsTabBtn.style.display = 'none'; // reação não manda GIF
+  if (stickersTabBtn) stickersTabBtn.style.display = 'none'; // nem figurinha
 
   const rect = anchorEl.getBoundingClientRect();
   const panelWidth = 320;
@@ -317,10 +326,12 @@ function buildPanel() {
   panelEl = el('div', { class: 'gk-emoji-picker', id: 'gk-emoji-picker' });
 
   gifsTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'gifs', onclick: () => switchTab('gifs') }, [icon('clapperboard', { size: 15 }), ' GIFs']);
+  stickersTabBtn = el('button', { class: 'gk-emoji-tab', 'data-tab': 'stickers', onclick: () => switchTab('stickers') }, [icon('sparkles', { size: 15 }), ' Figurinhas']);
   const tabs = el('div', { class: 'gk-emoji-picker-tabs' }, [
     el('button', { class: 'gk-emoji-tab gk-active', 'data-tab': 'emojis', onclick: () => switchTab('emojis') }, [icon('emojiSmile', { size: 15 }), ' Emojis']),
     el('button', { class: 'gk-emoji-tab', 'data-tab': 'custom', onclick: () => switchTab('custom') }, [icon('starOutline', { size: 15 }), ' Personalizados', customTabBadge = el('span', { class: 'gk-emoji-tab-badge', style: 'display:none;' })]),
     gifsTabBtn,
+    stickersTabBtn,
   ]);
 
   searchInputEl = el('input', {
@@ -342,7 +353,7 @@ function switchTab(tab) {
   pendingEmojiFile = null;
   panelEl.querySelectorAll('.gk-emoji-tab').forEach((b) => b.classList.toggle('gk-active', b.dataset.tab === tab));
   searchInputEl.value = '';
-  searchInputEl.style.display = tab === 'emojis' ? 'none' : 'block';
+  searchInputEl.style.display = (tab === 'emojis' || tab === 'stickers') ? 'none' : 'block';
   searchInputEl.placeholder = tab === 'gifs' ? 'Buscar GIFs...' : 'Buscar emoji personalizado...';
   renderTab();
   if (tab === 'gifs') fetchGifs('');
@@ -360,6 +371,7 @@ function renderTab() {
   bodyEl.innerHTML = '';
   if (currentTab === 'emojis') renderEmojisTab();
   else if (currentTab === 'custom') renderCustomTab();
+  else if (currentTab === 'stickers') renderStickersTab(bodyEl, (sticker) => { closePicker(); window.dispatchEvent(new CustomEvent('gkio-send-sticker', { detail: sticker })); });
   // 'gifs' é preenchido de forma assíncrona por fetchGifs()
 }
 
@@ -403,7 +415,8 @@ function renderCustomTab() {
     class: 'gk-emoji-upload-tile', title: 'Enviar novo emoji', type: 'button', onclick: triggerUpload,
   }, [icon('plus', { size: 20 })]);
   const grid = el('div', { class: 'gk-emoji-grid gk-emoji-grid-custom' }, [uploadTile]);
-  const all = [...customEmojiCache.values()].filter((e) => !filter || e.name.includes(filter));
+  // emojis de servidores dos quais você não faz parte não aparecem (nem como "peça acesso")
+  const all = [...customEmojiCache.values()].filter((e) => (!e.serverId || state.servers.has(e.serverId)) && (!filter || e.name.includes(filter)));
   const usable = all.filter(canUseCustomEmoji);
   const locked = all.filter((e) => !canUseCustomEmoji(e));
   bodyEl.appendChild(grid);

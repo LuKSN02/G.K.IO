@@ -2,7 +2,7 @@
 // G.K.IO — Servidores, categorias e canais (estilo Discord)
 // ============================================================
 import {
-  db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc, channelMessagesCol,
+  db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc, channelMessagesCol, addChannelMessage,
   membersCol, memberDoc, invitesCol, inviteDoc, userDoc, rolesCol, roleDoc,
   doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion, writeBatch,
@@ -21,6 +21,7 @@ import { logAudit } from './audit.js';
 import { confirmDialog, resetGenericModal } from './dialogs.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
+import { maybeShowRules } from './server-extras.js';
 
 // Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
 // do servidor atualmente aberto pra atualizar os indicadores de não lida.
@@ -340,12 +341,12 @@ async function postWelcomeMessage(serverId, cfg) {
     if (!ch.exists()) return;
     const me = state.user || {};
     const name = me.displayName || me.username || 'Alguém';
-    await addDoc(channelMessagesCol(serverId, w.channelId), {
+    await addChannelMessage(serverId, w.channelId, {
       system: 'welcome',
       content: renderWelcomeText(w.message, { usuario: name, servidor: cfg.name || 'servidor' }),
       authorId: auth.currentUser.uid, authorName: name, authorAvatar: me.avatarUrl || '',
       createdAt: serverTimestamp(),
-    });
+    }, Number(ch.data().slowmodeSeconds) || 0);
     await updateDoc(channelDoc(serverId, w.channelId), { lastMessageAt: serverTimestamp(), lastMessageAuthorId: auth.currentUser.uid }).catch(() => {});
   } catch (err) {
     console.warn('[boas-vindas] não consegui enviar a mensagem', err.code || err.message);
@@ -569,6 +570,8 @@ registerChannelViewCheck(canViewChannel);
 
 export function canSendInChannel(serverId, channel) {
   if (channel.type !== 'text') return true;
+  // Canal de anúncios: só quem gerencia canais publica (as regras do Firestore também exigem).
+  if (channel.announcement && !canManageChannels(serverId)) return false;
   return computeChannelPermission(serverId, channel, 'sendMessages', true);
 }
 
@@ -761,6 +764,7 @@ export function goToServerPickerView() {
   document.getElementById('gk-add-friend-btn').style.display = 'none';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
+  { const b = document.getElementById('gk-server-events-btn'); if (b) b.style.display = 'none'; }
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-video-call-btn').style.display = 'none';
@@ -794,7 +798,9 @@ export function selectServer(serverId) {
   document.getElementById('gk-sidebar-header-title').textContent = state.servers.get(serverId)?.name || 'Servidor';
   document.getElementById('gk-members').style.display = 'block';
   document.getElementById('gk-server-settings-btn').style.display = 'inline-flex';
+  const evBtn = document.getElementById('gk-server-events-btn'); if (evBtn) evBtn.style.display = 'inline-flex';
   document.getElementById('gk-members-toggle-btn').style.display = 'inline-flex';
+  maybeShowRules(serverId); // tela de regras (só aparece se o servidor exige aceite e você ainda não aceitou)
 }
 
 function listenCategoriesAndChannels(serverId) {

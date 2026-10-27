@@ -86,6 +86,20 @@ export const channelThreadCol = (serverId, channelId, msgId) =>
   collection(db, 'servers', serverId, 'channels', channelId, 'messages', msgId, 'threadMessages');
 export const channelThreadDoc = (serverId, channelId, msgId, replyId) =>
   doc(db, 'servers', serverId, 'channels', channelId, 'messages', msgId, 'threadMessages', replyId);
+// Modo lento garantido pelas regras: junto com cada mensagem de um canal com modo lento, o app grava
+// o horário em .../channels/{id}/slowmode/{uid}; as regras só aceitam a mensagem se o intervalo passou.
+export const channelSlowmodeDoc = (serverId, channelId, uid) =>
+  doc(db, 'servers', serverId, 'channels', channelId, 'slowmode', uid);
+/** Cria a mensagem do canal. Com modo lento (slowSecs > 0) grava mensagem + carimbo no MESMO lote. */
+export async function addChannelMessage(serverId, channelId, payload, slowSecs = 0) {
+  const colRef = collection(db, 'servers', serverId, 'channels', channelId, 'messages');
+  if (!slowSecs) return addDoc(colRef, payload);
+  const batch = writeBatch(db);
+  batch.set(doc(colRef), payload);
+  batch.set(channelSlowmodeDoc(serverId, channelId, auth.currentUser.uid), { lastAt: serverTimestamp() });
+  return batch.commit();
+}
+
 export const dmThreadCol = (dmId, msgId) => collection(db, 'directMessages', dmId, 'messages', msgId, 'threadMessages');
 export const dmThreadDoc = (dmId, msgId, replyId) => doc(db, 'directMessages', dmId, 'messages', msgId, 'threadMessages', replyId);
 
@@ -102,6 +116,10 @@ export const customEmojiDoc = (emojiId) => doc(db, 'customEmojis', emojiId);
 // id = `${emojiId}_${requesterId}`. O criador aceita/recusa (ver js/emoji.js).
 export const customEmojiRequestsCol = () => collection(db, 'customEmojiRequests');
 export const customEmojiRequestDoc = (id) => doc(db, 'customEmojiRequests', id);
+
+// Denúncias (mensagens/usuários): ver js/reports.js e as regras em firestore.rules.
+export const reportsCol = () => collection(db, 'reports');
+export const reportDoc = (id) => doc(db, 'reports', id);
 
 export const attachmentsCol = () => collection(db, 'attachments');
 export const attachmentDoc = (id) => doc(db, 'attachments', id);

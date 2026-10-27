@@ -7,56 +7,86 @@
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="img/favicon-180.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#6C63F5">
 <link rel="icon" type="image/png" sizes="512x512" href="img/favicon-512.png">
 <script type="importmap">
 {
  "imports": {
-  "./js/app-update.js": "./js/app-update.js?v=4",
-  "./js/apply-static-icons.js": "./js/apply-static-icons.js?v=4",
-  "./js/auth.js": "./js/auth.js?v=4",
-  "./js/background-notify.js": "./js/background-notify.js?v=4",
-  "./js/calls.js": "./js/calls.js?v=4",
-  "./js/chat.js": "./js/chat.js?v=4",
-  "./js/cloudinary-config.js": "./js/cloudinary-config.js?v=4",
-  "./js/cloudinary.js": "./js/cloudinary.js?v=4",
-  "./js/communities.js": "./js/communities.js?v=4",
-  "./js/cropper.js": "./js/cropper.js?v=4",
-  "./js/db.js": "./js/db.js?v=4",
-  "./js/desktop.js": "./js/desktop.js?v=4",
-  "./js/discord-compat.js": "./js/discord-compat.js?v=4",
-  "./js/mobile-nav.js": "./js/mobile-nav.js?v=4",
-  "./js/dms.js": "./js/dms.js?v=4",
-  "./js/emoji.js": "./js/emoji.js?v=4",
-  "./js/extensions.js": "./js/extensions.js?v=4",
-  "./js/files.js": "./js/files.js?v=4",
-  "./js/firebase-config.js": "./js/firebase-config.js?v=4",
-  "./js/gif-config.js": "./js/gif-config.js?v=4",
-  "./js/hotkeys.js": "./js/hotkeys.js?v=4",
-  "./js/icons.js": "./js/icons.js?v=4",
-  "./js/idle.js": "./js/idle.js?v=4",
-  "./js/lightbox.js": "./js/lightbox.js?v=4",
-  "./js/livekit-config.js": "./js/livekit-config.js?v=4",
-  "./js/markdown.js": "./js/markdown.js?v=4",
-  "./js/native-bridge.js": "./js/native-bridge.js?v=4",
-  "./js/prefs.js": "./js/prefs.js?v=4",
-  "./js/profile.js": "./js/profile.js?v=4",
-  "./js/push-config.js": "./js/push-config.js?v=4",
-  "./js/push-server.js": "./js/push-server.js?v=4",
-  "./js/push.js": "./js/push.js?v=4",
-  "./js/search.js": "./js/search.js?v=4",
-  "./js/server-settings.js": "./js/server-settings.js?v=4",
-  "./js/server-templates.js": "./js/server-templates.js?v=4",
-  "./js/servers.js": "./js/servers.js?v=4",
-  "./js/settings-extras.js": "./js/settings-extras.js?v=4",
-  "./js/settings.js": "./js/settings.js?v=4",
-  "./js/splash.js": "./js/splash.js?v=4",
-  "./js/state.js": "./js/state.js?v=4",
-  "./js/theme.js": "./js/theme.js?v=4",
-  "./js/token-server.js": "./js/token-server.js?v=4",
-  "./js/topbar.js": "./js/topbar.js?v=4",
-  "./js/typing.js": "./js/typing.js?v=4",
-  "./js/unread.js": "./js/unread.js?v=4",
-  "./js/zoom.js": "./js/zoom.js?v=4"
+  "./js/forward.js": "./js/forward.js?v=9",
+  "./js/link-preview.js": "./js/link-preview.js?v=9",
+  "./js/mfa.js": "./js/mfa.js?v=9",
+  "./js/preview-config.js": "./js/preview-config.js?v=9",
+  "./js/reports.js": "./js/reports.js?v=9",
+  "./js/server-extras.js": "./js/server-extras.js?v=9",
+  "./js/stickers.js": "./js/stickers.js?v=9",
+  "./js/app-update.js": "./js/app-update.js?v=9",
+  "./js/app.js": "./js/app.js?v=9",
+  "./js/appearance.js": "./js/appearance.js?v=9",
+  "./js/apply-static-icons.js": "./js/apply-static-icons.js?v=9",
+  "./js/audit.js": "./js/audit.js?v=9",
+  "./js/auth.js": "./js/auth.js?v=9",
+  "./js/background-notify.js": "./js/background-notify.js?v=9",
+  "./js/blocks.js": "./js/blocks.js?v=9",
+  "./js/calls.js": "./js/calls.js?v=9",
+  "./js/chat.js": "./js/chat.js?v=9",
+  "./js/cloudinary-config.js": "./js/cloudinary-config.js?v=9",
+  "./js/cloudinary.js": "./js/cloudinary.js?v=9",
+  "./js/color-utils.js": "./js/color-utils.js?v=9",
+  "./js/communities.js": "./js/communities.js?v=9",
+  "./js/cropper.js": "./js/cropper.js?v=9",
+  "./js/db.js": "./js/db.js?v=9",
+  "./js/desktop.js": "./js/desktop.js?v=9",
+  "./js/dialogs.js": "./js/dialogs.js?v=9",
+  "./js/discord-compat.js": "./js/discord-compat.js?v=9",
+  "./js/dms.js": "./js/dms.js?v=9",
+  "./js/emoji.js": "./js/emoji.js?v=9",
+  "./js/extensions.js": "./js/extensions.js?v=9",
+  "./js/files.js": "./js/files.js?v=9",
+  "./js/firebase-config.js": "./js/firebase-config.js?v=9",
+  "./js/gif-config.js": "./js/gif-config.js?v=9",
+  "./js/groups.js": "./js/groups.js?v=9",
+  "./js/hotkeys.js": "./js/hotkeys.js?v=9",
+  "./js/icons.js": "./js/icons.js?v=9",
+  "./js/idle.js": "./js/idle.js?v=9",
+  "./js/landing.js": "./js/landing.js?v=9",
+  "./js/lightbox.js": "./js/lightbox.js?v=9",
+  "./js/livekit-config.js": "./js/livekit-config.js?v=9",
+  "./js/markdown.js": "./js/markdown.js?v=9",
+  "./js/message-search.js": "./js/message-search.js?v=9",
+  "./js/message-utils.js": "./js/message-utils.js?v=9",
+  "./js/mobile-nav.js": "./js/mobile-nav.js?v=9",
+  "./js/moderation.js": "./js/moderation.js?v=9",
+  "./js/native-bridge.js": "./js/native-bridge.js?v=9",
+  "./js/notify-prefs.js": "./js/notify-prefs.js?v=9",
+  "./js/pins.js": "./js/pins.js?v=9",
+  "./js/polls.js": "./js/polls.js?v=9",
+  "./js/prefs.js": "./js/prefs.js?v=9",
+  "./js/profile.js": "./js/profile.js?v=9",
+  "./js/push-config.js": "./js/push-config.js?v=9",
+  "./js/push-server.js": "./js/push-server.js?v=9",
+  "./js/push.js": "./js/push.js?v=9",
+  "./js/search-core.js": "./js/search-core.js?v=9",
+  "./js/search.js": "./js/search.js?v=9",
+  "./js/server-settings.js": "./js/server-settings.js?v=9",
+  "./js/server-templates.js": "./js/server-templates.js?v=9",
+  "./js/servers.js": "./js/servers.js?v=9",
+  "./js/settings-account.js": "./js/settings-account.js?v=9",
+  "./js/settings-appearance.js": "./js/settings-appearance.js?v=9",
+  "./js/settings-extras.js": "./js/settings-extras.js?v=9",
+  "./js/settings.js": "./js/settings.js?v=9",
+  "./js/splash.js": "./js/splash.js?v=9",
+  "./js/state.js": "./js/state.js?v=9",
+  "./js/theme.js": "./js/theme.js?v=9",
+  "./js/threads.js": "./js/threads.js?v=9",
+  "./js/token-server.js": "./js/token-server.js?v=9",
+  "./js/topbar.js": "./js/topbar.js?v=9",
+  "./js/typing.js": "./js/typing.js?v=9",
+  "./js/unread.js": "./js/unread.js?v=9",
+  "./js/voice-extras.js": "./js/voice-extras.js?v=9",
+  "./js/voice-fx.js": "./js/voice-fx.js?v=9",
+  "./js/voice-messages.js": "./js/voice-messages.js?v=9",
+  "./js/zoom.js": "./js/zoom.js?v=9"
  }
 }
 </script>
@@ -118,11 +148,25 @@
   } catch (e) { /* localStorage indisponível — segue com o tema padrão */ }
 })();
 </script>
+<script>
+// PWA: registra o service worker só no navegador (não no app desktop nem no APK, que já são "instalados").
+(function () {
+  try {
+    var native = /Electron\//.test(navigator.userAgent) || window.Capacitor || window.gkioDesktop;
+    var okOrigin = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (!native && okOrigin && 'serviceWorker' in navigator) {
+      window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+    }
+    // Guarda o convite de instalação do navegador para o app oferecer um botão "Instalar".
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.gkioInstallPrompt = e; window.dispatchEvent(new Event('gkio-installable')); });
+  } catch (e) { /* sem PWA, o app segue normal */ }
+})();
+</script>
 <script>document.documentElement.setAttribute('data-gk-gate','pending');</script>
-<link rel="stylesheet" href="css/tokens.css?v=4">
-<link rel="stylesheet" href="css/app.css?v=5">
-<link rel="stylesheet" href="css/landing.css?v=1">
-<link rel="stylesheet" href="css/features.css?v=1">
+<link rel="stylesheet" href="css/tokens.css?v=9">
+<link rel="stylesheet" href="css/app.css?v=9">
+<link rel="stylesheet" href="css/landing.css?v=9">
+<link rel="stylesheet" href="css/features.css?v=9">
 </head>
 <body>
 
@@ -631,6 +675,7 @@
       <span id="gk-sidebar-header-title">Mensagens diretas</span>
       <div style="display:flex;gap:2px;">
         <button id="gk-add-friend-btn" title="Adicionar amigo" data-icon="personPlus"></button>
+        <button id="gk-server-events-btn" title="Eventos do servidor" aria-label="Eventos do servidor" style="display:none;" data-icon="clock"></button>
         <button id="gk-server-settings-btn" title="Configurações do servidor" style="display:none;" data-icon="settings"></button>
       </div>
     </div>
@@ -835,6 +880,7 @@
     <button class="gk-call-ctrl-btn" id="gk-call-deafen-btn" title="Ensurdecer (silencia tudo)" data-icon="headphones"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera" data-icon="camera"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-extras-btn" title="Soundboard e atividades" aria-label="Soundboard e atividades" data-icon="gamepad"></button>
     <button class="gk-call-ctrl-btn gk-call-hangup-btn" id="gk-call-hangup-btn" title="Encerrar chamada" data-icon="phoneEnd"></button>
   </div>
 </div>
@@ -846,6 +892,7 @@
   <button id="gk-call-bar-mute-btn" title="Mutar/desmutar" data-icon="mic"></button>
   <button id="gk-call-bar-deafen-btn" title="Ensurdecer (silencia tudo)" data-icon="headphones"></button>
   <button id="gk-call-bar-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
+  <button id="gk-call-bar-extras-btn" title="Soundboard e atividades" aria-label="Soundboard e atividades" data-icon="gamepad"></button>
   <button class="gk-hangup" id="gk-call-bar-hangup-btn" title="Encerrar" data-icon="phoneEnd"></button>
 </div>
 <div class="gk-screenshare-grid" id="gk-screenshare-grid"></div>
@@ -858,8 +905,8 @@
 <!-- ======================= TOASTS ======================= -->
 <div id="gk-toast-stack"></div>
 
-<script type="module" src="js/landing.js?v=1"></script>
-<script type="module" src="js/app.js?v=4"></script>
-<script type="module" src="js/apply-static-icons.js?v=4"></script>
+<script type="module" src="js/landing.js?v=9"></script>
+<script type="module" src="js/app.js?v=9"></script>
+<script type="module" src="js/apply-static-icons.js?v=9"></script>
 </body>
 </html>

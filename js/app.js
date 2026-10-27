@@ -1,6 +1,7 @@
 // ============================================================
 // G.K.IO — Bootstrap da aplicação
 // ============================================================
+import { openEventsModal } from './server-extras.js';
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
 import { state, fallbackAvatar, cleanupListener } from './state.js';
 import { stopTyping } from './typing.js';
@@ -109,6 +110,7 @@ function goToHomeView() {
   document.getElementById('gk-home-view').style.display = 'flex';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
+  { const b = document.getElementById('gk-server-events-btn'); if (b) b.style.display = 'none'; }
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-video-call-btn').style.display = 'none';
@@ -182,6 +184,9 @@ function wireStaticUI() {
   document.getElementById('gk-add-friend-btn').addEventListener('click', openAddFriendModal);
   document.getElementById('gk-settings-btn').addEventListener('click', (e) => { e.stopPropagation(); closeProfileMenu(); openSettingsModal('perfil'); });
   document.getElementById('gk-logout-btn').addEventListener('click', (e) => { e.stopPropagation(); closeProfileMenu(); logoutUser(); });
+  document.getElementById('gk-server-events-btn')?.addEventListener('click', () => {
+    if (state.currentServerId) openEventsModal(state.currentServerId);
+  });
   document.getElementById('gk-server-settings-btn').addEventListener('click', () => {
     if (state.currentServerId) openServerSettingsModal(state.currentServerId);
   });

@@ -25,6 +25,7 @@ export function goToCommunitiesView() {
   document.getElementById('gk-composer').style.display = 'none';
   document.getElementById('gk-members').style.display = 'none';
   document.getElementById('gk-server-settings-btn').style.display = 'none';
+  { const b = document.getElementById('gk-server-events-btn'); if (b) b.style.display = 'none'; }
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-video-call-btn').style.display = 'none';

@@ -179,6 +179,8 @@ export async function registerUser(username, email, password) {
   return cred.user;
 }
 
+import { isMfaRequired, resolveSignIn } from './mfa.js';
+
 export async function loginUser(email, password, keepSignedIn = true) {
   // "Manter-me conectado" desmarcado = sessão morre ao fechar a aba/app
   // (browserSessionPersistence); marcado (padrão) = sobrevive, como hoje.
@@ -262,7 +264,13 @@ export function wireAuthForm() {
           ? 'Conta criada! Confirme seu e-mail para entrar.'
           : 'Bem-vindo(a) de volta ao G.K.IO.');
       } else {
-        await loginUser(email, password, !keepSignedInBox || keepSignedInBox.checked);
+        try {
+          await loginUser(email, password, !keepSignedInBox || keepSignedInBox.checked);
+        } catch (loginErr) {
+          // Conta com verificação em duas etapas: pede o código do app e conclui o login.
+          if (!isMfaRequired(loginErr)) throw loginErr;
+          await resolveSignIn(loginErr);
+        }
       }
     } catch (err) {
       justAuthenticatedViaForm = false; // a autenticação não mudou de fato — desfaz a marcação

@@ -280,12 +280,17 @@ service cloud.firestore {
     // a permissão granular 'manageServer' (cargo personalizado).
     function isValidServerInfoEdit(serverId) {
       return (isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageServer'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId','visibility'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId','visibility','rules'])
         // visibility ('public' | 'private'): só o dono muda
         && (!('visibility' in request.resource.data.diff(resource.data).affectedKeys())
             || (isServerOwner(serverId) && request.resource.data.visibility in ['public', 'private']))
         // welcome = { enabled, channelId, message } · autoRoleId = cargo dado a quem entra (ou null)
         && (!('welcome' in request.resource.data) || request.resource.data.welcome is map)
+        // rules = { enabled, text (até 2000), version } — tela de regras com aceite
+        && (!('rules' in request.resource.data) || (request.resource.data.rules is map
+            && request.resource.data.rules.get('text', '') is string && request.resource.data.rules.get('text', '').size() <= 2000
+            && request.resource.data.rules.get('enabled', false) is bool
+            && request.resource.data.rules.get('version', 1) is int))
         && (!('autoRoleId' in request.resource.data) || request.resource.data.autoRoleId == null || request.resource.data.autoRoleId is string);
     }
     // Quem pode remover QUALQUER outro membro de memberIds (expulsar):
@@ -358,7 +363,10 @@ service cloud.firestore {
       return autoRole != null && request.resource.data.get('roleIds', []) == [autoRole];
     }
     function isValidSelfMemberEdit() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']);
+      // nickname, e o aceite das regras (rulesVersion só pode ser um inteiro; rulesAcceptedAt é a hora do servidor)
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'rulesAcceptedAt', 'rulesVersion'])
+        && (!('rulesVersion' in request.resource.data) || request.resource.data.rulesVersion is int)
+        && (!('rulesAcceptedAt' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.rulesAcceptedAt == request.time);
     }
 
     // ---------- Moderação: banimento, castigo (timeout) e log de auditoria ----------
@@ -403,6 +411,38 @@ service cloud.firestore {
         || myMemberDoc(serverId).get('roleIds', []).hasAny(ch.get('viewRoleIds', []));
     }
 
+    // Modo lento (channels/{id}.slowmodeSeconds): a mensagem só é aceita se vier no MESMO lote que o
+    // carimbo slowmode/{uid}.lastAt == request.time e se o carimbo anterior tem mais que o intervalo.
+    // Quem gerencia canais (e o dono) é isento. Limite honesto: um cliente adulterado ainda consegue
+    // mandar várias mensagens num único lote; o que está barrado é mandar de novo antes do intervalo.
+    function slowmodeOk(serverId, channelId) {
+      let secs = get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('slowmodeSeconds', 0);
+      let sd = /databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)/slowmode/$(request.auth.uid);
+      return secs == 0
+        || canManageChannels(serverId)
+        || (getAfter(sd).data.lastAt == request.time
+            && (!exists(sd) || get(sd).data.lastAt + duration.value(secs, 's') <= request.time));
+    }
+
+    // Regras do servidor com aceite: se `rules.enabled`, só envia mensagem quem aceitou a versão atual
+    // (member.rulesVersion >= rules.version). O dono é isento.
+    function rulesOk(serverId) {
+      let r = get(/databases/$(database)/documents/servers/$(serverId)).data.get('rules', {});
+      return !r.get('enabled', false)
+        || isServerOwner(serverId)
+        || !exists(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)) // conta antiga sem doc de membro
+        || myMemberDoc(serverId).get('rulesVersion', 0) >= r.get('version', 1);
+    }
+    // Canal de anúncios (channels/{id}.announcement == true): só quem gerencia canais publica.
+    function canPostInChannel(serverId, channelId) {
+      return !get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('announcement', false)
+        || isServerOwner(serverId) || canManageChannels(serverId);
+    }
+    // Editar identidade do servidor (eventos, emojis do servidor): dono, admin legado ou cargo "Gerenciar servidor".
+    function canManageServerInfoRule(serverId) {
+      return isServerOwner(serverId) || myMemberDoc(serverId).get('role', 'member') == 'admin' || hasPermission(serverId, 'manageServer');
+    }
+
     match /servers/{serverId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == request.resource.data.ownerId;
@@ -441,7 +481,9 @@ service cloud.firestore {
           allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid
             && canAccessChannel(serverId, channelId)
-            && !isTimedOut(serverId);
+            && canPostInChannel(serverId, channelId) && rulesOk(serverId)
+            && !isTimedOut(serverId)
+            && slowmodeOk(serverId, channelId);
           allow update: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
             && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidPollClose()
                 || (isValidThreadCounterUpdate() && !isTimedOut(serverId))
@@ -456,10 +498,18 @@ service cloud.firestore {
           match /threadMessages/{replyId} {
             allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
             allow create: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
-              && !isTimedOut(serverId) && isValidThreadReply();
+              && !isTimedOut(serverId) && rulesOk(serverId) && isValidThreadReply();
             allow delete: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
               && (resource.data.authorId == request.auth.uid || canModerateMessages(serverId));
           }
+        }
+
+        // Carimbo do modo lento: cada pessoa grava só o próprio, sempre com o horário do servidor.
+        match /slowmode/{uid} {
+          allow read: if signedIn() && isSelf(uid);
+          allow create, update: if signedIn() && isSelf(uid) && isServerMember(serverId)
+            && request.resource.data.keys().hasOnly(['lastAt'])
+            && request.resource.data.lastAt == request.time;
         }
 
         match /voicePresence/{uid} {
@@ -480,6 +530,34 @@ service cloud.firestore {
             allow read, write: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
           }
         }
+      }
+
+      // Eventos agendados: qualquer membro lê e marca "tenho interesse" (só o campo interestedUids);
+      // criar/editar/apagar é de quem gerencia o servidor (o criador também apaga o seu).
+      match /events/{eventId} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow create: if signedIn() && isServerMember(serverId) && canManageServerInfoRule(serverId)
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 60
+          && request.resource.data.get('description', '') is string && request.resource.data.get('description', '').size() <= 300
+          && request.resource.data.startsAt is timestamp
+          && request.resource.data.get('interestedUids', []) == [];
+        allow update: if signedIn() && isServerMember(serverId)
+          && (canManageServerInfoRule(serverId)
+              || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['interestedUids'])
+                  && request.resource.data.interestedUids is list
+                  && request.resource.data.interestedUids.size() <= 5000
+                  // só entra ou sai o PRÓPRIO uid, de um em um
+                  && ((request.resource.data.interestedUids.hasAll(resource.data.interestedUids)
+                       && request.resource.data.interestedUids.size() == resource.data.interestedUids.size() + 1
+                       && request.resource.data.interestedUids.hasAny([request.auth.uid])
+                       && !resource.data.interestedUids.hasAny([request.auth.uid]))
+                      || (resource.data.interestedUids.hasAll(request.resource.data.interestedUids)
+                          && request.resource.data.interestedUids.size() == resource.data.interestedUids.size() - 1
+                          && resource.data.interestedUids.hasAny([request.auth.uid])
+                          && !request.resource.data.interestedUids.hasAny([request.auth.uid])))));
+        allow delete: if signedIn() && isServerMember(serverId)
+          && (canManageServerInfoRule(serverId) || resource.data.createdBy == request.auth.uid);
       }
 
       match /members/{uid} {
@@ -554,17 +632,41 @@ service cloud.firestore {
       }
     }
 
+    // Denúncias: qualquer usuário cria a sua (como ele mesmo, status 'open'); só o autor,
+    // admins do app e quem pode banir no servidor da denúncia leem; só moderação muda o status.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.targetUid is string && request.resource.data.targetUid != request.auth.uid
+        && request.resource.data.kind in ['user', 'message']
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 30
+        && request.resource.data.get('details', '').size() <= 300
+        && request.resource.data.get('snippet', '').size() <= 300
+        && request.resource.data.get('targetName', '').size() <= 60
+        && request.resource.data.status == 'open';
+      allow read: if signedIn() && (resource.data.reporterId == request.auth.uid || isAdminUser()
+        || (resource.data.get('serverId', null) != null && canKickMembers(resource.data.serverId)));
+      allow update: if signedIn() && (isAdminUser()
+          || (resource.data.get('serverId', null) != null && canKickMembers(resource.data.serverId)))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resolvedBy', 'resolvedAt']);
+      allow delete: if isAdminUser();
+    }
+
     // ---------- Emojis personalizados (biblioteca compartilhada) ----------
     // Cada emoji é do criador (uploaderId). Leitura é aberta porque a imagem precisa
     // aparecer nas mensagens de quem tem acesso; quem PODE USAR é decidido por
     // allowedUserIds, que só o criador altera (ao aceitar um pedido).
     match /customEmojis/{emojiId} {
       allow read: if signedIn();
+      // Emoji de servidor (campo serverId): só quem gerencia aquele servidor cria; todo membro pode usar.
       allow create: if signedIn() && request.resource.data.uploaderId == request.auth.uid
-        && request.resource.data.get('allowedUserIds', []) == [];
+        && request.resource.data.get('allowedUserIds', []) == []
+        && (request.resource.data.get('serverId', null) == null
+            || (isServerMember(request.resource.data.serverId) && canManageServerInfoRule(request.resource.data.serverId)));
       allow update: if signedIn() && resource.data.uploaderId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['allowedUserIds']);
-      allow delete: if signedIn() && resource.data.uploaderId == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.uploaderId == request.auth.uid
+        || (resource.data.get('serverId', null) != null && canManageServerInfoRule(resource.data.serverId)));
     }
 
     // Pedidos de acesso a emojis de outras pessoas. Quem pede cria (status 'pending');

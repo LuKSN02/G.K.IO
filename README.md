@@ -137,7 +137,7 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 - **Aba Moderação:** lista de banidos (com "Desbanir") e **log de auditoria** (expulsões, banimentos, castigos, cargos, canais, modo lento, mensagens apagadas por moderador). O log só acrescenta e lê — ninguém edita nem apaga.
 
 > **Importante:** publique o `firestore.rules` atualizado (Firestore > Regras > Publicar). É ele que barra banidos de voltar e mensagens durante o castigo.
-> O **modo lento** é aplicado pelo app (composer): um cliente adulterado consegue burlá-lo. O **castigo** e o **banimento** são garantidos pelas regras do Firestore.
+> O **modo lento**, o **castigo** e o **banimento** são garantidos pelas regras do Firestore (o modo lento usa um carimbo `slowmode/{uid}` gravado junto com cada mensagem). Limite: um cliente adulterado ainda consegue mandar várias mensagens num único lote.
 
 ## Convites e entrada (v1.5.0)
 - **Convites com validade e limite de usos** (aba Convites): validade de 30 min a 7 dias (ou nunca) e limite de 1 a 100 usos (ou sem limite). A lista mostra usos, prazo e quem criou; dá para **revogar**. Quem só é membro vê apenas os próprios convites; quem gerencia o servidor vê todos.
@@ -170,3 +170,23 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 - **Tópicos (threads):** botão de balão na mensagem abre o tópico com respostas ao vivo; a mensagem-mãe mostra "N respostas". Funciona em canais, DMs e grupos.
 
 > **Importante:** publique o `firestore.rules` atualizado (Firestore > Regras > Publicar). Antes, copie as regras atuais para um arquivo, caso precise voltar atrás. As regras novas **não foram testadas no emulador do Firestore** — teste com duas contas: (a) canal privado: quem não tem o cargo não lê; (b) grupo: criar, sair, dono removendo alguém; (c) tópico: responder e apagar resposta.
+
+## Infra (v1.7.0)
+- **PWA:** `manifest.json` ligado ao `index.html` e `sw.js` registrado no navegador (não no app de PC nem no APK). O app pode ser instalado pelo navegador e o shell abre offline; mensagens continuam exigindo internet. Ao mudar arquivos do app, aumente `VERSION` em `sw.js`.
+- **App de PC:** workflow `.github/workflows/release-desktop.yml` — suba a versão em `desktop/package.json` e crie a tag `vX.Y.Z` para gerar e publicar os instaladores (e o auto-update).
+- **GIPHY:** a chave padrão é a pública de demonstração. Use a sua: `localStorage.setItem('gkio-giphy-key', 'SUA_CHAVE')` e recarregue, ou troque `DEFAULT_KEY` em `js/gif-config.js`.
+- **Render das mensagens:** linhas que não mudaram são reaproveitadas entre snapshots (menos trabalho em canais movimentados).
+- Removidos `app.css` e `tokens.css` da raiz: não eram usados (o app carrega `css/`).
+- **APK:** a chave `mobile/keystore/debug.keystore` mantém as atualizações funcionando entre amigos, mas não serve para a Play Store.
+
+## Voz, servidor, chat e técnico (v1.8.0)
+- **Voz e vídeo:** volume por pessoa (clique direito no participante; até 200%), **supressão de ruído** do navegador ou por IA (RNNoise, normal/forte), **efeitos de câmera** (desfoque, brilho, P&B etc. — o desfoque é de borda/centro, sem segmentação por IA), tela em 1080p/60 e "ultra", **soundboard** (sons prontos + sons próprios de até 6 s, enviados ao Cloudinary) e **atividades** na chamada (dados, cara ou coroa, jogo da velha) sincronizadas pelo canal de dados do LiveKit.
+- **Servidor:** tópico do canal, canais de anúncio (só quem tem permissão publica), reordenar canais, **regras do servidor com aceite obrigatório** (onboarding), **eventos agendados** e **emojis do servidor**.
+- **Chat:** prévia de links e imagens (liga/desliga em Aparência), figurinhas (emojis grandes + suas próprias), encaminhar mensagem, marcar como não lida, **denunciar** mensagem/usuário (painel em Administração e em Moderação do servidor) e **verificação em duas etapas** (app autenticador).
+- **Técnico:** PWA, regras de canais privados, modo lento validado nas regras, importmap/`sw.js` com versão nova para evitar cache velho.
+
+> **Antes de publicar:**
+> 1. Publique o `firestore.rules` (novas regras: `reports`, regras do servidor, eventos, emojis do servidor, grupos/tópicos). **Não foram testadas no emulador do Firestore** — teste com duas contas.
+> 2. **2FA (TOTP)** exige Identity Platform (plano Blaze) ativado no Firebase Auth. Sem isso o cartão avisa que não é suportado e o login segue normal.
+> 3. **Prévia de links** precisa de um endpoint: publique `js/preview-server.js` como Cloudflare Worker e coloque a URL em `js/preview-config.js`. Sem endpoint, só imagens e YouTube ganham prévia.
+> 4. Figurinhas e sons próprios usam o upload do Cloudinary já configurado.

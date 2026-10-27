@@ -24,6 +24,7 @@ const ICONS = {
   check:        { path: '<path d="M5 12.5l4.5 4.5L19 7"/>' },
   plus:         { path: '<path d="M12 5v14M5 12h14"/>' },
   chevronDown:  { path: '<path d="M5 9l7 7 7-7"/>' },
+  chevronUp:    { path: '<path d="M5 15l7-7 7 7"/>' },
   chevronLeft:  { path: '<path d="M15 5l-7 7 7 7"/>' },
   externalLink: { path: '<path d="M14 4h6v6M20 4L10 14M9 6H5a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4"/>' },
   expand:       { path: '<path d="M4 14v6h6M20 10V4h-6M14 10l6-6M4 20l6-6"/>' },

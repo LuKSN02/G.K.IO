@@ -9,6 +9,7 @@ import { uploadToCloudinary } from './cloudinary.js';
 import { openSettingsModal } from './settings.js';
 import { icon } from './icons.js';
 import { isBlocked, toggleBlock } from './blocks.js';
+import { openReportModal } from './reports.js';
 import { confirmDangerAction } from './dialogs.js';
 import { refreshTopbarProfile } from './topbar.js';
 
@@ -196,6 +197,10 @@ export async function openProfileCard(uid) {
           confirmDangerAction('Bloquear usuário?', `Você não verá as mensagens de "${user.displayName || user.username}", não receberá avisos dela e a amizade será desfeita. Dá para desbloquear em Configurações > Conta.`, doToggle, { confirmLabel: 'Bloquear', iconName: 'block' });
         },
       }, [icon('block', { size: 16 })]),
+      el('button', {
+        class: 'gk-btn gk-btn-ghost', type: 'button', title: 'Denunciar usuário', 'aria-label': 'Denunciar usuário',
+        onclick: () => { overlay.classList.remove('gk-open'); openReportModal({ kind: 'user', targetUid: uid, targetName: user.displayName || user.username }); },
+      }, [icon('shield', { size: 16 })]),
     ]));
   } else {
     body.appendChild(el('div', { class: 'gk-profile-actions' }, [

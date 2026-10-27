@@ -23,6 +23,8 @@ import { confirmDangerAction } from './dialogs.js';
 import { openModerateModal, canModerateTarget, isTimedOut, getTimeoutUntilMs, listBans, unbanMember } from './moderation.js';
 import { loadAuditLog, describeAudit } from './audit.js';
 import { formatLong } from './message-utils.js';
+import { buildReportsCard } from './reports.js';
+import { setChannelTopic, setChannelAnnouncement, moveChannel, moveCategory, renderRegrasSection, renderEmojisSection, TOPIC_MAX } from './server-extras.js';
 
 let activeSection = 'geral';
 let currentServerId = null;
@@ -38,6 +40,8 @@ function sections(serverId) {
   }
   list.push({ id: 'convites', label: 'Convites', icon: 'link' });
   if (canManageServerInfo(serverId)) list.push({ id: 'boasvindas', label: 'Boas-vindas', icon: 'emojiSmile' });
+  if (canManageServerInfo(serverId)) list.push({ id: 'regras', label: 'Regras', icon: 'shield' });
+  if (canManageServerInfo(serverId)) list.push({ id: 'emojis', label: 'Emojis', icon: 'emojiSmile' });
   return list;
 }
 
@@ -85,6 +89,8 @@ function renderSection() {
   if (activeSection === 'moderacao') return renderModeracaoSection(content);
   if (activeSection === 'boasvindas') return renderBoasVindasSection(content);
   if (activeSection === 'convites') return renderConvitesSection(content);
+  if (activeSection === 'regras') return renderRegrasSection(content, sectionHeader);
+  if (activeSection === 'emojis') return renderEmojisSection(content, sectionHeader);
 }
 
 function sectionHeader(title, sub) {
@@ -195,16 +201,16 @@ function iconBtn(iconName, title, onclick, { danger = false, size = 14 } = {}) {
 
 // Campo "fantasma": parece texto até passar o mouse/focar. Salva ao dar Enter
 // ou ao sair do campo; Esc desfaz.
-function ghostInput(value, { onCommit, cls = '', maxlength = '60' } = {}) {
+function ghostInput(value, { onCommit, cls = '', maxlength = '60', placeholder = '', allowEmpty = false } = {}) {
   let saved = value;
-  const input = el('input', { type: 'text', value, maxlength, class: 'gk-sv-ghost ' + cls, spellcheck: 'false' });
+  const input = el('input', { type: 'text', value, maxlength, class: 'gk-sv-ghost ' + cls, spellcheck: 'false', ...(placeholder ? { placeholder, 'aria-label': placeholder } : {}) });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
     if (e.key === 'Escape') { input.value = saved; input.blur(); }
   });
   input.addEventListener('blur', async () => {
     const v = input.value.trim();
-    if (!v) { input.value = saved; return; }
+    if (!v && !allowEmpty) { input.value = saved; return; }
     if (v === saved) return;
     try { await onCommit(v); saved = v; input.value = v; }
     catch (err) { input.value = saved; toast(err.message || 'Não foi possível salvar.', 'danger'); }
@@ -253,6 +259,22 @@ function nsfwPill(serverId, ch) {
     } catch (err) {
       toast('Não foi possível alterar: ' + (err.message || err), 'danger');
     } finally { btn.disabled = false; }
+  });
+  return btn;
+}
+
+function announcementPill(serverId, ch) {
+  let on = !!ch.announcement;
+  const btn = el('button', { type: 'button', class: 'gk-sv-pill' }, 'Anúncios');
+  const paint = () => {
+    btn.classList.toggle('gk-on', on); btn.setAttribute('aria-pressed', String(on));
+    btn.title = on ? 'Canal de anúncios: só quem gerencia canais publica. Clique para desligar.' : 'Transformar em canal de anúncios (só quem gerencia canais publica)';
+  };
+  paint();
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation(); btn.disabled = true;
+    try { await setChannelAnnouncement(serverId, ch.id, !on); on = !on; paint(); toast(on ? 'Agora é um canal de anúncios.' : 'Canal voltou a ser comum.'); }
+    catch (err) { toast('Não foi possível alterar o canal.', 'danger'); } finally { btn.disabled = false; }
   });
   return btn;
 }
@@ -318,6 +340,8 @@ function renderCanaisSection(content) {
         onCommit: async (v) => { await renameCategory(serverId, cat.id, v); toast('Categoria renomeada.'); },
       }),
       el('span', { class: 'gk-sv-count' }, `${catChannels.length} ${catChannels.length === 1 ? 'canal' : 'canais'}`),
+      iconBtn('chevronUp', 'Subir categoria', () => moveCategory(serverId, cat.id, -1).catch(() => toast('Não foi possível reordenar.', 'danger'))),
+      iconBtn('chevronDown', 'Descer categoria', () => moveCategory(serverId, cat.id, +1).catch(() => toast('Não foi possível reordenar.', 'danger'))),
       iconBtn('trash', 'Excluir categoria', () => confirmDangerAction(
         'Excluir categoria', `Excluir a categoria "${cat.name}"?`,
         async () => { await deleteCategory(serverId, cat.id); toast('Categoria excluída.'); },
@@ -334,8 +358,17 @@ function renderCanaisSection(content) {
           onCommit: async (v) => { await renameChannel(serverId, ch.id, v); toast('Canal renomeado.'); },
         }),
       ]);
+      if (isText) {
+        row.appendChild(ghostInput(ch.topic || '', {
+          cls: 'gk-sv-ch-topic', maxlength: String(TOPIC_MAX), placeholder: 'tópico do canal', allowEmpty: true,
+          onCommit: async (v) => { await setChannelTopic(serverId, ch.id, v); toast('Tópico atualizado.'); },
+        }));
+      }
       if (isText) row.appendChild(slowmodeSelect(serverId, ch));
+      if (isText) row.appendChild(announcementPill(serverId, ch));
       if (isText) row.appendChild(nsfwPill(serverId, ch));
+      row.appendChild(iconBtn('chevronUp', 'Subir canal', () => moveChannel(serverId, ch.id, -1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
+      row.appendChild(iconBtn('chevronDown', 'Descer canal', () => moveChannel(serverId, ch.id, +1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
       row.appendChild(iconBtn('lock', 'Permissões do canal (por cargo)', () => openChannelPermissionsModal(serverId, ch)));
       row.appendChild(iconBtn('trash', 'Excluir canal', () => confirmDangerAction(
         'Excluir canal', `Excluir o canal "#${ch.name}"? As mensagens desse canal deixam de ser acessíveis.`,
@@ -620,6 +653,9 @@ function renderModeracaoSection(content) {
   const serverId = currentServerId;
   content.appendChild(sectionHeader('Moderação', 'Quem está banido e o histórico das ações de quem modera o servidor.'));
   const stillHere = () => content.isConnected && activeSection === 'moderacao' && currentServerId === serverId;
+
+  // ----- Denúncias feitas neste servidor (quem pode banir enxerga) -----
+  if (canKickMembers(serverId)) content.appendChild(buildReportsCard({ serverId }));
 
   // ----- Banidos (só quem pode banir enxerga) -----
   if (canKickMembers(serverId)) {

@@ -7,6 +7,9 @@ import { db, doc, userDoc, usersCol, socialLinksCol, updateDoc, getDoc, getDocs,
 import { state, el, toast, fallbackAvatar, normalizeUsername, PROFILE_EFFECTS, NAMEPLATES, activeCustomStatus, hexToRgba } from './state.js';
 import { SOCIAL_ICONS, BADGE_CATALOG, refreshMiniProfile, uploadProfileImage, applyWallpaper } from './profile.js';
 import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from './theme.js';
+import { VIDEO_EFFECTS } from './voice-fx.js';
+import { linkPreviewsEnabled, setLinkPreviews } from './link-preview.js';
+import { buildReportsCard } from './reports.js';
 import { getMediaPrefs, setMediaPrefs, SCREEN_QUALITIES, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
 import { openImageCropper } from './cropper.js';
@@ -465,12 +468,36 @@ async function renderAudioVideoSection(content) {
     } catch (e) { toast('Não foi possível acessar a câmera.', 'danger'); }
   });
 
+  // Supressão de ruído: navegador (padrão) ou IA (RNNoise, roda no seu aparelho).
+  const noiseSelect = el('select', { class: 'gk-select', 'aria-label': 'Modo de supressão de ruído' }, [
+    el('option', { value: 'browser' }, 'Navegador (padrão)'),
+    el('option', { value: 'ai' }, 'IA — padrão (RNNoise)'),
+    el('option', { value: 'ai-strong' }, 'IA — forte (corta tudo que não é voz)'),
+    el('option', { value: 'off' }, 'Desligada'),
+  ]);
+  noiseSelect.value = mediaPrefs.noiseMode === 'ai' ? (mediaPrefs.aiStrength === 'strong' ? 'ai-strong' : 'ai') : (mediaPrefs.noiseMode || 'browser');
+  noiseSelect.addEventListener('change', () => {
+    const v = noiseSelect.value;
+    setMediaPrefs(v === 'ai' ? { noiseMode: 'ai', aiStrength: 'standard' } : v === 'ai-strong' ? { noiseMode: 'ai', aiStrength: 'strong' } : { noiseMode: v });
+  });
+  const noiseModeField = el('div', { class: 'gk-field' }, [
+    el('label', {}, 'Supressão de ruído'), noiseSelect,
+    el('div', { class: 'gk-hint' }, 'A IA remove teclado, ventilador e ruídos de fundo no seu aparelho (adiciona ~10 ms). Vale na hora, mesmo em chamada.'),
+  ]);
+
+  // Efeitos da câmera (valem ao ligar a câmera e mudam ao vivo durante a chamada).
+  const fxSelect = el('select', { class: 'gk-select', 'aria-label': 'Efeito da câmera' },
+    VIDEO_EFFECTS.map((f) => el('option', { value: f.id }, f.label)));
+  fxSelect.value = VIDEO_EFFECTS.some((f) => f.id === mediaPrefs.videoFx) ? mediaPrefs.videoFx : 'none';
+  fxSelect.addEventListener('change', () => setMediaPrefs({ videoFx: fxSelect.value }));
+
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Entrada de áudio'),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Microfone'), micSelect]),
     el('div', { class: 'gk-field' }, [meterBox, micTestBtn]),
     toggleRow('Cancelamento de eco', mediaPrefs.echoCancellation, (v) => setMediaPrefs({ echoCancellation: v })),
-    toggleRow('Supressão de ruído', mediaPrefs.noiseSuppression, (v) => setMediaPrefs({ noiseSuppression: v })),
+    noiseModeField,
+    toggleRow('Supressão de ruído do navegador', mediaPrefs.noiseSuppression, (v) => setMediaPrefs({ noiseSuppression: v })),
     toggleRow('Controle automático de ganho', mediaPrefs.autoGainControl, (v) => setMediaPrefs({ autoGainControl: v })),
   ]));
 
@@ -483,6 +510,10 @@ async function renderAudioVideoSection(content) {
     el('div', { class: 'gk-settings-card-title' }, 'Câmera'),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Dispositivo de vídeo'), camSelect]),
     el('div', { class: 'gk-field' }, [camPreview, camTestBtn]),
+    el('div', { class: 'gk-field' }, [
+      el('label', {}, 'Efeito da câmera'), fxSelect,
+      el('div', { class: 'gk-hint' }, '"Desfocar fundo" mantém o centro do quadro nítido e desfoca as laterais (sem IA: fique no centro).'),
+    ]),
   ]));
 
   // Qualidade da transmissão de tela: se trava, escolha "Fluida".
@@ -589,6 +620,10 @@ async function renderAparenciaSection(content) {
   content.appendChild(buildCustomAccentCard(() => renderSection()));
   content.appendChild(buildReadingCard());
   content.appendChild(buildSurfaceCard());
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Mensagens'),
+    toggleRow('Mostrar prévia de links e imagens', linkPreviewsEnabled(), (v) => setLinkPreviews(v)),
+  ]));
   content.appendChild(buildWallpaperCard());
   content.appendChild(buildZoomCard());
   const desktopCard = await buildDesktopCard();
@@ -818,6 +853,7 @@ function renderAdminSection(content) {
     el('div', { class: 'gk-field-row' }, [searchInput, searchBtn]),
   ]));
   content.appendChild(resultBox);
+  content.appendChild(buildReportsCard({ canDelete: true }));
 
   async function doSearch() {
     const username = searchInput.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');

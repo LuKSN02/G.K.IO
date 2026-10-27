@@ -42,6 +42,7 @@ export function listenReadStates() {
 // conversa (canal ou DM) — grava/atualiza o timestamp de leitura dela.
 export async function markConversationRead(conversationId) {
   if (!conversationId || !auth.currentUser) return;
+  if (held.has(conversationId)) return; // "marcar como não lida": não volta a marcar enquanto você está nela
   try {
     await setDoc(readStateDoc(auth.currentUser.uid, conversationId), {
       uid: auth.currentUser.uid,
@@ -50,6 +51,24 @@ export async function markConversationRead(conversationId) {
     }, { merge: true });
   } catch (e) { /* não é crítico — pior caso, o badge de não lida demora a sumir */ }
 }
+
+// ----- "Marcar como não lida" -----
+// Volta a marcação de leitura para logo antes da mensagem escolhida. Enquanto a conversa continuar
+// aberta ela não é marcada como lida de novo (senão desfaria na hora); ao abrir outra, o bloqueio solta.
+const held = new Set();
+export async function markConversationUnreadFrom(conversationId, millis) {
+  if (!conversationId || !auth.currentUser || !Number.isFinite(millis)) return false;
+  held.add(conversationId);
+  readAtByConversation.set(conversationId, millis - 1);
+  notify();
+  try {
+    await setDoc(readStateDoc(auth.currentUser.uid, conversationId), {
+      uid: auth.currentUser.uid, conversationId, lastReadAt: new Date(millis - 1),
+    }, { merge: true });
+    return true;
+  } catch (e) { held.delete(conversationId); return false; }
+}
+export function releaseUnreadHold() { held.clear(); }
 
 // Usada pela sidebar (dms.js/servers.js) pra decidir se mostra o indicador.
 export function isConversationUnread(conversationId, lastMessageAt, lastMessageAuthorId) {

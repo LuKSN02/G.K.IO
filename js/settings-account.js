@@ -13,6 +13,7 @@ import { state, el, toast, fallbackAvatar } from './state.js';
 import { icon } from './icons.js';
 import { blockedList, unblockUser, onBlocksChange } from './blocks.js';
 import { clearPushToken } from './push.js';
+import { listFactors, startEnrollment, finishEnrollment, removeFactor, mfaErrorMessage } from './mfa.js';
 import { stopBackgroundNotifications } from './background-notify.js';
 
 const MIN_PASSWORD = 8;
@@ -55,6 +56,44 @@ function runButton(label, iconName, handler, cls = 'gk-btn gk-btn-primary') {
     finally { btn.disabled = false; btn.classList.remove('gk-btn-loading'); }
   });
   return btn;
+}
+
+// ---------- Verificação em duas etapas (app autenticador) ----------
+function build2faCard() {
+  const body = el('div', {}, [el('div', { class: 'gk-hint' }, 'Carregando…')]);
+  const card = el('div', { class: 'gk-settings-card' }, [el('div', { class: 'gk-settings-card-title' }, [icon('shield', { size: 14 }), ' Verificação em duas etapas']), body]);
+  async function render() {
+    body.innerHTML = '';
+    let factors;
+    try { factors = await listFactors(); } catch (e) { body.appendChild(el('div', { class: 'gk-hint' }, mfaErrorMessage(e))); return; }
+    if (factors.length) {
+      body.appendChild(el('div', { class: 'gk-hint' }, 'Ligada: ao entrar, além da senha, você digita o código do seu app autenticador.'));
+      for (const f of factors) {
+        body.appendChild(el('div', { class: 'gk-field-row' }, [el('span', {}, f.name),
+          runButton('Desativar', 'trash', async () => { await removeFactor(f.uid); toast('Verificação em duas etapas desativada.'); render(); }, 'gk-btn')]));
+      }
+      return;
+    }
+    body.appendChild(el('div', { class: 'gk-hint' }, 'Proteja sua conta com um app autenticador (Google Authenticator, Authy, 1Password…).'));
+    body.appendChild(runButton('Ativar', 'shield', async () => {
+      const { secret, key, uri } = await startEnrollment();
+      body.innerHTML = '';
+      const qr = el('div', { class: 'gk-mfa-qr' });
+      import('https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm').then((m) => {
+        const make = m.default || m; const q = make(0, 'M'); q.addData(uri); q.make();
+        qr.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2 }); // SVG gerado pela biblioteca a partir de dados nossos
+      }).catch(() => { qr.textContent = 'Não foi possível desenhar o QR code — use a chave abaixo.'; });
+      const code = el('input', { type: 'text', inputmode: 'numeric', maxlength: '8', autocomplete: 'one-time-code', placeholder: '000000', 'aria-label': 'Código de 6 dígitos' });
+      body.appendChild(el('div', { class: 'gk-hint' }, '1. Escaneie o QR code no app (ou digite a chave). 2. Digite o código de 6 dígitos que o app mostrar.'));
+      body.appendChild(qr);
+      body.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Chave manual'), el('code', { class: 'gk-mono gk-sensitive' }, key)]));
+      body.appendChild(el('div', { class: 'gk-field-row' }, [code,
+        runButton('Confirmar', 'shield', async () => { await finishEnrollment(secret, code.value); toast('Verificação em duas etapas ativada!'); render(); }),
+        el('button', { class: 'gk-btn', type: 'button', onclick: render }, 'Cancelar')]));
+    }));
+  }
+  render();
+  return card;
 }
 
 export function renderAccountSection(content, { sectionHeader, toggleRow }) {
@@ -173,6 +212,8 @@ export function renderAccountSection(content, { sectionHeader, toggleRow }) {
   ]);
   const openBtn = el('button', { class: 'gk-btn gk-btn-danger', type: 'button' }, [icon('trash', { size: 15 }), ' Excluir conta…']);
   openBtn.addEventListener('click', () => { delBox.style.display = 'block'; openBtn.style.display = 'none'; });
+  content.appendChild(build2faCard());
+
   content.appendChild(el('div', { class: 'gk-settings-card gk-danger-zone' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Zona de perigo'),
     openBtn, delBox,

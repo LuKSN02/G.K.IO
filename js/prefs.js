@@ -10,6 +10,9 @@ const NOTIF_KEY = 'gkio-notif-prefs';
 const mediaDefaults = {
   micId: '', camId: '', speakerId: '',
   noiseSuppression: true, echoCancellation: true, autoGainControl: true,
+  // noiseMode: 'browser' (padrão do navegador) | 'ai' (RNNoise, ver voice-fx.js) | 'off'
+  noiseMode: 'browser', aiStrength: 'standard',
+  videoFx: 'none', // efeito da câmera (ver VIDEO_EFFECTS em voice-fx.js)
   screenQuality: 'fluid',
 };
 // No app de desktop (Electron) o aviso do sistema já vem ligado — é o que se espera de um app instalado.
@@ -45,6 +48,8 @@ export const SCREEN_QUALITIES = {
   fluid:    { label: 'Fluida — jogos e vídeos (720p, 30 fps)', width: 1280, height: 720,  fps: 30, bitrate: 2_500_000, hint: 'motion', degrade: 'maintain-framerate' },
   balanced: { label: 'Equilibrada (1080p, 30 fps)',            width: 1920, height: 1080, fps: 30, bitrate: 5_000_000, hint: 'motion', degrade: 'balanced' },
   sharp:    { label: 'Nítida — texto e slides (1080p, 15 fps)', width: 1920, height: 1080, fps: 15, bitrate: 3_000_000, hint: 'detail', degrade: 'maintain-resolution' },
+  hd60:     { label: 'Fluida 60 fps (720p, 60 fps) — jogos rápidos', width: 1280, height: 720,  fps: 60, bitrate: 4_500_000, hint: 'motion', degrade: 'maintain-framerate' },
+  ultra:    { label: 'Máxima (1080p, 60 fps) — exige PC e internet fortes', width: 1920, height: 1080, fps: 60, bitrate: 8_000_000, hint: 'motion', degrade: 'maintain-framerate' },
 };
 // Opções prontas para room.localParticipant.setScreenShareEnabled(true, { audio: true, ...capture }, publish)
 export function screenShareOptions() {
@@ -61,6 +66,7 @@ export function screenShareOptions() {
 export function setMediaPrefs(patch) {
   mediaPrefs = { ...mediaPrefs, ...patch };
   write(MEDIA_KEY, mediaPrefs);
+  window.dispatchEvent(new CustomEvent('gkio-media-prefs-changed', { detail: patch })); // a chamada em andamento reaplica ruído/efeito de vídeo
 }
 
 export function getNotifPrefs() { return { ...notifPrefs }; }

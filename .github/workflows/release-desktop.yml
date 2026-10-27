@@ -1,0 +1,51 @@
+# Gera os instaladores do app de PC (Windows, Linux, macOS) e publica na Release "latest",
+# que é de onde o electron-updater puxa as atualizações automáticas.
+#
+# Como lançar: aumente "version" em desktop/package.json, faça commit e crie a tag:
+#   git tag v1.7.0 && git push origin v1.7.0
+# (ou rode manualmente em Actions > "Gerar app de PC" > Run workflow).
+name: Gerar app de PC
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+          - os: ubuntu-latest
+            script: dist:linux
+          - os: macos-latest
+            script: dist:mac
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci || npm install
+
+      # --publish always: envia os instaladores (e o latest.yml do auto-update) para a Release da tag.
+      - name: Compilar e publicar
+        run: npx electron-builder --publish always ${{ matrix.script == 'dist:win' && '--win' || matrix.script == 'dist:linux' && '--linux' || '--mac' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS sem certificado: gera o .dmg sem assinar (o usuário confirma na primeira abertura).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

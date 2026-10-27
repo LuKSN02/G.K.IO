@@ -3,7 +3,7 @@
 // ============================================================
 import {
   auth,
-  channelMessagesCol, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc, attachmentsCol,
+  channelMessagesCol, addChannelMessage, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc, attachmentsCol,
   addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove,
   query, orderBy, limit, onSnapshot, serverTimestamp,
 } from './db.js';
@@ -13,10 +13,10 @@ import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
-import { renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates, lockedCustomEmojisIn, isCustomEmojiNameLocked } from './emoji.js';
+import { getCustomEmojiVersion, renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates, lockedCustomEmojisIn, isCustomEmojiNameLocked } from './emoji.js';
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
-import { markConversationRead } from './unread.js';
+import { markConversationRead, markConversationUnreadFrom, releaseUnreadHold } from './unread.js';
 import { messagePreview, extractMentionedUids, formatLong } from './message-utils.js';
 import { effectiveLevel, shouldAlert, refreshNotifButton, openNotifModal, onNotifPrefsChange } from './notify-prefs.js';
 import { openPinnedPanel } from './pins.js';
@@ -34,6 +34,11 @@ import { logAudit } from './audit.js';
 import { isBlocked, isRevealed, revealMessage, onBlocksChange } from './blocks.js';
 import { openMessageSearch } from './message-search.js';
 import { openThread, buildThreadLink } from './threads.js';
+import { channelSubtitle, rulesBlockReason } from './server-extras.js';
+import { attachLinkPreview } from './link-preview.js';
+import { buildStickerNode, cleanSticker } from './stickers.js';
+import { openForwardModal, canForward } from './forward.js';
+import { openReportModal } from './reports.js';
 
 let pendingFiles = []; // anexos escolhidos/colados e ainda não enviados (até MAX_ATTACHMENTS)
 const MAX_ATTACHMENTS = 10;
@@ -55,6 +60,20 @@ let lastRenderedConv = null; // a qual conversa pertence lastRenderedMessages (e
 // que acabou de chegar" (ganha animação de entrada) de "mensagem que já
 // estava aqui e só foi redesenhada porque alguém reagiu/editou".
 const renderedMessageIds = new Set();
+// Render incremental: cada mensagem desenhada fica guardada com uma "assinatura" dos dados
+// que a influenciam. Se nada mudou no próximo snapshot, a linha pronta é reaproveitada em vez
+// de refeita (antes, as 200 mensagens eram reconstruídas a cada reação/edição/chegada).
+const rowCache = new Map(); // msgId -> { sig, row }
+let rowCacheEpoch = 0; // sobe quando algo externo à mensagem muda (membros, bloqueios, canal)
+function rowSignature(msg, sameGroup, isEditingThis) {
+  const ts = msg.createdAt?.toMillis ? msg.createdAt.toMillis() : 0;
+  const ed = msg.editedAt?.toMillis ? msg.editedAt.toMillis() : (msg.editedAt ? 1 : 0);
+  return JSON.stringify([
+    msg, ts, ed, sameGroup, isEditingThis, rowCacheEpoch, getCustomEmojiVersion(),
+    state.user?.uid, canPinHere(), canModerateMessagesHere(),
+    state.currentServerId, state.currentChannelId, state.currentDmId,
+  ], (k, v) => (v && typeof v === 'object' && typeof v.toMillis === 'function' ? v.toMillis() : v));
+}
 // notifyIfNewIncomingMessage() já zera isFirstSnapshotForConversation antes
 // de renderMessages() rodar, então não dá pra usar aquela flag aqui: o
 // primeiro desenho da conversa animaria o histórico inteiro de uma vez.
@@ -70,6 +89,16 @@ function hideOverlayViews() {
   }
 }
 
+// Subtítulo do canal: tópico (ou "Canal de anúncios") + aviso de somente leitura.
+function topicSubtitle(serverId, channelId, readOnly) {
+  const ch = getCategoriesAndChannels().channels.find((c) => c.id === channelId);
+  return channelSubtitle(ch) + (readOnly ? ' · somente leitura para você' : '');
+}
+function refreshChannelSubtitle() {
+  if (!state.currentChannelId || state.currentDmId) return;
+  const el2 = document.getElementById('gk-topbar-subtitle');
+  if (el2 && !el2.classList.contains('gk-typing-label')) setBaseSubtitle(topicSubtitle(state.currentServerId, state.currentChannelId, composerReadOnly));
+}
 export function selectChannel(serverId, channelId, name, readOnly = false) {
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideOverlayViews();
@@ -81,7 +110,7 @@ export function selectChannel(serverId, channelId, name, readOnly = false) {
   currentChannelName = name;
   currentDmOtherUid = null;
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
-  setBaseSubtitle(readOnly ? 'Canal de texto · somente leitura para você' : 'Canal de texto');
+  setBaseSubtitle(topicSubtitle(serverId, channelId, readOnly));
   document.getElementById('gk-call-btn').style.display = 'none';
   applyComposerReadOnly(readOnly);
   showConversationButtons();
@@ -162,6 +191,8 @@ const fmtSecs = (n) => (n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` 
 
 // Motivo pelo qual NÃO dá para enviar agora (ou null).
 function sendBlockReason() {
+  const rb = rulesBlockReason();
+  if (rb) return rb;
   const t = timeoutRemainingMs();
   if (t > 0) return `Você está de castigo — falta ${formatLong(t)}.`;
   const s = slowmodeRemainingMs();
@@ -238,6 +269,7 @@ function refreshSidebarActiveState() {
 }
 
 function attachMessagesListener(colRef, conversationId) {
+  releaseUnreadHold(); // saiu da conversa anterior: ela volta a ser marcada como lida ao reabrir
   cleanupListener('messages');
   lastSeenMessageId = null;
   isFirstSnapshotForConversation = true;
@@ -249,6 +281,7 @@ function attachMessagesListener(colRef, conversationId) {
   lastRenderedMessages = [];
   lastRenderedConv = null;
   renderedMessageIds.clear();
+  rowCache.clear();
   hasRenderedConversationOnce = false;
   clearPendingFile(); // anexo escolhido e não enviado não "viaja" pra outra conversa
   closeMentionAutocomplete();
@@ -271,6 +304,18 @@ function attachMessagesListener(colRef, conversationId) {
   });
   state.unsubscribers.messages = unsub;
 }
+
+// ---------- Marcar como não lida / figurinhas ----------
+async function markUnreadHere(msg) {
+  const ms = msg.createdAt?.toMillis ? msg.createdAt.toMillis() : NaN;
+  const ok = await markConversationUnreadFrom(lastRenderedConv, ms);
+  toast(ok ? 'Marcada como não lida — o aviso aparece quando você sair desta conversa.' : 'Não foi possível marcar como não lida.', ok ? undefined : 'danger');
+}
+export async function sendSticker(sticker) {
+  const st = cleanSticker(sticker); if (!st) return false;
+  return buildCtx().postPayload({ sticker: st, content: '' }, { preview: 'Figurinha', dmPreview: '🏷️ Figurinha', skipIndex: true, errorMsg: 'Não foi possível enviar a figurinha.' });
+}
+window.addEventListener('gkio-send-sticker', (e) => { if (state.currentChannelId || state.currentDmId) sendSticker(e.detail); });
 
 // Referência do doc de uma mensagem na conversa atualmente aberta —
 // compartilhada entre edição (saveEditMessage) e reações (toggleReaction).
@@ -440,6 +485,18 @@ function renderMessages(messages, isNewIncoming = false) {
     const isOwn = msg.authorId === state.user?.uid;
     const isEditingThis = editingMessageId === msg.id;
 
+    // Linha idêntica à do último render: reaproveita os nós prontos (e deixa áudio/vídeo tocando).
+    const sig = rowSignature(msg, sameGroup, isEditingThis);
+    const cached = !isEditingThis && rowCache.get(msg.id);
+    if (cached && cached.sig === sig) {
+      renderedMessageIds.add(msg.id);
+      cached.row.classList.remove('gk-msg-new');
+      for (const n of cached.nodes) body.appendChild(n);
+      lastAuthor = msg.authorId;
+      lastTs = ts;
+      continue;
+    }
+
     const row = el('div', { class: 'gk-msg-row', 'data-msg-id': msg.id });
     // Mensagem que acabou de chegar entra com um leve fade; as que já
     // estavam na tela são redesenhadas sem animação nenhuma.
@@ -459,6 +516,7 @@ function renderMessages(messages, isNewIncoming = false) {
     } else {
       if (msg.pinned) row.appendChild(el('div', { class: 'gk-msg-pin-tag' }, [icon('pin', { size: 12 }), ' Fixada']));
       if (msg.replyTo) row.appendChild(buildReplyRef(msg.replyTo));
+      if (msg.forwarded?.name) row.appendChild(el('div', { class: 'gk-msg-forwarded' }, [icon('reply', { size: 12 }), ` Encaminhada de ${String(msg.forwarded.name).slice(0, 60)}`]));
       if (msg.content) {
         const classes = ['gk-msg-line'];
         if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
@@ -485,6 +543,22 @@ function renderMessages(messages, isNewIncoming = false) {
         class: 'gk-msg-action-btn', type: 'button', title: 'Abrir tópico',
         onclick: () => openThread(msg),
       }, [icon('chatBubble', { size: 14 })]));
+      if (canForward(msg)) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn', type: 'button', title: 'Encaminhar mensagem',
+          onclick: () => openForwardModal(msg),
+        }, [icon('send', { size: 14 })]));
+      }
+      actionButtons.push(el('button', {
+        class: 'gk-msg-action-btn', type: 'button', title: 'Marcar como não lida',
+        onclick: () => markUnreadHere(msg),
+      }, [icon('eye', { size: 14 })]));
+      if (!isOwn) {
+        actionButtons.push(el('button', {
+          class: 'gk-msg-action-btn gk-msg-action-danger', type: 'button', title: 'Denunciar mensagem',
+          onclick: () => openReportModal({ kind: 'message', msg, targetUid: msg.authorId, targetName: msg.authorName }),
+        }, [icon('shield', { size: 14 })]));
+      }
       if (msg.content) {
         actionButtons.push(el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Copiar texto',
@@ -527,18 +601,27 @@ function renderMessages(messages, isNewIncoming = false) {
     // reagir/editar/apagar ficavam inacessíveis. Fica visível mesmo
     // editando, pra dar pra ver o que está ganhando legenda.
     renderMessageAttachments(row, msg);
+    if (msg.sticker) { const st = buildStickerNode(msg.sticker); if (st) row.appendChild(st); }
+    if (!isEditingThis) attachLinkPreview(row, msg);
     if (msg.poll && !isEditingThis) row.appendChild(buildPollCard(msg, buildCtx()));
     body.appendChild(row);
 
+    const nodes = [row];
     if (!isEditingThis) {
       const reactionsBar = buildReactionsBar(msg);
-      if (reactionsBar) body.appendChild(reactionsBar);
+      if (reactionsBar) { body.appendChild(reactionsBar); nodes.push(reactionsBar); }
       const threadLink = buildThreadLink(msg);
-      if (threadLink) body.appendChild(threadLink);
+      if (threadLink) { body.appendChild(threadLink); nodes.push(threadLink); }
+      rowCache.set(msg.id, { sig, row, nodes });
     }
 
     lastAuthor = msg.authorId;
     lastTs = ts;
+  }
+
+  if (rowCache.size > messages.length + 50) {
+    const alive = new Set(messages.map((m) => m.id));
+    for (const id of [...rowCache.keys()]) if (!alive.has(id)) rowCache.delete(id);
   }
 
   if (wasAtBottom) {
@@ -1064,7 +1147,7 @@ async function postPayload(payload, { preview = '', dmPreview, skipIndex = false
     if (state.currentChannelId && state.currentServerId) {
       const serverId = state.currentServerId;
       const channelId = state.currentChannelId;
-      await addDoc(channelMessagesCol(serverId, channelId), payload);
+      await addChannelMessage(serverId, channelId, payload, currentSlowmodeSeconds());
       // Denormalizado no próprio canal — é o que a sidebar usa pra saber se
       // há mensagem "nova" ali (ver isConversationUnread em unread.js).
       const pointer = { lastMessageAt: serverTimestamp(), lastMessageAuthorId: uid };
@@ -1346,7 +1429,7 @@ export function autoResizeComposer() {
 export function wireComposer() {
   // Não dá para registrar isto no topo do módulo: servers.js e chat.js se importam
   // um ao outro, e onServerDataChange ainda não existiria nesse momento.
-  onServerDataChange(() => renderComposerNotice()); // canal/membro mudou (modo lento, castigo...)
+  onServerDataChange(() => { rowCacheEpoch++; renderComposerNotice(); refreshChannelSubtitle(); }); // canal/membro mudou (modo lento, castigo...)
   const textarea = document.getElementById('gk-composer-input');
   const sendBtn = document.getElementById('gk-send-btn');
   const fileInput = document.getElementById('gk-file-input');
@@ -1427,6 +1510,7 @@ export { getLoadedMessages, jumpToMessage };
 
 // Bloquear / desbloquear / "mostrar" uma mensagem recolhida: redesenha a conversa aberta.
 onBlocksChange(() => {
+  rowCacheEpoch++;
   if (lastRenderedConv && lastRenderedConv === (state.currentChannelId || state.currentDmId)) renderMessages(lastRenderedMessages);
   renderComposerNotice();
 });

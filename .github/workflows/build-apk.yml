@@ -85,6 +85,12 @@ jobs:
       # IMPORTANTE: um APK só atualiza por cima do anterior se for assinado com a
       # MESMA chave. Sem isto, cada execução geraria uma chave nova e o Android
       # recusaria a atualização ("conflito de assinatura").
+      #
+      # AVISO: esta é a chave debug do repositório (mobile/keystore/debug.keystore). Serve para
+      # distribuir entre amigos e manter as atualizações funcionando, mas NÃO é segura para a
+      # Play Store. Para publicar lá, gere uma chave sua (guardada fora do repositório), faça o
+      # build com assembleRelease e assine com ela. Atenção: trocar a chave faz o Android recusar
+      # atualizar por cima de um APK já instalado (quem tem o app terá de desinstalar).
       - name: Usar a chave de assinatura fixa
         run: |
           mkdir -p ~/.android

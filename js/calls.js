@@ -33,6 +33,8 @@ import {
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { getMediaPrefs, getHotkeyPrefs, screenShareOptions } from './prefs.js';
+import { applyMicProcessing, applyVideoFx, applyPersonVolume, openVolumePopover } from './voice-fx.js';
+import { initVoiceExtras, toggleExtrasPanel, resetVoiceExtras } from './voice-extras.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 import { icon, iconHtml } from './icons.js';
@@ -136,7 +138,8 @@ function captureDefaults() {
     audioCaptureDefaults: {
       deviceId: prefs.micId || undefined,
       echoCancellation: prefs.echoCancellation,
-      noiseSuppression: prefs.noiseSuppression,
+      // Com a IA (RNNoise) ligada, a do navegador sai de cena para não filtrar duas vezes.
+      noiseSuppression: prefs.noiseMode === 'browser' ? prefs.noiseSuppression : false,
       autoGainControl: prefs.autoGainControl,
     },
     videoCaptureDefaults: {
@@ -185,13 +188,17 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   }
 
   await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
+  await applyMicProcessing(room, Track, (m) => toast(m)); // supressão de ruído por IA, se escolhida
   // Push-to-talk ligado: entra com o microfone fechado até segurar a tecla.
   const hk = getHotkeyPrefs();
   if (hk.pttEnabled && hk.ptt) {
     await room.localParticipant.setMicrophoneEnabled(false, audioCaptureDefaults);
     updateMuteButtons(true);
   }
-  if (withVideo) await room.localParticipant.setCameraEnabled(true, videoCaptureDefaults);
+  if (withVideo) {
+    await room.localParticipant.setCameraEnabled(true, videoCaptureDefaults);
+    await applyVideoFx(room, Track, (m) => toast(m));
+  }
 
   const prefs = getMediaPrefs();
   if (prefs.speakerId && room.switchActiveDevice) {
@@ -238,6 +245,14 @@ function wireRoomEvents(r) {
     const speakingIds = new Set(speakers.map((p) => p.identity));
     const known = new Set([auth.currentUser.uid, ...Array.from(r.remoteParticipants.keys())]);
     known.forEach((uid) => setTileSpeaking(uid, speakingIds.has(uid)));
+  });
+  // Canal de dados (soundboard, dados, jogos): quem mandou vem da conexão, não do conteúdo.
+  r.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+    const fns = dataHandlers.get(topic);
+    if (!fns || !participant) return;
+    let msg = null;
+    try { if (payload.byteLength <= 4096) msg = JSON.parse(new TextDecoder().decode(payload)); } catch (e) { return; }
+    fns.forEach((fn) => { try { fn(msg, participant.identity); } catch (e) { console.warn('[chamada] handler de dados falhou', e); } });
   });
   r.on(RoomEvent.ParticipantConnected, (participant) => onParticipantJoined(participant));
   r.on(RoomEvent.ParticipantDisconnected, (participant) => onParticipantLeft(participant));
@@ -287,6 +302,7 @@ function handleTrackSubscribed(track, participant) {
       track.attach(audioEl);
     }
     audioEl.muted = isDeafened; // entra já mudo se a pessoa já estava ensurdecida
+    applyPersonVolume(audioEl, otherUid); // volume que você ajustou para essa pessoa
     // Reforço além do autoplay: se o navegador rejeitar o play() aqui
     // (autoplay bloqueado), o listener de AudioPlaybackStatusChanged em
     // wireRoomEvents entra em ação e pede um clique pra destravar.
@@ -540,6 +556,7 @@ export async function hangupCall() {
 }
 
 function endCall(disconnectRoom) {
+  resetVoiceExtras();
   stopCallAudioMode();
   if (disconnectRoom && room) { try { room.disconnect(); } catch (e) {} }
   room = null;
@@ -634,10 +651,13 @@ function renderVoiceMembersList(channelId, participantsMap) {
   if (!box) return;
   box.innerHTML = '';
   participantsMap.forEach((m, uid) => {
+    const isMe = uid === auth.currentUser?.uid;
     box.appendChild(el('div', {
       class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''),
       id: `gk-voice-member-${uid}`,
       'data-role': m.role || 'free',
+      title: isMe ? '' : 'Clique com o botão direito para ajustar o volume',
+      oncontextmenu: isMe ? null : (e) => { e.preventDefault(); openVolumePopover(e.currentTarget, uid, m.displayName || 'Membro'); },
     }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
       el('span', {}, m.displayName),
@@ -681,6 +701,10 @@ function renderParticipantsGridFromParticipants(participantsMap) {
       el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, [icon('micOff', { size: 13 })]),
       el('div', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
       isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
+      isSelf ? null : el('button', {
+        class: 'gk-call-tile-vol', type: 'button', title: 'Volume desta pessoa', 'aria-label': `Volume de ${data.displayName || 'Membro'}`,
+        onclick: (e) => { e.stopPropagation(); openVolumePopover(e.currentTarget, otherUid, data.displayName || 'Membro'); },
+      }, [icon('headphones', { size: 13 })]),
     ]);
     grid.appendChild(tile);
     if (cameraTrack) cameraTrack.attach(tile.querySelector('.gk-call-tile-video'));
@@ -1068,6 +1092,7 @@ async function toggleCameraInCall() {
   const next = !isSourceOn(room.localParticipant, Track.Source.Camera);
   try {
     await room.localParticipant.setCameraEnabled(next, captureDefaults().videoCaptureDefaults);
+    if (next) await applyVideoFx(room, Track, (m) => toast(m));
   } catch (e) {
     toast('Não foi possível acessar a câmera.', 'danger');
   }
@@ -1110,6 +1135,9 @@ export function wireCallBar() {
   document.getElementById('gk-call-bar-deafen-btn').addEventListener('click', toggleDeafen);
 
   document.getElementById('gk-call-camera-btn').addEventListener('click', toggleCameraInCall);
+  initVoiceExtras();
+  document.getElementById('gk-call-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
+  document.getElementById('gk-call-bar-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
 
   document.getElementById('gk-call-self-pip').addEventListener('click', () => {
     const v = document.getElementById('gk-call-self-video');
@@ -1136,11 +1164,45 @@ export function wireCallBar() {
   document.getElementById('gk-video-call-btn').addEventListener('click', () => startDmCall(true));
 }
 
+// Mudou ruído ou efeito de vídeo nas configurações com uma chamada aberta: reaplica na hora.
+window.addEventListener('gkio-media-prefs-changed', (e) => {
+  if (!room) return;
+  const d = e.detail || {};
+  if ('noiseMode' in d || 'aiStrength' in d) applyMicProcessing(room, Track, (m) => toast(m));
+  if ('videoFx' in d) applyVideoFx(room, Track, (m) => toast(m));
+});
+
+// ---------- Canal de dados da chamada (usado por voice-extras.js) ----------
+const dataHandlers = new Map(); // topic -> Set<fn(msg, fromUid)>
+export function onCallData(topic, fn) {
+  if (!dataHandlers.has(topic)) dataHandlers.set(topic, new Set());
+  dataHandlers.get(topic).add(fn);
+}
+export async function sendCallData(topic, obj) {
+  if (!room) return false;
+  try {
+    await room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify(obj)), { reliable: true, topic });
+    return true;
+  } catch (e) { toast('Não foi possível enviar para a chamada.', 'danger'); return false; }
+}
+export const isInCall = () => !!(room && state.activeCall);
+/** Quem está na chamada agora (você incluído): [{ uid, name }] */
+export function callParticipantList() {
+  if (!room) return [];
+  const names = state.activeCall?.participants;
+  const nm = (uid, p) => (names?.get?.(uid)?.displayName) || p?.name || 'Membro';
+  const me = auth.currentUser?.uid;
+  const list = [{ uid: me, name: 'Você' }];
+  room.remoteParticipants?.forEach?.((p, id) => list.push({ uid: p.identity || id, name: nm(p.identity || id, p) }));
+  return list;
+}
+
 export function hasActiveCall() { return !!(room && state.activeCall); }
 
 export async function setMicEnabled(next) {
   if (!room) return;
   await room.localParticipant.setMicrophoneEnabled(next, captureDefaults().audioCaptureDefaults);
+  if (next) await applyMicProcessing(room, Track, (m) => toast(m));
   updateMuteButtons(!next);
   if (state.activeCall && state.activeCall.kind === 'voiceChannel') setTileMuted(auth.currentUser.uid, !next);
   // Desmutar o microfone na mão enquanto ensurdecido também desliga o
