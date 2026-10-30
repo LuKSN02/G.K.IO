@@ -172,6 +172,9 @@ function wireStaticUI() {
   });
   document.getElementById('gk-create-server-btn').addEventListener('click', openCreateServerModal);
   document.getElementById('gk-join-server-btn').addEventListener('click', openJoinServerModal);
+  // Versão celular dos mesmos dois botões (ver .gk-server-picker-actions)
+  document.getElementById('gk-m-create-server-btn')?.addEventListener('click', openCreateServerModal);
+  document.getElementById('gk-m-join-server-btn')?.addEventListener('click', openJoinServerModal);
   document.getElementById('gk-dm-rail-item').addEventListener('click', goToDmsView);
   document.getElementById('gk-nav-home').addEventListener('click', goToHomeView);
   document.getElementById('gk-nav-servers').addEventListener('click', goToServerPickerView);

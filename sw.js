@@ -6,7 +6,7 @@
 // Nada de dados de conversa passa por aqui: Firestore e Cloudinary vão direto pra rede.
 // Para forçar todo mundo a baixar de novo, aumente VERSION.
 // ============================================================
-const VERSION = 'gkio-pwa-v1.8.0';
+const VERSION = 'gkio-pwa-v1.8.2';
 const CDN_HOSTS = ['www.gstatic.com', 'cdn.jsdelivr.net', 'unpkg.com', 'cdnjs.cloudflare.com'];
 
 self.addEventListener('install', (e) => {

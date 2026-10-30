@@ -25,6 +25,7 @@ import { loadAuditLog, describeAudit } from './audit.js';
 import { formatLong } from './message-utils.js';
 import { buildReportsCard } from './reports.js';
 import { setChannelTopic, setChannelAnnouncement, moveChannel, moveCategory, renderRegrasSection, renderEmojisSection, TOPIC_MAX } from './server-extras.js';
+import { initMobileSettings } from './settings-mobile.js';
 
 let activeSection = 'geral';
 let currentServerId = null;
@@ -45,6 +46,10 @@ function sections(serverId) {
   return list;
 }
 
+// Navegação lista → seção no celular (no desktop não faz nada; ver settings-mobile.js)
+let mobileSettings = null;
+const mobileNav = () => (mobileSettings ||= initMobileSettings('gk-server-settings-shell'));
+
 export function openServerSettingsModal(serverId) {
   currentServerId = serverId;
   const available = sections(serverId);
@@ -52,6 +57,7 @@ export function openServerSettingsModal(serverId) {
   document.getElementById('gk-server-settings-overlay').classList.add('gk-open');
   renderNav();
   renderSection();
+  mobileNav().showList(state.servers.get(serverId)?.name || 'Servidor'); // celular: começa na lista de seções
 }
 
 function closeServerSettingsModal() {
@@ -74,7 +80,7 @@ function renderNav() {
   for (const s of sections(currentServerId)) {
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
-      onclick: () => { activeSection = s.id; renderNav(); renderSection(); },
+      onclick: () => { activeSection = s.id; renderNav(); renderSection(); mobileNav().showDetail(s.label); },
     }, [el('span', { class: 'gk-settings-nav-icon' }, s.isText ? s.icon : [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
 }

@@ -16,6 +16,11 @@ import { openImageCropper } from './cropper.js';
 import { renderAccountSection } from './settings-account.js';
 import { buildCustomAccentCard, buildReadingCard, buildSurfaceCard, renderAccessibilitySection } from './settings-appearance.js';
 import { buildZoomCard, buildDesktopCard, buildHotkeysCard, buildIdleCard, renderExtensionsSection } from './settings-extras.js';
+import { initMobileSettings } from './settings-mobile.js';
+
+// Navegação lista → seção no celular (no desktop não faz nada; ver settings-mobile.js)
+let mobileSettings = null;
+const mobileNav = () => (mobileSettings ||= initMobileSettings('gk-settings-shell'));
 
 const SECTIONS = [
   { id: 'perfil', label: 'Perfil', icon: 'user' },
@@ -50,12 +55,14 @@ export function openSettingsModal(section = 'perfil') {
   const overlay = document.getElementById('gk-settings-overlay');
   renderNav();
   renderSection();
+  mobileNav().showList('Configurações'); // celular: começa na lista de seções
   overlay.classList.add('gk-open');
 }
 
 function closeSettingsModal() {
   stopMicTest();
   stopCamTest();
+  mobileNav().showList('Configurações'); // volta à lista caso o celular reabra
   document.getElementById('gk-settings-overlay').classList.remove('gk-open');
 }
 
@@ -73,7 +80,7 @@ function renderNav() {
   for (const s of visibleSections()) {
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
-      onclick: () => { stopMicTest(); stopCamTest(); activeSection = s.id; renderNav(); renderSection(); },
+      onclick: () => { stopMicTest(); stopCamTest(); activeSection = s.id; renderNav(); renderSection(); mobileNav().showDetail(s.label); },
     }, [el('span', { class: 'gk-settings-nav-icon' }, [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
   nav.appendChild(el('div', { class: 'gk-settings-nav-footer' }, [

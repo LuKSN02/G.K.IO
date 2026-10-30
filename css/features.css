@@ -209,7 +209,9 @@
 .gk-lp-desc{font-size:13px;opacity:.8;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .gk-lp-img{width:80px;height:80px;object-fit:cover;border-radius:6px;flex:none}
 .gk-link-img{display:block;max-width:min(400px,100%);max-height:320px;margin-top:6px;border-radius:8px;cursor:zoom-in}
-.gk-sticker{display:block;width:160px;height:160px;object-fit:contain;margin-top:4px}
+.gk-sticker{display:block;width:160px;height:160px;object-fit:contain;margin-top:4px;max-width:100%;overflow:hidden}
+/* A imagem da figurinha precisa ser limitada ao quadrado de 160px — sem isso ela aparecia no tamanho original do arquivo (gigante). */
+.gk-sticker img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;margin:0}
 .gk-sticker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;padding:8px;max-height:260px;overflow:auto}
 .gk-sticker-pick{padding:4px;border:0;border-radius:8px;background:transparent;cursor:pointer}
 .gk-sticker-pick:hover,.gk-sticker-pick:focus-visible{background:var(--gk-bg-hover,rgba(255,255,255,.1));outline:none}

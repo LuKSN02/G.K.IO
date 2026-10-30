@@ -3146,3 +3146,89 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 .gk-cs-quick { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .gk-cs-quick-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--gk-gray-100); background: var(--gk-surface-sunken); font-size: 17px; cursor: pointer; }
 .gk-cs-quick-btn:hover { background: var(--gk-accent-glow); }
+
+/* ============================================================
+   Adicionar servidor / entrar com convite no celular (≤ 900px)
+   O popover "Adicionar servidor" abria com z-index 50, atrás da barra de
+   abas (150) — "Entrar com convite" ficava escondido e impossível de tocar.
+   No celular os dois caminhos aparecem direto no rodapé da lista.
+   ============================================================ */
+.gk-server-picker-actions { display: none; }
+@media (max-width: 900px) {
+  .gk-server-picker-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gk-server-picker-actions .gk-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 0; min-height: 46px; padding: 8px 6px; font-size: 13px; line-height: 1.15; text-align: center;
+  }
+  .gk-server-picker-add .gk-server-menu-wrap, #gk-server-menu { display: none !important; }
+}
+
+/* ============================================================
+   Configurações no celular (≤ 900px) — ver js/settings-mobile.js
+   Navegação em dois níveis: lista de seções → conteúdo da seção.
+   Antes o menu lateral virava uma pilha vertical que tomava a tela inteira
+   (faltava trocar o flex-direction para linha) e o conteúdo ficava espremido.
+   ============================================================ */
+.gk-settings-mbar { display: none; }
+@media (max-width: 900px) {
+  .gk-settings-shell {
+    width: 100vw; max-width: none; height: 100vh; height: 100dvh; max-height: none;
+    border-radius: 0; flex-direction: column; animation: none;
+  }
+
+  /* Barra de título (com ← quando está dentro de uma seção) */
+  .gk-settings-mbar {
+    display: flex; align-items: center; flex-shrink: 0; box-sizing: border-box;
+    height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 58px 0 6px;
+    background: var(--gk-surface); border-bottom: 1px solid var(--gk-gray-100);
+  }
+  .gk-settings-mtitle {
+    min-width: 0; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--gk-font-display); font-weight: 700; font-size: 18px; color: var(--gk-gray-900);
+  }
+  .gk-settings-mback {
+    display: none; flex-shrink: 0; width: 44px; height: 44px; border: none; border-radius: 50%;
+    background: none; color: var(--gk-gray-700); align-items: center; justify-content: center;
+  }
+  .gk-settings-mback:active { background: var(--gk-gray-100); }
+  .gk-settings-shell[data-mview="detail"] .gk-settings-mback { display: inline-flex; }
+  .gk-settings-shell[data-mview="detail"] .gk-settings-mtitle { padding-left: 2px; }
+  .gk-settings-close {
+    z-index: 2; top: calc(8px + env(safe-area-inset-top)); right: 10px; width: 40px; height: 40px; font-size: 15px;
+  }
+
+  /* Nível 1: lista de seções em tela cheia */
+  .gk-settings-nav {
+    display: flex; flex-direction: column; gap: 2px; flex: 1; width: 100%; min-height: 0; box-sizing: border-box;
+    overflow-x: hidden; overflow-y: auto; border: none; background: var(--gk-surface);
+    padding: 8px 12px calc(16px + env(safe-area-inset-bottom));
+  }
+  .gk-settings-nav-title, .gk-settings-nav-footer { display: none; }
+  .gk-settings-nav-item, .gk-settings-nav-item.gk-active {
+    flex-shrink: 0; gap: 14px; margin: 0; padding: 12px; border-radius: var(--gk-radius-md);
+    font-size: 15.5px; font-weight: 500; color: var(--gk-gray-800); background: none;
+  }
+  .gk-settings-nav-item:active { background: var(--gk-gray-100); }
+  .gk-settings-nav-icon {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 36px; height: 36px; border-radius: 10px; background: var(--gk-accent-soft); color: var(--gk-accent-strong);
+  }
+  .gk-settings-nav-item::after { /* setinha › indicando que abre uma tela */
+    content: ''; flex-shrink: 0; margin-left: auto; width: 8px; height: 8px;
+    border-top: 2px solid currentColor; border-right: 2px solid currentColor; transform: rotate(45deg); opacity: .4;
+  }
+
+  /* Nível 2: conteúdo da seção (a lista some enquanto estiver aqui) */
+  .gk-settings-content {
+    display: none; flex: 1; min-height: 0; box-sizing: border-box;
+    padding: 18px 16px calc(28px + env(safe-area-inset-bottom)); overflow-x: hidden;
+  }
+  .gk-settings-shell[data-mview="detail"] .gk-settings-nav { display: none; }
+  .gk-settings-shell[data-mview="detail"] .gk-settings-content { display: block; }
+  .gk-settings-content img, .gk-settings-content video, .gk-settings-content canvas { max-width: 100%; }
+
+  /* Cabeçalho da seção: descrição embaixo (nas configs de servidor título e texto
+     eram irmãos e ficavam lado a lado); o título já está na barra de cima. */
+  .gk-settings-section-header { flex-direction: column; align-items: stretch; gap: 4px; margin-bottom: 16px; }
+  .gk-settings-section-header > h2 { display: none; }
+}

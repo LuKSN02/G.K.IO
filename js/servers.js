@@ -353,8 +353,20 @@ async function postWelcomeMessage(serverId, cfg) {
   }
 }
 
+// Aceita o código puro ("7F3KQ2LM") ou um texto colado com ele dentro
+// (link, "Convite: 7F3KQ2LM"…): pega o último "pedaço" alfanumérico.
+export function parseInviteCode(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const fromParam = s.match(/[?&](?:invite|convite|code)=([A-Za-z0-9]+)/i);
+  if (fromParam) return fromParam[1].toUpperCase();
+  const parts = s.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  return (parts[parts.length - 1] || '').toUpperCase();
+}
+
 export async function joinServerByInviteCode(code) {
-  code = code.trim().toUpperCase();
+  code = parseInviteCode(code);
+  if (!code) throw new Error('Cole o código do convite.');
   const snap = await getDoc(inviteDoc(code));
   if (!snap.exists()) throw new Error('Convite inválido ou expirado.');
   const inv = snap.data();
@@ -1415,27 +1427,36 @@ export function openJoinServerModal() {
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
-  const codeInput = el('input', { type: 'text', placeholder: 'Código do convite (ex: 7F3KQ2LM)' });
+  const codeInput = el('input', {
+    type: 'text', placeholder: 'Código do convite (ex: 7F3KQ2LM)',
+    autocomplete: 'off', autocapitalize: 'characters', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'go',
+  });
   const errorBox = el('div', { class: 'gk-error', style: 'display:none;' });
+  const joinBtn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button' }, 'Entrar');
+  const submit = async () => {
+    if (joinBtn.disabled) return;
+    errorBox.style.display = 'none';
+    joinBtn.disabled = true; joinBtn.textContent = 'Entrando…';
+    try {
+      const id = await joinServerByInviteCode(codeInput.value);
+      closeGenericModal();
+      selectServer(id);
+    } catch (err) {
+      errorBox.textContent = err.message || 'Não foi possível entrar com este convite.';
+      errorBox.style.display = 'block';
+      joinBtn.disabled = false; joinBtn.textContent = 'Entrar';
+    }
+  };
+  joinBtn.addEventListener('click', submit);
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
   modal.appendChild(el('h2', {}, 'Entrar em um servidor'));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Código de convite'), codeInput, errorBox]));
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
-    el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
-    el('button', {
-      class: 'gk-btn gk-btn-primary',
-      onclick: async () => {
-        try {
-          const id = await joinServerByInviteCode(codeInput.value);
-          closeGenericModal();
-          selectServer(id);
-        } catch (err) {
-          errorBox.textContent = err.message;
-          errorBox.style.display = 'block';
-        }
-      },
-    }, 'Entrar'),
+    el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', onclick: closeGenericModal }, 'Cancelar'),
+    joinBtn,
   ]));
   overlay.classList.add('gk-open');
+  setTimeout(() => codeInput.focus(), 50);
 }
 
 export async function openServerInviteModal(serverId) {
