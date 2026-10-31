@@ -25,15 +25,16 @@
 // passa a ser gerenciada pelo SDK do LiveKit, sem mais nenhuma troca
 // manual de offer/answer/ICE candidates.
 // ============================================================
-import { Room, RoomEvent, Track, LocalVideoTrack } from 'https://esm.sh/livekit-client@2';
+import { Room, RoomEvent, Track, LocalVideoTrack, ConnectionQuality } from 'https://esm.sh/livekit-client@2';
 import {
   auth, db, doc, addDoc, updateDoc, deleteDoc, getDoc,
   onSnapshot, query, where, serverTimestamp,
   callsCol, callDoc, userDoc,
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
-import { getMediaPrefs, getHotkeyPrefs, screenShareOptions } from './prefs.js';
-import { applyMicProcessing, applyVideoFx, applyPersonVolume, openVolumePopover } from './voice-fx.js';
+import { getMediaPrefs, setMediaPrefs, getHotkeyPrefs, screenShareOptions, SCREEN_QUALITIES } from './prefs.js';
+import { applyMicProcessing, applyVideoFx, applyPersonVolume, setPersonVolume, getPersonVolume, openVolumePopover, VIDEO_EFFECTS, videoFxSupported } from './voice-fx.js';
+import { CallStage, showRecordingModal, recordingSupported } from './call-stage.js';
 import { initVoiceExtras, toggleExtrasPanel, resetVoiceExtras } from './voice-extras.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
@@ -54,59 +55,167 @@ let callTimerInterval = null;
 let callStartedAt = null;
 
 // ============================================================
-// Zoom de vídeo (compartilhamento de tela / câmera) — clicar em
-// qualquer "janelinha" de transmissão dá um zoom nela em tela cheia,
-// igual o Discord faz ao clicar numa apresentação. Implementado como
-// um overlay independente (mesmo padrão do lightbox de imagens em
-// lightbox.js): o <video> do zoom só espelha o MediaStream do vídeo
-// de origem (um MediaStream alimenta vários <video> ao mesmo tempo
-// sem custo nem interrupção), então isso nunca mexe no attach/detach
-// de tracks nem interfere na chamada em si.
+// Palco da chamada (js/call-stage.js) — grade de tiles estilo GoLive:
+// rostos, câmeras e transmissões de tela, com foco, hiperfoco, zoom,
+// girar/espelhar, PiP, tela cheia, gravação, clip de 30 s e estatísticas.
+// O palco só desenha; aqui ficam os "ganchos" que falam com o LiveKit.
 // ============================================================
-let spotlightOverlayEl = null;
-let spotlightVideoEl = null;
-let spotlightLabelEl = null;
-let spotlightSourceEl = null; // <video> de origem atualmente em zoom
+let stage = null;
+const videoTracks = new Map();   // 'cam:uid' | 'scr:uid' -> Track de vídeo (LiveKit)
+const audioTracks = new Map();   // 'cam:uid' | 'scr:uid' -> Track de áudio (microfone / áudio da tela)
+const screenAudioEls = new Map(); // uid -> <audio> do áudio da tela compartilhada
+const statPrev = new Map();
 
-function buildVideoSpotlight() {
-  spotlightVideoEl = el('video', { class: 'gk-video-spotlight-video', autoplay: 'true', playsinline: 'true' });
-  spotlightLabelEl = el('div', { class: 'gk-video-spotlight-label' });
-  const closeBtn = el('button', {
-    class: 'gk-video-spotlight-close', title: 'Sair da tela cheia (Esc)',
-    onclick: (e) => { e.stopPropagation(); closeVideoSpotlight(); },
-  }, [icon('close', { size: 16 })]);
-  spotlightOverlayEl = el('div', { class: 'gk-video-spotlight-overlay', id: 'gk-video-spotlight-overlay' }, [
-    spotlightVideoEl, spotlightLabelEl, closeBtn,
-  ]);
-  spotlightOverlayEl.addEventListener('click', () => closeVideoSpotlight());
-  spotlightVideoEl.addEventListener('click', (e) => e.stopPropagation());
-  document.body.appendChild(spotlightOverlayEl);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && spotlightOverlayEl.classList.contains('gk-open')) closeVideoSpotlight();
+const volKey = (key) => (key.startsWith('scr:') ? `screen:${key.slice(4)}` : key.slice(4));
+function audioElFor(key) {
+  if (key.startsWith('scr:')) return screenAudioEls.get(key.slice(4)) || null;
+  const uid = key.slice(4);
+  return document.getElementById(`gk-voice-audio-${uid}`) || (state.activeCall?.remoteUid === uid ? document.getElementById('gk-remote-dm-audio') : null);
+}
+
+function ensureStage() {
+  if (stage) return stage;
+  const root = document.getElementById('gk-call-stage');
+  if (!root) return null;
+  stage = new CallStage(root, {
+    getVolume: (key) => getPersonVolume(volKey(key)),
+    setVolume: (key, pct) => setPersonVolume(volKey(key), pct, audioElFor(key)),
+    getStream: (key) => {
+      const tracks = [videoTracks.get(key), audioTracks.get(key)].filter(Boolean).map((t) => t.mediaStreamTrack).filter(Boolean);
+      return tracks.length ? new MediaStream(tracks) : null;
+    },
+    getStats: statsFor,
+    setWatching: (key, on) => setWatchingScreen(key.slice(4), on),
+    onError: (m) => toast(m, 'danger'),
+    onInfo: (m) => toast(m),
+    onRecordingNotice: () => sendCallData('gk-rec', { on: true }),
+    onLayout: () => syncDock(),
+  });
+  return stage;
+}
+function resetStage() {
+  videoTracks.clear(); audioTracks.clear(); statPrev.clear();
+  screenAudioEls.forEach((a) => { try { a.pause(); } catch (e) { /* ok */ } a.remove(); });
+  screenAudioEls.clear();
+  stage?.clear();
+}
+
+function setWatchingScreen(uid, on) {
+  const p = room?.remoteParticipants?.get(uid);
+  if (!p) return;
+  for (const pub of p.trackPublications.values()) {
+    if (pub.source === Track.Source.ScreenShare || pub.source === Track.Source.ScreenShareAudio) {
+      try { pub.setSubscribed(on); } catch (e) { /* ok */ }
+    }
+  }
+}
+
+// Estatísticas de um tile (a partir do RTCStatsReport da track, quando o SDK oferece).
+async function statsFor(key) {
+  const track = videoTracks.get(key);
+  if (!track?.getRTCStatsReport) return null;
+  const report = await track.getRTCStatsReport();
+  if (!report) return null;
+  let rtp = null; let pair = null; const codecs = new Map(); const cands = new Map();
+  report.forEach((r) => {
+    if ((r.type === 'inbound-rtp' || r.type === 'outbound-rtp') && (r.kind === 'video' || r.mediaType === 'video')) rtp = rtp || r;
+    else if (r.type === 'candidate-pair' && (r.nominated || r.state === 'succeeded') && r.currentRoundTripTime != null) pair = r;
+    else if (r.type === 'codec') codecs.set(r.id, r);
+    else if (r.type === 'local-candidate' || r.type === 'remote-candidate') cands.set(r.id, r);
+  });
+  if (!rtp) return null;
+  const bytes = rtp.bytesReceived ?? rtp.bytesSent ?? 0;
+  const now = performance.now();
+  const prev = statPrev.get(key);
+  statPrev.set(key, { bytes, now });
+  const kbps = prev && now > prev.now ? ((bytes - prev.bytes) * 8) / (now - prev.now) : null;
+  const lost = rtp.packetsLost ?? 0; const recv = rtp.packetsReceived ?? rtp.packetsSent ?? 0;
+  const lc = pair && cands.get(pair.localCandidateId); const rc = pair && cands.get(pair.remoteCandidateId);
+  const relayed = lc?.candidateType === 'relay' || rc?.candidateType === 'relay';
+  return {
+    fps: rtp.framesPerSecond ?? null,
+    kbps,
+    codec: codecs.get(rtp.codecId)?.mimeType?.replace('video/', '') || null,
+    lossPct: recv + lost > 0 ? (lost / (recv + lost)) * 100 : 0,
+    rttMs: pair?.currentRoundTripTime != null ? pair.currentRoundTripTime * 1000 : null,
+    route: pair ? (relayed ? 'Via relay (TURN/SFU)' : 'Direta') : null,
+  };
+}
+
+// ---- Mini-player: a transmissão em foco, flutuando quando a chamada está minimizada ----
+let dockKey = null;
+let dockTrack = null;
+function syncDock() {
+  const dock = document.getElementById('gkc-dock');
+  if (!dock) return;
+  const screenOpen = document.getElementById('gk-call-screen')?.classList.contains('gk-open');
+  const prim = (!screenOpen && state.activeCall) ? stage?.primaryStream() : null;
+  const track = prim ? videoTracks.get(prim.key) : null;
+  if (!prim || !track) {
+    if (dockTrack) { try { dockTrack.detach(document.getElementById('gkc-dock-video')); } catch (e) { /* ok */ } }
+    dockTrack = null; dockKey = null;
+    dock.classList.remove('gk-open');
+    return;
+  }
+  const v = document.getElementById('gkc-dock-video');
+  if (dockTrack !== track) {
+    if (dockTrack) { try { dockTrack.detach(v); } catch (e) { /* ok */ } }
+    track.attach(v); dockTrack = track; dockKey = prim.key;
+  }
+  document.getElementById('gkc-dock-label').textContent = prim.label || '';
+  dock.classList.add('gk-open');
+}
+function wireDock() {
+  const dock = document.getElementById('gkc-dock');
+  if (!dock || dock._wired) return;
+  dock._wired = true;
+  let drag = null;
+  dock.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const r = dock.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, x: e.clientX, y: e.clientY, moved: false };
+    dock.setPointerCapture(e.pointerId);
+  });
+  dock.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 5) drag.moved = true;
+    if (!drag.moved) return;
+    dock.style.left = `${Math.max(8, Math.min(window.innerWidth - dock.offsetWidth - 8, e.clientX - drag.dx))}px`;
+    dock.style.top = `${Math.max(8, Math.min(window.innerHeight - dock.offsetHeight - 8, e.clientY - drag.dy))}px`;
+    dock.style.right = 'auto'; dock.style.bottom = 'auto';
+  });
+  dock.addEventListener('pointerup', () => { const moved = drag?.moved; drag = null; if (!moved) expandCallScreen(); });
+  document.getElementById('gkc-dock-open')?.addEventListener('click', (e) => { e.stopPropagation(); expandCallScreen(); });
+}
+
+// Sincroniza TODAS as pessoas da sala no palco (nome, avatar, mic).
+function personInfo(participant, isSelf) {
+  let meta = {};
+  try { meta = participant.metadata ? JSON.parse(participant.metadata) : {}; } catch (e) { /* metadata malformado */ }
+  const peer = state.activeCall?.peer;
+  const fallbackName = isSelf ? (state.user?.displayName || state.user?.username) : (peer && peer.uid === participant.identity ? peer.displayName : null);
+  return {
+    name: meta.displayName || participant.name || fallbackName || 'Membro',
+    avatarUrl: meta.avatarUrl || (isSelf ? state.user?.avatarUrl : (peer && peer.uid === participant.identity ? peer.avatarUrl : '')) || '',
+    isSelf,
+    micMuted: !isSourceOn(participant, Track.Source.Microphone),
+  };
+}
+function syncStagePeople() {
+  if (!room || !ensureStage()) return;
+  const me = auth.currentUser.uid;
+  stage.upsertPerson(me, personInfo(room.localParticipant, true));
+  room.remoteParticipants.forEach((p) => {
+    stage.upsertPerson(p.identity, { ...personInfo(p, false), ringing: false });
+    stage.setStatusLine(p.identity, '');
   });
 }
-function openVideoSpotlight(sourceVideoEl, label) {
-  if (!sourceVideoEl || !sourceVideoEl.srcObject) return;
-  if (!spotlightOverlayEl) buildVideoSpotlight();
-  spotlightSourceEl = sourceVideoEl;
-  spotlightVideoEl.srcObject = sourceVideoEl.srcObject;
-  spotlightVideoEl.muted = sourceVideoEl.muted;
-  spotlightLabelEl.textContent = label || '';
-  spotlightOverlayEl.classList.add('gk-open');
-  spotlightVideoEl.play?.().catch(() => {});
-}
-function closeVideoSpotlight() {
-  if (!spotlightOverlayEl) return;
-  spotlightOverlayEl.classList.remove('gk-open');
-  spotlightVideoEl.srcObject = null;
-  spotlightSourceEl = null;
-}
-// Chamado sempre que uma "janelinha" some (parou de compartilhar,
-// desligou a câmera, saiu da sala) — se o vídeo em zoom era
-// justamente aquela origem, fecha o zoom junto em vez de deixar uma
-// tela preta presa aberta.
-function closeSpotlightIfSourceIs(videoEl) {
-  if (videoEl && spotlightSourceEl === videoEl) closeVideoSpotlight();
+// Antes do outro lado atender: o rosto dele já aparece, "tocando".
+function seedDmPeer(peer, ringing) {
+  if (!ensureStage()) return;
+  stage.upsertPerson(auth.currentUser.uid, { name: state.user.displayName || state.user.username, avatarUrl: state.user.avatarUrl || '', isSelf: true, micMuted: false });
+  stage.upsertPerson(peer.uid, { name: peer.displayName || peer.username || 'Chamada', avatarUrl: peer.avatarUrl || '', isSelf: false, micMuted: false, ringing });
+  stage.setStatusLine(peer.uid, ringing ? 'Chamando...' : '');
 }
 
 // ============================================================
@@ -187,6 +296,7 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
     onDmCallConnected();
   }
 
+  syncStagePeople();
   await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
   await applyMicProcessing(room, Track, (m) => toast(m)); // supressão de ruído por IA, se escolhida
   // Push-to-talk ligado: entra com o microfone fechado até segurar a tecla.
@@ -230,16 +340,38 @@ function isSourceOn(participant, source) {
 // ============================================================
 
 function wireRoomEvents(r) {
-  r.on(RoomEvent.TrackSubscribed, (track, publication, participant) => handleTrackSubscribed(track, participant));
+  r.on(RoomEvent.TrackSubscribed, (track, publication, participant) => handleTrackSubscribed(track, participant, publication));
   r.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => handleTrackUnsubscribed(track, participant));
+  r.on(RoomEvent.TrackPublished, (publication, participant) => {
+    // A tela de alguém apareceu: já abre o tile (carregando) antes do vídeo chegar.
+    if (publication.source === Track.Source.ScreenShare && ensureStage()) {
+      stage.setScreen(participant.identity, null, { local: false });
+    }
+  });
+  r.on(RoomEvent.TrackUnpublished, (publication, participant) => {
+    if (publication.source === Track.Source.ScreenShare) { removeRemoteScreenTile(participant.identity); }
+  });
   r.on(RoomEvent.TrackMuted, (publication, participant) => {
     if (publication.source === Track.Source.Microphone) setTileMuted(participant.identity, true);
+    if (publication.source === Track.Source.Camera) stage?.setCamera(participant.identity, null);
   });
   r.on(RoomEvent.TrackUnmuted, (publication, participant) => {
     if (publication.source === Track.Source.Microphone) setTileMuted(participant.identity, false);
+    if (publication.source === Track.Source.Camera && publication.track) {
+      stage?.setCamera(participant.identity, publication.track);
+    }
   });
   r.on(RoomEvent.LocalTrackPublished, (publication) => handleLocalTrackPublished(publication));
   r.on(RoomEvent.LocalTrackUnpublished, (publication) => handleLocalTrackUnpublished(publication));
+  r.on(RoomEvent.ParticipantMetadataChanged, () => syncStagePeople());
+  r.on(RoomEvent.ConnectionQualityChanged, (quality, participant) => {
+    if (participant?.identity !== auth.currentUser?.uid) return;
+    const box = document.getElementById('gk-call-quality');
+    if (!box) return;
+    const q = quality === ConnectionQuality.Lost ? 'lost' : (quality === ConnectionQuality.Poor ? 'poor' : 'good');
+    box.dataset.q = q;
+    box.querySelector('span').textContent = q === 'lost' ? 'Sem sinal' : q === 'poor' ? 'Instável' : (quality === ConnectionQuality.Excellent ? 'Excelente' : 'Boa');
+  });
   r.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
     if (!state.activeCall) return;
     const speakingIds = new Set(speakers.map((p) => p.identity));
@@ -282,14 +414,22 @@ function promptEnableAudioPlayback(r) {
   document.addEventListener('click', unlock, { once: true });
 }
 
-function handleTrackSubscribed(track, participant) {
+function handleTrackSubscribed(track, participant, publication) {
   const otherUid = participant.identity;
 
   if (track.kind === Track.Kind.Audio) {
     if (track.source === Track.Source.ScreenShareAudio) {
-      track.attach(); // áudio da tela compartilhada do outro lado — toca em segundo plano
+      // Áudio da tela do outro lado: <audio> próprio, com volume/ganho independente (ver tile da tela).
+      let a = screenAudioEls.get(otherUid);
+      if (!a) { a = track.attach(); a.autoplay = true; screenAudioEls.set(otherUid, a); }
+      else track.attach(a);
+      a.muted = isDeafened;
+      applyPersonVolume(a, `screen:${otherUid}`);
+      audioTracks.set(`scr:${otherUid}`, track);
+      a.play?.().catch(() => {});
       return;
     }
+    audioTracks.set(`cam:${otherUid}`, track);
     const isVoiceChannel = state.activeCall?.kind === 'voiceChannel';
     const audioId = isVoiceChannel ? `gk-voice-audio-${otherUid}` : 'gk-remote-dm-audio';
     let audioEl = document.getElementById(audioId);
@@ -312,71 +452,77 @@ function handleTrackSubscribed(track, participant) {
 
   // Vídeo: distinguimos câmera de tela compartilhada pelo `track.source`
   // (o LiveKit já anuncia isso — nada de heurística por ordem de chegada).
+  if (!ensureStage()) return;
   if (track.source === Track.Source.ScreenShare) {
-    const videoEl = document.createElement('video');
-    videoEl.autoplay = true;
-    videoEl.playsInline = true;
-    track.attach(videoEl);
-    const memberData = state.activeCall?.kind === 'voiceChannel'
-      ? state.activeCall.participants.get(otherUid)
-      : { displayName: state.activeCall?.peer?.displayName };
-    renderRemoteScreenTile(otherUid, videoEl, memberData);
+    videoTracks.set(`scr:${otherUid}`, track);
+    if (!stage.hasPerson(otherUid)) stage.upsertPerson(otherUid, { name: participant.name || 'Membro' });
+    stage.setScreen(otherUid, track, { local: false, watching: true });
     return;
   }
-
   if (track.source === Track.Source.Camera) {
-    if (state.activeCall?.kind === 'dm') {
-      const grid = document.getElementById('gk-call-video-grid');
-      let videoEl = document.getElementById('gk-remote-video');
-      if (!videoEl) {
-        videoEl = document.createElement('video');
-        videoEl.id = 'gk-remote-video';
-        videoEl.autoplay = true;
-        videoEl.playsInline = true;
-        videoEl.title = 'Clique para dar zoom';
-        videoEl.style.cursor = 'zoom-in';
-        videoEl.addEventListener('click', () => openVideoSpotlight(videoEl, state.activeCall?.peer?.displayName || 'Chamada'));
-        grid.appendChild(videoEl);
-        grid.classList.add('gk-open');
-        setCallLayout('video');
-      }
-      track.attach(videoEl);
-    } else if (state.activeCall?.kind === 'voiceChannel') {
-      updateRemoteCameraTile(otherUid, track);
-    }
+    videoTracks.set(`cam:${otherUid}`, track);
+    if (!stage.hasPerson(otherUid)) syncStagePeople();
+    if (!publication?.isMuted) stage.setCamera(otherUid, track);
+    if (state.activeCall?.kind === 'voiceChannel') state.activeCall.remoteCameraStreams.set(otherUid, track);
   }
 }
 
 function handleTrackUnsubscribed(track, participant) {
   const otherUid = participant.identity;
-  track.detach().forEach((elNode) => { closeSpotlightIfSourceIs(elNode); elNode.remove(); });
+  if (track.kind === Track.Kind.Audio) {
+    if (track.source === Track.Source.ScreenShareAudio) {
+      const a = screenAudioEls.get(otherUid);
+      if (a) { track.detach(a); a.remove(); screenAudioEls.delete(otherUid); }
+      audioTracks.delete(`scr:${otherUid}`);
+    } else {
+      audioTracks.delete(`cam:${otherUid}`);
+      track.detach().forEach((n) => n.remove());
+    }
+    return;
+  }
   if (track.source === Track.Source.ScreenShare) {
-    removeRemoteScreenTile(otherUid);
+    videoTracks.delete(`scr:${otherUid}`);
+    stage?.setScreen(otherUid, null); // o tile fica (placeholder) se foi você quem parou de assistir
+    markTileSharing(otherUid, true);
   } else if (track.source === Track.Source.Camera) {
-    clearRemoteCameraTile(otherUid);
+    videoTracks.delete(`cam:${otherUid}`);
+    stage?.setCamera(otherUid, null);
+    state.activeCall?.remoteCameraStreams?.delete(otherUid);
   }
 }
 
 function handleLocalTrackPublished(pub) {
+  const me = auth.currentUser.uid;
   if (pub.source === Track.Source.ScreenShare) {
-    renderLocalScreenTile(pub.track);
+    if (ensureStage()) {
+      if (!stage.hasPerson(me)) syncStagePeople();
+      videoTracks.set(`scr:${me}`, pub.track);
+      stage.setScreen(me, pub.track, { local: true, watching: true });
+    }
     state.activeCall && (state.activeCall.screenSharing = true);
-    markTileSharing(auth.currentUser.uid, true);
+    markTileSharing(me, true);
     updateScreenShareButton(true);
   } else if (pub.source === Track.Source.Camera) {
-    attachLocalCameraTrack(pub.track);
+    if (ensureStage()) {
+      if (!stage.hasPerson(me)) syncStagePeople();
+      videoTracks.set(`cam:${me}`, pub.track);
+      stage.setCamera(me, pub.track);
+    }
     updateCameraButtons(true);
   }
 }
 function handleLocalTrackUnpublished(pub) {
+  const me = auth.currentUser.uid;
   if (pub.source === Track.Source.ScreenShare) {
-    removeLocalScreenTile();
+    videoTracks.delete(`scr:${me}`);
+    stage?.removeScreen(me);
     state.activeCall && (state.activeCall.screenSharing = false);
-    markTileSharing(auth.currentUser.uid, false);
+    markTileSharing(me, false);
     updateScreenShareButton(false);
     if (isNativeAndroid()) stopNativeScreenCapture();
   } else if (pub.source === Track.Source.Camera) {
-    detachLocalCameraTrack();
+    videoTracks.delete(`cam:${me}`);
+    stage?.setCamera(me, null);
     updateCameraButtons(false);
   }
 }
@@ -384,6 +530,7 @@ function handleLocalTrackUnpublished(pub) {
 function onParticipantJoined(participant) {
   if (!state.activeCall) return;
   if (state.activeCall.kind === 'dm') {
+    syncStagePeople();
     onDmCallConnected();
   } else if (state.activeCall.kind === 'voiceChannel') {
     upsertVoiceParticipant(participant);
@@ -400,29 +547,15 @@ function onParticipantLeft(participant) {
 }
 
 function setTileMuted(uid, muted) {
-  document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-muted', muted);
+  stage?.setMicMuted(uid, muted);
   document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-muted', muted);
   if (state.activeCall?.kind === 'voiceChannel' && state.activeCall.participants.has(uid)) {
     state.activeCall.participants.get(uid).muted = muted;
   }
 }
 function setTileSpeaking(uid, speaking) {
-  document.getElementById(`gk-calltile-${uid}`)?.classList.toggle('gk-speaking', speaking);
+  stage?.setSpeaking(uid, speaking);
   document.getElementById(`gk-voice-member-${uid}`)?.classList.toggle('gk-speaking', speaking);
-
-  // A chamada de áudio simples (1:1, sem vídeo) não tem "tile" nenhum —
-  // só um avatar grande com anéis decorativos que pulsam sempre, mesmo
-  // sem ninguém falando. Sem isso, não existe NENHUM jeito de ver se o
-  // próprio microfone ou o da outra pessoa está realmente transmitindo
-  // — um microfone silenciosamente quebrado passa despercebido.
-  if (state.activeCall?.kind === 'dm') {
-    if (uid === state.activeCall.remoteUid) {
-      document.getElementById('gk-call-audio-view')?.classList.toggle('gk-peer-speaking', speaking);
-    }
-    if (uid === auth.currentUser?.uid) {
-      document.getElementById('gk-call-self-indicator')?.classList.toggle('gk-speaking', speaking);
-    }
-  }
 }
 
 // ============================================================
@@ -442,6 +575,7 @@ export async function startDmCall(withVideo = false) {
   state.activeCall = { kind: 'dm', id: null, dmId: state.currentDmId, remoteUid: dm.other.uid, withVideo, screenSharing: false, peer, roomName };
 
   openCallScreen({ peer, withVideo, statusText: 'Chamando...' });
+  seedDmPeer(peer, true);
 
   try {
     await connectToRoom({
@@ -474,6 +608,10 @@ export function listenIncomingCalls() {
     snap.docChanges().forEach((change) => {
       if (change.type === 'added' && !state.activeCall) {
         promptIncomingCall({ id: change.doc.id, ...change.doc.data() });
+      } else if (change.type === 'removed') {
+        // Quem ligou desistiu (ou outro aparelho atendeu): para de tocar.
+        stopRingtone();
+        document.getElementById('gk-incoming-call-overlay')?.classList.remove('gk-open');
       }
     });
   });
@@ -498,15 +636,18 @@ function promptIncomingCall(call) {
       el('button', { class: 'gk-incoming-call-btn gk-incoming-accept', title: 'Atender', onclick: () => acceptIncomingCall(call, caller) }, [icon(call.withVideo ? 'videoCall' : 'phoneCall', { size: 20 })]),
     ]));
     overlay.classList.add('gk-open');
+    startRingtone();
   });
 }
 
 async function acceptIncomingCall(call, caller) {
+  stopRingtone();
   document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
   const peer = { uid: call.callerId, displayName: caller.displayName || caller.username, avatarUrl: caller.avatarUrl || '' };
   state.activeCall = { kind: 'dm', id: call.id, dmId: call.dmId, remoteUid: call.callerId, withVideo: call.withVideo, screenSharing: false, peer, roomName: call.roomName };
 
   openCallScreen({ peer, withVideo: call.withVideo, statusText: 'Conectando...' });
+  seedDmPeer(peer, false);
 
   try {
     await connectToRoom({
@@ -524,6 +665,7 @@ async function acceptIncomingCall(call, caller) {
 }
 
 async function declineIncomingCall(call) {
+  stopRingtone();
   document.getElementById('gk-incoming-call-overlay').classList.remove('gk-open');
   await updateDoc(callDoc(call.id), { status: 'declined' });
 }
@@ -562,13 +704,19 @@ function endCall(disconnectRoom) {
   room = null;
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
   document.getElementById('gk-remote-dm-audio')?.remove();
+  document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((n) => n.remove());
   isDeafened = false;
   updateDeafenButtons(false);
   state.activeCall = null;
   stopCallTimer();
   closeCallScreen();
   hideCallBar();
-  closeVideoSpotlight();
+  stopCallRecording(true);
+  resetStage();
+  closeReactBar(); closeSettingsPanel();
+  syncDock();
+  stopRingtone();
+  window.dispatchEvent(new CustomEvent('gkio-call-ended'));
 }
 
 // ============================================================
@@ -633,9 +781,8 @@ function removeVoiceParticipant(uid) {
   state.activeCall.participants.delete(uid);
   state.activeCall.remoteCameraStreams.delete(uid);
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
-  const tile = document.getElementById(`gk-calltile-${uid}`);
-  if (tile) closeSpotlightIfSourceIs(tile.querySelector('.gk-call-tile-video'));
-  tile?.remove();
+  stage?.removePerson(uid);
+  videoTracks.delete(`cam:${uid}`); audioTracks.delete(`cam:${uid}`);
   document.getElementById(`gk-voice-audio-${uid}`)?.remove();
   removeRemoteScreenTile(uid);
   refreshVoiceUI();
@@ -643,7 +790,7 @@ function removeVoiceParticipant(uid) {
 function refreshVoiceUI() {
   if (!state.activeCall || state.activeCall.kind !== 'voiceChannel') return;
   renderVoiceMembersList(state.activeCall.id, state.activeCall.participants);
-  renderParticipantsGridFromParticipants(state.activeCall.participants);
+  syncStagePeople();
 }
 
 function renderVoiceMembersList(channelId, participantsMap) {
@@ -666,108 +813,11 @@ function renderVoiceMembersList(channelId, participantsMap) {
   });
 }
 
-// ---------- Grid de participantes (tela cheia expandida, estilo Discord) ----------
-
-function renderParticipantsGridFromParticipants(participantsMap) {
-  const grid = document.getElementById('gk-call-participants-grid');
-  if (!grid || !state.activeCall) return;
-  const uid = auth.currentUser.uid;
-
-  grid.innerHTML = '';
-  participantsMap.forEach((data, otherUid) => {
-    const isSelf = otherUid === uid;
-    const cameraTrack = state.activeCall.remoteCameraStreams.get(otherUid);
-
-    const tileId = `gk-calltile-${otherUid}`;
-    const tile = el('div', {
-      class: 'gk-call-tile' + (cameraTrack ? ' gk-camera-on' : '') + (data.muted ? ' gk-muted' : ''),
-      id: tileId,
-      title: 'Clique para dar zoom na câmera',
-      // Verifica no momento do clique (não na criação) se a câmera está
-      // ligada — o tile pode ganhar/perder câmera depois de já montado
-      // (ver attachLocalCameraTrack/updateRemoteCameraTile), sem ser
-      // reconstruído do zero.
-      onclick: () => {
-        const t = document.getElementById(tileId);
-        if (!t || !t.classList.contains('gk-camera-on')) return;
-        const v = t.querySelector('.gk-call-tile-video');
-        openVideoSpotlight(v, isSelf ? 'Você' : (data.displayName || 'Membro'));
-      },
-    }, [
-      el('video', { class: 'gk-call-tile-video', autoplay: 'true', playsinline: 'true', muted: isSelf ? 'true' : null }),
-      el('div', { class: 'gk-call-tile-avatar-wrap' }, [el('img', { src: data.avatarUrl || fallbackAvatar(data.displayName) })]),
-      el('div', { class: 'gk-call-tile-name' }, data.displayName || 'Membro'),
-      el('div', { class: 'gk-call-tile-sharing-badge' }, 'Compartilhando tela'),
-      el('div', { class: 'gk-call-tile-mic-off', title: 'Mutado' }, [icon('micOff', { size: 13 })]),
-      el('div', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
-      isSelf ? el('div', { class: 'gk-call-tile-you-badge' }, 'Você') : null,
-      isSelf ? null : el('button', {
-        class: 'gk-call-tile-vol', type: 'button', title: 'Volume desta pessoa', 'aria-label': `Volume de ${data.displayName || 'Membro'}`,
-        onclick: (e) => { e.stopPropagation(); openVolumePopover(e.currentTarget, otherUid, data.displayName || 'Membro'); },
-      }, [icon('headphones', { size: 13 })]),
-    ]);
-    grid.appendChild(tile);
-    if (cameraTrack) cameraTrack.attach(tile.querySelector('.gk-call-tile-video'));
-    if (state.activeCall.screenSharingUids?.has(otherUid)) tile.classList.add('gk-sharing');
-  });
-  syncScreenshareSpotlightClass();
-}
-
 function markTileSharing(targetUid, sharing) {
-  if (state.activeCall) {
-    if (!state.activeCall.screenSharingUids) state.activeCall.screenSharingUids = new Set();
-    if (sharing) state.activeCall.screenSharingUids.add(targetUid);
-    else state.activeCall.screenSharingUids.delete(targetUid);
-  }
-  document.getElementById(`gk-calltile-${targetUid}`)?.classList.toggle('gk-sharing', sharing);
-}
-
-function attachLocalCameraTrack(track) {
-  if (state.activeCall?.kind === 'dm') {
-    track.attach(document.getElementById('gk-call-self-video'));
-    document.getElementById('gk-call-self-pip').style.display = 'block';
-    setCallLayout('video');
-  } else if (state.activeCall?.kind === 'voiceChannel') {
-    const uid = auth.currentUser.uid;
-    const tile = document.getElementById(`gk-calltile-${uid}`);
-    if (tile) {
-      tile.classList.add('gk-camera-on');
-      track.attach(tile.querySelector('.gk-call-tile-video'));
-    }
-  }
-}
-function detachLocalCameraTrack() {
-  if (state.activeCall?.kind === 'dm') {
-    const v = document.getElementById('gk-call-self-video');
-    closeSpotlightIfSourceIs(v);
-    if (v) v.srcObject = null;
-    document.getElementById('gk-call-self-pip').style.display = 'none';
-  } else if (state.activeCall?.kind === 'voiceChannel') {
-    const uid = auth.currentUser.uid;
-    const tile = document.getElementById(`gk-calltile-${uid}`);
-    if (!tile) return;
-    tile.classList.remove('gk-camera-on');
-    const v = tile.querySelector('.gk-call-tile-video');
-    closeSpotlightIfSourceIs(v);
-    if (v) v.srcObject = null;
-  }
-}
-
-function updateRemoteCameraTile(otherUid, track) {
-  if (state.activeCall) state.activeCall.remoteCameraStreams.set(otherUid, track);
-  const tile = document.getElementById(`gk-calltile-${otherUid}`);
-  if (!tile) return;
-  tile.classList.add('gk-camera-on');
-  track.attach(tile.querySelector('.gk-call-tile-video'));
-}
-function clearRemoteCameraTile(otherUid) {
-  if (state.activeCall) state.activeCall.remoteCameraStreams.delete(otherUid);
-  const tile = document.getElementById(`gk-calltile-${otherUid}`);
-  if (!tile) return;
-  tile.classList.remove('gk-camera-on');
-  const video = tile.querySelector('.gk-call-tile-video');
-  closeSpotlightIfSourceIs(video);
-  if (video) video.srcObject = null;
+  if (!state.activeCall) return;
+  if (!state.activeCall.screenSharingUids) state.activeCall.screenSharingUids = new Set();
+  if (sharing) state.activeCall.screenSharingUids.add(targetUid);
+  else state.activeCall.screenSharingUids.delete(targetUid);
 }
 
 export async function leaveVoiceChannel() {
@@ -777,7 +827,7 @@ export async function leaveVoiceChannel() {
   // Limpa a UI imediatamente, sem esperar o round-trip de desconexão
   // (evita a sala mostrar por alguns instantes que ainda estamos nela).
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
-  document.getElementById(`gk-calltile-${uid}`)?.remove();
+  stage?.removePerson(uid);
 
   if (room) { try { await room.disconnect(); } catch (e) {} }
   room = null;
@@ -838,75 +888,12 @@ export async function stopScreenShare(showToast = true) {
   if (showToast) toast('Compartilhamento de tela encerrado.');
 }
 
-function renderLocalScreenTile(track) {
-  const grid = document.getElementById('gk-screenshare-grid');
-  grid.classList.add('gk-open');
-  let tile = document.getElementById('gk-screenshare-local');
-  if (!tile) {
-    const videoEl = document.createElement('video');
-    videoEl.autoplay = true;
-    videoEl.muted = true;
-    videoEl.playsInline = true;
-    tile = el('div', {
-      class: 'gk-screenshare-tile', id: 'gk-screenshare-local', title: 'Clique para dar zoom',
-      onclick: () => openVideoSpotlight(videoEl, 'Sua tela'),
-    }, [
-      videoEl,
-      el('span', { class: 'gk-screenshare-label' }, 'Sua tela'),
-      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
-    ]);
-    grid.appendChild(tile);
-  }
-  track.attach(tile.querySelector('video'));
-  syncScreenshareSpotlightClass();
-}
-function removeLocalScreenTile() {
-  const tile = document.getElementById('gk-screenshare-local');
-  if (tile) closeSpotlightIfSourceIs(tile.querySelector('video'));
-  tile?.remove();
-  maybeHideScreenGrid();
-}
-function renderRemoteScreenTile(otherUid, videoEl, userData) {
-  const grid = document.getElementById('gk-screenshare-grid');
-  grid.classList.add('gk-open');
-  const label = `Tela de ${userData?.displayName || userData?.username || 'alguém'}`;
-  let tile = document.getElementById(`gk-screenshare-${otherUid}`);
-  if (!tile) {
-    tile = el('div', {
-      class: 'gk-screenshare-tile', id: `gk-screenshare-${otherUid}`, title: 'Clique para dar zoom',
-      onclick: () => openVideoSpotlight(videoEl, label),
-    }, [
-      videoEl,
-      el('span', { class: 'gk-screenshare-label' }, label),
-      el('span', { class: 'gk-zoomable-hint' }, [el('span', { class: 'gk-zoomable-hint-icon' }, [icon('expand', { size: 13 })])]),
-    ]);
-    grid.appendChild(tile);
-  }
-  markTileSharing(otherUid, true);
-  syncScreenshareSpotlightClass();
-}
 function removeRemoteScreenTile(otherUid) {
-  const tile = document.getElementById(`gk-screenshare-${otherUid}`);
-  if (tile) closeSpotlightIfSourceIs(tile.querySelector('video'));
-  tile?.remove();
+  videoTracks.delete(`scr:${otherUid}`);
+  stage?.removeScreen(otherUid);
   markTileSharing(otherUid, false);
-  maybeHideScreenGrid();
 }
-function maybeHideScreenGrid() {
-  const grid = document.getElementById('gk-screenshare-grid');
-  if (grid && !grid.children.length) grid.classList.remove('gk-open');
-  syncScreenshareSpotlightClass();
-}
-function syncScreenshareSpotlightClass() {
-  const grid = document.getElementById('gk-screenshare-grid');
-  const participantsGrid = document.getElementById('gk-call-participants-grid');
-  if (!grid || !participantsGrid) return;
-  const expanded = document.getElementById('gk-call-screen').classList.contains('gk-open');
-  const isVoiceGrid = state.activeCall && state.activeCall.kind === 'voiceChannel';
-  const inCallScreen = expanded && isVoiceGrid;
-  grid.classList.toggle('gk-in-callscreen', inCallScreen);
-  participantsGrid.classList.toggle('gk-has-spotlight', inCallScreen && grid.children.length > 0);
-}
+
 // Compartilhar tela só é possível no app nativo Android ou em navegadores
 // desktop — em navegador de celular (Chrome Android, Safari iOS) a própria
 // plataforma não oferece a API de captura de tela, então nem mostramos o
@@ -931,13 +918,11 @@ function updateScreenShareButton(active) {
 
 function openCallScreen({ peer, withVideo, statusText }) {
   const avatarSrc = peer.avatarUrl || fallbackAvatar(peer.displayName || peer.username);
-  document.getElementById('gk-call-avatar-img').src = avatarSrc;
   document.getElementById('gk-call-peer-name').textContent = peer.displayName || peer.username || 'Chamada';
   document.getElementById('gk-call-screen-bg').style.backgroundImage = `url(${avatarSrc})`;
   setCallStatusText(statusText);
-
-  document.getElementById('gk-call-self-pip').style.display = 'none';
-  setCallLayout(withVideo ? 'video' : 'audio');
+  ensureStage()?.clear();
+  wireDock();
 
   updateMuteButtons(false);
   updateCameraButtons(withVideo);
@@ -945,6 +930,8 @@ function openCallScreen({ peer, withVideo, statusText }) {
 
   document.getElementById('gk-call-bar').classList.remove('gk-open');
   document.getElementById('gk-call-screen').classList.add('gk-open');
+  syncDock();
+  stage?.layout();
 }
 
 function onDmCallConnected() {
@@ -953,26 +940,18 @@ function onDmCallConnected() {
   startCallTimer();
   renderCallBar(state.activeCall.peer?.displayName || 'alguém');
   startCallAudioMode();
+  stopRingtone();
 }
 
-function setCallLayout(mode) {
-  const audioView = document.getElementById('gk-call-audio-view');
-  const videoGrid = document.getElementById('gk-call-video-grid');
-  const participantsGrid = document.getElementById('gk-call-participants-grid');
-  if (!audioView || !videoGrid || !participantsGrid) return;
-  audioView.style.display = mode === 'audio' ? 'flex' : 'none';
-  videoGrid.classList.toggle('gk-open', mode === 'video');
-  participantsGrid.classList.toggle('gk-open', mode === 'grid');
-}
-
-// ---------- Tela cheia de chamada de canal de voz (grid de participantes, estilo Discord) ----------
+// ---------- Tela cheia de chamada de canal de voz (palco com todos os participantes) ----------
 
 function openVoiceChannelCallScreen(name) {
   document.getElementById('gk-call-screen-bg').style.backgroundImage = '';
-  setCallStatusText(`Sala de voz: ${name}`);
-  document.getElementById('gk-call-self-pip').style.display = 'none';
-  setCallLayout('grid');
-  renderParticipantsGridFromParticipants(state.activeCall?.participants || new Map());
+  document.getElementById('gk-call-peer-name').textContent = name;
+  setCallStatusText(`Sala de voz`);
+  ensureStage();
+  wireDock();
+  syncStagePeople();
 
   updateMuteButtons(room ? !isSourceOn(room.localParticipant, Track.Source.Microphone) : false);
   updateCameraButtons(room ? isSourceOn(room.localParticipant, Track.Source.Camera) : false);
@@ -980,14 +959,13 @@ function openVoiceChannelCallScreen(name) {
 
   document.getElementById('gk-call-bar').classList.remove('gk-open');
   document.getElementById('gk-call-screen').classList.add('gk-open');
-  syncScreenshareSpotlightClass();
+  syncDock();
+  stage?.layout();
 }
 
 function setCallStatusText(text) {
   const top = document.getElementById('gk-call-screen-status');
   if (top) top.textContent = text;
-  const sub = document.getElementById('gk-call-peer-sub');
-  if (sub) sub.textContent = text;
 }
 
 function startCallTimer() {
@@ -1008,20 +986,20 @@ function stopCallTimer() {
 
 function closeCallScreen() {
   document.getElementById('gk-call-screen').classList.remove('gk-open');
-  const selfVideo = document.getElementById('gk-call-self-video');
-  if (selfVideo) selfVideo.srcObject = null;
-  document.getElementById('gk-call-self-pip').style.display = 'none';
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
 }
 
 function minimizeCallScreen() {
   if (!state.activeCall) return;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   document.getElementById('gk-call-screen').classList.remove('gk-open');
-  syncScreenshareSpotlightClass();
+  closeReactBar(); closeSettingsPanel();
   if (state.activeCall.kind === 'dm') {
     showCallBar(`Em chamada com ${state.activeCall.peer?.displayName || 'alguém'}`);
   } else {
     showCallBar(`Sala de voz: ${state.activeCall.channelLabel || ''}`);
   }
+  syncDock();
 }
 
 export function expandCallScreen() {
@@ -1031,6 +1009,8 @@ export function expandCallScreen() {
     openVoiceChannelCallScreen(state.activeCall.channelLabel || 'Sala de voz');
   } else {
     document.getElementById('gk-call-screen').classList.add('gk-open');
+    syncDock();
+    stage?.layout();
   }
 }
 
@@ -1039,7 +1019,7 @@ function updateMuteButtons(muted) {
   const html = iconHtml(muted ? 'micOff' : 'mic');
   ['gk-call-mute-btn', 'gk-call-bar-mute-btn'].forEach((id) => {
     const btn = document.getElementById(id);
-    if (btn) btn.innerHTML = html;
+    if (btn) { btn.innerHTML = html; btn.classList.toggle('gkc-off', !!muted); }
   });
 }
 
@@ -1050,6 +1030,7 @@ function updateDeafenButtons(deafened) {
     const btn = document.getElementById(id);
     if (!btn) return;
     btn.innerHTML = html;
+    btn.classList.toggle('gkc-off', !!deafened);
     btn.title = deafened ? 'Parar de ensurdecer' : 'Ensurdecer (silencia tudo)';
   });
 }
@@ -1060,6 +1041,7 @@ function applyDeafenToAudioEls(deafened) {
   const dmAudio = document.getElementById('gk-remote-dm-audio');
   if (dmAudio) dmAudio.muted = deafened;
   document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((elAudio) => { elAudio.muted = deafened; });
+  screenAudioEls.forEach((a) => { a.muted = deafened; });
 }
 
 export async function toggleDeafen() {
@@ -1112,14 +1094,7 @@ function renderCallBar(label) {
 }
 function hideCallBar() {
   document.getElementById('gk-call-bar').classList.remove('gk-open');
-  document.getElementById('gk-call-video-grid').classList.remove('gk-open');
-  document.getElementById('gk-call-video-grid').innerHTML = '';
-  document.getElementById('gk-call-participants-grid').classList.remove('gk-open', 'gk-has-spotlight');
-  document.getElementById('gk-call-participants-grid').innerHTML = '';
   document.getElementById('gk-remote-dm-audio')?.remove();
-  document.getElementById('gk-remote-video')?.remove();
-  document.getElementById('gk-screenshare-grid').classList.remove('gk-open', 'gk-in-callscreen');
-  document.getElementById('gk-screenshare-grid').innerHTML = '';
   document.getElementById('gk-call-camera-btn').style.display = 'none';
 }
 
@@ -1139,10 +1114,7 @@ export function wireCallBar() {
   document.getElementById('gk-call-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
   document.getElementById('gk-call-bar-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
 
-  document.getElementById('gk-call-self-pip').addEventListener('click', () => {
-    const v = document.getElementById('gk-call-self-video');
-    openVideoSpotlight(v, 'Você');
-  });
+  wireCallExtras();
 
   document.getElementById('gk-call-screenshare-btn').addEventListener('click', toggleScreenShareBtn);
   document.getElementById('gk-call-bar-screenshare-btn').addEventListener('click', toggleScreenShareBtn);
@@ -1220,3 +1192,159 @@ export async function toggleMute() {
 function toggleScreenShareBtn() {
   if (isScreenSharing()) stopScreenShare(); else startScreenShare();
 }
+
+// ============================================================
+// Extras da tela de chamada (estilo GoLive): reações, mão levantada,
+// gravação da chamada, ajustes rápidos e toque de chamada recebida.
+// Tudo viaja pelo canal de dados do LiveKit — nenhum servidor novo.
+// ============================================================
+const REACTIONS = ['👍', '👏', '😂', '❤️', '😮', '🎉', '🔥', '😢'];
+let myHand = false;
+let reactionsWired = false;
+
+function nameOf(uid) {
+  return callParticipantList().find((p) => p.uid === uid)?.name || 'Alguém';
+}
+
+function closeReactBar() { document.getElementById('gkc-react-bar')?.classList.remove('gk-open'); }
+function closeSettingsPanel() { document.getElementById('gkc-settings')?.classList.remove('gk-open'); }
+
+function wireCallExtras() {
+  if (reactionsWired) return;
+  reactionsWired = true;
+
+  // --- reações ---
+  const bar = document.getElementById('gkc-react-bar');
+  REACTIONS.forEach((emoji) => {
+    bar.appendChild(el('button', {
+      type: 'button', title: emoji, 'aria-label': `Reagir com ${emoji}`,
+      onclick: () => { stage?.showReaction(auth.currentUser.uid, emoji); sendCallData('gk-react', { e: emoji }); },
+    }, emoji));
+  });
+  document.getElementById('gk-call-react-btn').addEventListener('click', () => {
+    closeSettingsPanel();
+    bar.classList.toggle('gk-open');
+  });
+  onCallData('gk-react', (msg, uid) => {
+    if (typeof msg?.e === 'string' && REACTIONS.includes(msg.e)) stage?.showReaction(uid, msg.e);
+  });
+
+  // --- mão levantada ---
+  const handBtn = document.getElementById('gk-call-hand-btn');
+  handBtn.addEventListener('click', () => {
+    myHand = !myHand;
+    handBtn.classList.toggle('gkc-hand-on', myHand);
+    handBtn.title = myHand ? 'Abaixar a mão' : 'Levantar a mão';
+    stage?.setHand(auth.currentUser.uid, myHand);
+    sendCallData('gk-hand', { up: myHand });
+  });
+  onCallData('gk-hand', (msg, uid) => {
+    stage?.setHand(uid, !!msg?.up);
+    if (msg?.up) toast(`${nameOf(uid)} levantou a mão ✋`);
+  });
+
+  // --- gravação da chamada (áudio de todo mundo misturado) ---
+  const recBtn = document.getElementById('gk-call-record-btn');
+  if (!recordingSupported()) recBtn.style.display = 'none';
+  recBtn.addEventListener('click', toggleCallRecording);
+  onCallData('gk-rec', (msg, uid) => {
+    toast(msg?.on ? `${nameOf(uid)} está gravando.` : `${nameOf(uid)} parou de gravar.`);
+  });
+
+  // --- ajustes rápidos ---
+  document.getElementById('gk-call-settings-btn').addEventListener('click', () => {
+    closeReactBar();
+    const panel = document.getElementById('gkc-settings');
+    if (!panel.classList.contains('gk-open')) buildSettingsPanel(panel);
+    panel.classList.toggle('gk-open');
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('#gkc-react-bar, #gk-call-react-btn')) closeReactBar();
+    if (!e.target.closest('#gkc-settings, #gk-call-settings-btn')) closeSettingsPanel();
+  });
+  window.addEventListener('gkio-call-ended', () => {
+    myHand = false;
+    document.getElementById('gk-call-hand-btn')?.classList.remove('gkc-hand-on');
+  });
+}
+
+function buildSettingsPanel(panel) {
+  const prefs = getMediaPrefs();
+  const select = (label, value, options, onChange) => {
+    const s = el('select', {}, options.map(([v, t]) => el('option', { value: v }, t)));
+    s.value = value;
+    s.addEventListener('change', () => onChange(s.value));
+    return el('label', {}, [label, s]);
+  };
+  const noiseVal = prefs.noiseMode === 'ai' ? (prefs.aiStrength === 'strong' ? 'ai-strong' : 'ai') : (prefs.noiseMode || 'browser');
+  panel.replaceChildren(
+    el('h4', {}, 'Ajustes da chamada'),
+    select('Cancelamento de ruído do microfone', noiseVal, [['browser', 'Do navegador'], ['ai', 'IA (RNNoise)'], ['ai-strong', 'IA — forte'], ['off', 'Desligado']],
+      (v) => setMediaPrefs(v === 'ai' ? { noiseMode: 'ai', aiStrength: 'standard' } : v === 'ai-strong' ? { noiseMode: 'ai', aiStrength: 'strong' } : { noiseMode: v })),
+    select('Efeito da câmera', VIDEO_EFFECTS.some((f) => f.id === prefs.videoFx) ? prefs.videoFx : 'none',
+      VIDEO_EFFECTS.map((f) => [f.id, f.label]), (v) => setMediaPrefs({ videoFx: v })),
+    select('Qualidade da transmissão de tela (próxima transmissão)', prefs.screenQuality in SCREEN_QUALITIES ? prefs.screenQuality : 'fluid',
+      Object.entries(SCREEN_QUALITIES).map(([id, q]) => [id, q.label]), (v) => { setMediaPrefs({ screenQuality: v }); if (isScreenSharing()) toast('Vale a partir da próxima transmissão.'); }),
+  );
+  if (!videoFxSupported()) panel.querySelectorAll('select')[1].disabled = true;
+}
+
+// ---- gravação da chamada ----
+let callRec = null;
+async function toggleCallRecording() {
+  if (callRec) { stopCallRecording(false); return; }
+  if (!room) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = ctx.createMediaStreamDestination();
+    const add = (track) => { if (track?.mediaStreamTrack) ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack])).connect(dest); };
+    add(room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track);
+    audioTracks.forEach((t) => add(t));
+    const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m));
+    const rec = new MediaRecorder(dest.stream, mime ? { mimeType: mime } : undefined);
+    const chunks = []; const started = Date.now();
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      ctx.close().catch(() => {});
+      const discard = callRec?.discard;
+      callRec = null;
+      document.getElementById('gk-call-record-btn')?.classList.remove('gkc-rec-on');
+      sendCallData('gk-rec', { on: false });
+      if (!discard && chunks.length) {
+        showRecordingModal({ blob: new Blob(chunks, { type: rec.mimeType || 'audio/webm' }), durationMs: Date.now() - started, name: 'chamada', kind: 'rec' });
+      }
+    };
+    rec.start(1000);
+    callRec = { rec, discard: false };
+    document.getElementById('gk-call-record-btn').classList.add('gkc-rec-on');
+    sendCallData('gk-rec', { on: true });
+    toast('Gravando o áudio da chamada. Quem entrar depois não entra na gravação.');
+  } catch (e) { toast('Não foi possível gravar a chamada neste navegador.', 'danger'); }
+}
+function stopCallRecording(discard) {
+  if (!callRec) return;
+  callRec.discard = !!discard;
+  try { callRec.rec.stop(); } catch (e) { callRec = null; }
+}
+
+// ---- toque de chamada recebida (sintetizado, sem arquivo) ----
+let ringCtx = null; let ringTimer = null;
+function startRingtone() {
+  stopRingtone();
+  try {
+    ringCtx = ringCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (ringCtx.state === 'suspended') ringCtx.resume().catch(() => {});
+    const beep = () => {
+      const t = ringCtx.currentTime;
+      [[523.25, 0], [659.25, 0.22], [783.99, 0.44]].forEach(([f, d]) => {
+        const o = ringCtx.createOscillator(); const g = ringCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.16, t + d + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.34);
+        o.connect(g).connect(ringCtx.destination); o.start(t + d); o.stop(t + d + 0.4);
+      });
+    };
+    beep(); ringTimer = setInterval(beep, 2600);
+    setTimeout(stopRingtone, 45_000); // desiste sozinho
+  } catch (e) { /* sem áudio — o cartão continua visível */ }
+}
+function stopRingtone() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }

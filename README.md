@@ -190,3 +190,15 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 > 2. **2FA (TOTP)** exige Identity Platform (plano Blaze) ativado no Firebase Auth. Sem isso o cartão avisa que não é suportado e o login segue normal.
 > 3. **Prévia de links** precisa de um endpoint: publique `js/preview-server.js` como Cloudflare Worker e coloque a URL em `js/preview-config.js`. Sem endpoint, só imagens e YouTube ganham prévia.
 > 4. Figurinhas e sons próprios usam o upload do Cloudinary já configurado.
+
+
+## Tela de chamada (palco) — créditos e licença
+
+A tela de chamada (`js/call-stage.js`, `css/call-stage.css`) segue o visual e as ideias do **GoLive**
+(https://golive.nemtudo.me, de Nem Tudo): grade de tiles, foco/hiperfoco, zoom, girar/espelhar, PiP, tela cheia,
+gravação, clip dos últimos 30 s, estatísticas da conexão, reações e mão levantada.
+
+O GoLive usa a licença **FARSL 1.0** (`LICENSE-GOLIVE.md`): uso **não comercial**, a marca d'água/atribuição
+("Inspirado no GoLive · golive.nemtudo.me") **não pode ser removida**, e qualquer uso comercial exige licença
+comercial do autor (royalty de 40% da receita). Se o G.K.IO passar a gerar receita (anúncios, assinaturas, etc.),
+fale com o autor antes.

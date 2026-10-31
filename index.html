@@ -28,7 +28,8 @@
   "./js/auth.js": "./js/auth.js?v=10",
   "./js/background-notify.js": "./js/background-notify.js?v=10",
   "./js/blocks.js": "./js/blocks.js?v=10",
-  "./js/calls.js": "./js/calls.js?v=10",
+  "./js/calls.js": "./js/calls.js?v=11",
+  "./js/call-stage.js": "./js/call-stage.js?v=1",
   "./js/chat.js": "./js/chat.js?v=10",
   "./js/cloudinary-config.js": "./js/cloudinary-config.js?v=10",
   "./js/cloudinary.js": "./js/cloudinary.js?v=10",
@@ -168,6 +169,7 @@
 <link rel="stylesheet" href="css/app.css?v=10">
 <link rel="stylesheet" href="css/landing.css?v=10">
 <link rel="stylesheet" href="css/features.css?v=11">
+<link rel="stylesheet" href="css/call-stage.css?v=1">
 </head>
 <body>
 
@@ -458,7 +460,7 @@
       </section>
     </main>
 
-    <footer class="lp-footer">G.K.IO <span>· Conectando mundos.</span></footer>
+    <footer class="lp-footer">G.K.IO <span>· Conectando mundos.</span> <span>· Tela de chamada inspirada no <a href="https://golive.nemtudo.me" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">GoLive</a></span></footer>
   </div>
 </div>
 
@@ -844,52 +846,40 @@
   </div>
 </div>
 
-<!-- ======================= CHAMADA — TELA CHEIA (DM, estilo Discord/Skype) ======================= -->
+<!-- ======================= CHAMADA — TELA CHEIA (palco estilo GoLive) ======================= -->
 <div class="gk-call-screen" id="gk-call-screen">
   <div class="gk-call-screen-bg" id="gk-call-screen-bg"></div>
 
   <div class="gk-call-screen-top">
-    <span class="gk-call-screen-status" id="gk-call-screen-status">Chamando...</span>
-    <button class="gk-call-minimize-btn" id="gk-call-minimize-btn" title="Minimizar chamada" data-icon="chevronDown"></button>
-  </div>
-
-  <!-- Modo áudio: avatar grande com anéis pulsantes, como a tela de "chamando/tocando" do Skype -->
-  <div class="gk-call-audio-view" id="gk-call-audio-view">
-    <div class="gk-call-avatar-rings">
-      <div class="gk-call-avatar-ring gk-ring-1"></div>
-      <div class="gk-call-avatar-ring gk-ring-2"></div>
-      <div class="gk-call-avatar-ring gk-ring-3"></div>
-      <img class="gk-call-avatar-img" id="gk-call-avatar-img" src="" alt="">
+    <div class="gk-call-screen-title">
+      <b id="gk-call-peer-name">—</b>
+      <span class="gk-call-screen-status" id="gk-call-screen-status">Chamando...</span>
+      <span class="gk-call-quality" id="gk-call-quality" data-q="good" title="Qualidade da conexão"><i></i><span>Boa</span></span>
     </div>
-    <div class="gk-call-peer-name" id="gk-call-peer-name">—</div>
-    <div class="gk-call-peer-sub" id="gk-call-peer-sub">Chamando...</div>
-    <!-- Confirmação de que o SEU microfone está realmente captando
-         áudio — sem isso não havia nenhum jeito de notar um microfone
-         silenciosamente quebrado numa chamada só de voz. -->
-    <div class="gk-call-self-indicator" id="gk-call-self-indicator">
-      <span data-icon="mic" class="gk-inline-icon"></span> Você
+    <div class="gk-call-screen-top-actions">
+      <button class="gk-call-minimize-btn" id="gk-call-minimize-btn" title="Minimizar chamada" data-icon="chevronDown"></button>
     </div>
   </div>
 
-  <!-- Modo vídeo: grade de vídeos remotos + miniatura da própria câmera -->
-  <div class="gk-call-video-grid" id="gk-call-video-grid"></div>
+  <!-- Palco: rostos, câmeras e transmissões de tela (ver js/call-stage.js) -->
+  <div id="gk-call-stage"></div>
 
-  <!-- Modo grid: canal de voz de servidor — um "quadradinho" por participante
-       (avatar ou câmera), com destaque para quem está falando, estilo Discord. -->
-  <div class="gk-call-participants-grid" id="gk-call-participants-grid"></div>
-
-  <div class="gk-call-self-pip" id="gk-call-self-pip" style="display:none;">
-    <video id="gk-call-self-video" autoplay muted playsinline></video>
-  </div>
+  <div class="gkc-react-bar" id="gkc-react-bar" role="menu" aria-label="Reações"></div>
+  <div class="gkc-settings" id="gkc-settings" role="dialog" aria-label="Ajustes da chamada"></div>
 
   <div class="gk-call-controls" id="gk-call-controls">
     <button class="gk-call-ctrl-btn" id="gk-call-mute-btn" title="Mutar/desmutar" data-icon="mic"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-deafen-btn" title="Ensurdecer (silencia tudo)" data-icon="headphones"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera" data-icon="camera"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-react-btn" title="Reações" aria-label="Reações" data-icon="emojiSmile"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-hand-btn" title="Levantar a mão" aria-label="Levantar a mão" data-icon="hand"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-record-btn" title="Gravar a chamada (áudio)" aria-label="Gravar a chamada" data-icon="record"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-extras-btn" title="Soundboard e atividades" aria-label="Soundboard e atividades" data-icon="gamepad"></button>
+    <button class="gk-call-ctrl-btn" id="gk-call-settings-btn" title="Ajustes da chamada" aria-label="Ajustes da chamada" data-icon="sliders"></button>
     <button class="gk-call-ctrl-btn gk-call-hangup-btn" id="gk-call-hangup-btn" title="Encerrar chamada" data-icon="phoneEnd"></button>
   </div>
+  <a class="gkc-watermark" href="https://golive.nemtudo.me" target="_blank" rel="noopener">Inspirado no GoLive · golive.nemtudo.me</a>
 </div>
 
 <!-- Barra minimizada — chamada em segundo plano (DM minimizada ou canal de voz de servidor) -->
@@ -902,7 +892,12 @@
   <button id="gk-call-bar-extras-btn" title="Soundboard e atividades" aria-label="Soundboard e atividades" data-icon="gamepad"></button>
   <button class="gk-hangup" id="gk-call-bar-hangup-btn" title="Encerrar" data-icon="phoneEnd"></button>
 </div>
-<div class="gk-screenshare-grid" id="gk-screenshare-grid"></div>
+<!-- Mini-player: mostra a transmissão em foco quando a chamada está minimizada -->
+<div class="gkc-dock" id="gkc-dock" title="Arraste para mover · clique para abrir a chamada">
+  <video id="gkc-dock-video" autoplay muted playsinline></video>
+  <span class="gkc-dock-label" id="gkc-dock-label"></span>
+  <div class="gkc-dock-btns"><button class="gkc-cbtn" id="gkc-dock-open" type="button" title="Abrir chamada" data-icon="expand"></button></div>
+</div>
 
 <!-- Chamada recebida — cartão "tocando", estilo Discord/Skype -->
 <div class="gk-incoming-call-overlay" id="gk-incoming-call-overlay">
