@@ -192,13 +192,7 @@ Os tokens de design (cores, tipografia, raio de borda) ficam centralizados em cs
 > 4. Figurinhas e sons próprios usam o upload do Cloudinary já configurado.
 
 
-## Tela de chamada (palco) — créditos e licença
+## Tela de chamada (palco)
 
-A tela de chamada (`js/call-stage.js`, `css/call-stage.css`) segue o visual e as ideias do **GoLive**
-(https://golive.nemtudo.me, de Nem Tudo): grade de tiles, foco/hiperfoco, zoom, girar/espelhar, PiP, tela cheia,
-gravação, clip dos últimos 30 s, estatísticas da conexão, reações e mão levantada.
-
-O GoLive usa a licença **FARSL 1.0** (`LICENSE-GOLIVE.md`): uso **não comercial**, a marca d'água/atribuição
-("Inspirado no GoLive · golive.nemtudo.me") **não pode ser removida**, e qualquer uso comercial exige licença
-comercial do autor (royalty de 40% da receita). Se o G.K.IO passar a gerar receita (anúncios, assinaturas, etc.),
-fale com o autor antes.
+`js/call-stage.js` + `css/call-stage.css`: grade de tiles (rostos, câmeras e telas), foco, zoom, girar/espelhar, PiP,
+tela cheia, gravação, clip dos últimos 30 s, estatísticas, reações e mão levantada. `js/calls.js` liga o palco ao LiveKit.

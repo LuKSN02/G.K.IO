@@ -1,9 +1,8 @@
 // ============================================================
 // G.K.IO — Palco da chamada (call-stage)
 //
-// A tela de chamada no estilo do GoLive (https://golive.nemtudo.me, de
-// Nem Tudo — licença FARSL 1.0, ver LICENSE-GOLIVE.md): uma grade de
-// "tiles" (transmissões e rostos), com foco, hiperfoco, zoom, girar/espelhar,
+// A tela de chamada: uma grade de "tiles" (transmissões e rostos), com
+// foco, tela única, zoom, girar/espelhar,
 // PiP, tela cheia, gravação, "clip dos últimos 30 s", estatísticas da
 // conexão, reações e mão levantada.
 //
@@ -24,7 +23,6 @@ export const TILE_ASPECT = 16 / 9;
 export const MIN_TILE_WIDTH = 200;
 const GAP = 12;
 const FS_IDLE_MS = 3000;
-const CLIP_MS = 30_000;
 
 // ---------- utilitários ----------
 function h(tag, props = {}, kids = []) {
@@ -50,21 +48,22 @@ const fmtDur = (ms) => {
 };
 
 /**
- * Escolhe a arrumação que deixa os tiles 16:9 o maior possível num painel
- * (mesma conta do GoLive: empilhar vence lado a lado num painel estreito).
+ * Escolhe quantas colunas usar para os tiles 16:9 ficarem o maior possível
+ * dentro do painel. Devolve { cols, rows, tileWidth } ou null sem medidas.
  */
 export function planTileGrid(tileCount, paneWidth, paneHeight, gap = GAP) {
   if (tileCount <= 0 || paneWidth <= 0 || paneHeight <= 0) return null;
-  let best = null;
+  const options = [];
   for (let cols = 1; cols <= tileCount; cols += 1) {
     const rows = Math.ceil(tileCount / cols);
-    const cellW = (paneWidth - gap * (cols - 1)) / cols;
-    const cellH = (paneHeight - gap * (rows - 1)) / rows;
-    if (cellW <= 0 || cellH <= 0) continue;
-    const tileWidth = Math.floor(Math.min(cellW, cellH * TILE_ASPECT));
-    if (!best || tileWidth > best.tileWidth) best = { cols, rows, tileWidth };
+    const byWidth = (paneWidth - gap * (cols - 1)) / cols;
+    const byHeight = ((paneHeight - gap * (rows - 1)) / rows) * TILE_ASPECT;
+    const tileWidth = Math.floor(Math.min(byWidth, byHeight));
+    if (tileWidth > 0) options.push({ cols, rows, tileWidth });
   }
-  if (!best) return { cols: 1, rows: tileCount, tileWidth: MIN_TILE_WIDTH };
+  if (!options.length) return { cols: 1, rows: tileCount, tileWidth: MIN_TILE_WIDTH };
+  // maior tile vence; empate fica com menos colunas (opções já vêm em ordem crescente)
+  const best = options.reduce((a, o) => (o.tileWidth > a.tileWidth ? o : a));
   return { ...best, tileWidth: Math.max(MIN_TILE_WIDTH, best.tileWidth) };
 }
 
@@ -102,63 +101,66 @@ function openPopover(anchor, content, { onClose } = {}) {
 }
 
 // ---------- Clip dos últimos 30 s ----------
-// Um MediaRecorder não deixa "cortar" os últimos 30 s (todo pedaço depende do
-// cabeçalho e do 1º quadro). Então um gravador novo é iniciado a cada
-// STAGGER_MS e o mais velho é descartado ao passar de MAX_AGE_MS: o gravador
-// mais antigo sempre cobre ≥30 s e, ao parar, vira um arquivo completo.
+// Um MediaRecorder só gera arquivo tocável a partir do começo da gravação.
+// Para "voltar 30 s" mantemos dois gravadores em revezamento: cada um vive
+// 45 s e é reiniciado, com 22,5 s de defasagem entre eles. Assim sempre
+// existe um com pelo menos ~22 s e no máximo 45 s; ao salvar, paramos o
+// mais antigo e entregamos o arquivo.
 function pickMime(hasAudio) {
-  const list = hasAudio
-    ? ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
-    : ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
-  return list.find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
+  const video = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const withAudio = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return (hasAudio ? withAudio : video).find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported(t));
 }
 export const recordingSupported = () => typeof window !== 'undefined' && !!window.MediaRecorder;
 
+const CLIP_LIFE_MS = 45_000;
 class ClipBuffer {
   constructor(stream) {
     this.stream = stream;
-    this.segments = [];
-    this.stagger = 10_000;
-    this.maxAge = CLIP_MS + this.stagger;
     this.mime = pickMime(stream.getAudioTracks().length > 0);
-    this.dead = false;
-    this._start();
-    this.timer = setInterval(() => { this._start(); this._prune(); }, this.stagger);
+    this.slots = [];
+    this.closed = false;
+    this._spawn();
+    this._second = setTimeout(() => this._spawn(), CLIP_LIFE_MS / 2);
   }
-  _start() {
-    if (this.dead) return;
-    try {
-      const rec = new MediaRecorder(this.stream, { mimeType: this.mime, videoBitsPerSecond: 2_500_000 });
-      const seg = { rec, chunks: [], startedAt: Date.now() };
-      rec.ondataavailable = (e) => { if (e.data?.size) seg.chunks.push(e.data); };
-      rec.start(1000);
-      this.segments.push(seg);
-    } catch (e) { /* codec indisponível */ }
+  _spawn() {
+    if (this.closed) return null;
+    let rec;
+    try { rec = new MediaRecorder(this.stream, { mimeType: this.mime, videoBitsPerSecond: 2_500_000 }); }
+    catch (e) { return null; }
+    const slot = { rec, parts: [], since: Date.now(), timer: 0 };
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) slot.parts.push(e.data); };
+    rec.start(1000);
+    // ao fim da vida, este slot é trocado por um novo
+    slot.timer = setTimeout(() => this._retire(slot, true), CLIP_LIFE_MS);
+    this.slots.push(slot);
+    return slot;
   }
-  _prune() {
-    while (this.segments.length > 1 && Date.now() - this.segments[0].startedAt > this.maxAge) {
-      const old = this.segments.shift();
-      try { old.rec.stop(); } catch (e) { /* já parado */ }
-    }
+  _retire(slot, respawn) {
+    clearTimeout(slot.timer);
+    this.slots = this.slots.filter((s) => s !== slot);
+    try { slot.rec.stop(); } catch (e) { /* já parado */ }
+    if (respawn) this._spawn();
   }
-  bufferedMs() { const s = this.segments[0]; return s ? Math.min(Date.now() - s.startedAt, this.maxAge) : 0; }
+  bufferedMs() { return this.slots.length ? Date.now() - this.slots[0].since : 0; }
   clip() {
-    const seg = this.segments.shift();
-    if (!seg) return Promise.resolve(null);
+    const slot = this.slots[0];
+    if (!slot) return Promise.resolve(null);
     return new Promise((resolve) => {
-      seg.rec.onstop = () => {
-        const blob = new Blob(seg.chunks, { type: this.mime || 'video/webm' });
-        resolve(blob.size ? { blob, durationMs: Math.min(Date.now() - seg.startedAt, this.maxAge) } : null);
+      slot.rec.onstop = () => {
+        const blob = new Blob(slot.parts, { type: this.mime || 'video/webm' });
+        resolve(blob.size ? { blob, durationMs: Date.now() - slot.since } : null);
       };
-      try { seg.rec.requestData(); seg.rec.stop(); } catch (e) { resolve(null); }
-      if (!this.segments.length) this._start();
+      clearTimeout(slot.timer);
+      this.slots = this.slots.filter((s) => s !== slot);
+      try { slot.rec.requestData(); slot.rec.stop(); } catch (e) { resolve(null); }
+      this._spawn();
     });
   }
   dispose() {
-    this.dead = true;
-    clearInterval(this.timer);
-    this.segments.forEach((s) => { try { s.rec.stop(); } catch (e) { /* ok */ } });
-    this.segments = [];
+    this.closed = true;
+    clearTimeout(this._second);
+    [...this.slots].forEach((s) => this._retire(s, false));
   }
 }
 
@@ -459,7 +461,7 @@ export class CallStage {
     if (t.avatar.getAttribute('src') !== src) t.avatar.src = src;
     t.faceName.textContent = p.isSelf ? `${p.name || 'Você'} (você)` : (p.name || 'Membro');
     t.nameEl.replaceChildren();
-    if (t.kind === 'screen') t.nameEl.append(h('span', { class: 'gkc-live', text: 'AO VIVO' }), label);
+    if (t.kind === 'screen') t.nameEl.append(h('span', { class: 'gkc-live', text: 'Transmitindo' }), label);
     else {
       if (p.micMuted) t.nameEl.append(h('span', { class: 'gkc-name-mic' }, icon('micOff', { size: 13 })));
       t.nameEl.append(label);
@@ -622,8 +624,8 @@ export class CallStage {
     if (spec.video) {
       kids.push(mk('zoomIn', 'Ajustar imagem (zoom, girar, espelhar)', (e) => this._adjustMenu(t, e.currentTarget)));
       if (document.pictureInPictureEnabled) kids.push(mk(pip ? 'pipExit' : 'pip', pip ? 'Sair do picture-in-picture' : 'Picture-in-picture', () => this._togglePip(t)));
-      kids.push(mk('focus', this._focusTile() === t ? 'Tirar do foco' : 'Focar nesta transmissão', () => this.toggleFocus(t.key), { pressed: this._focusTile() === t }));
-      kids.push(mk('hyperfocus', this.hyper && this._focusTile() === t ? 'Mostrar todos de novo' : 'Hiperfoco: esconde as outras', () => this.toggleHyperfocus(t.key), { pressed: this.hyper && this._focusTile() === t }));
+      kids.push(mk('focus', this._focusTile() === t ? 'Voltar para a grade' : 'Destacar esta transmissão', () => this.toggleFocus(t.key), { pressed: this._focusTile() === t }));
+      kids.push(mk('hyperfocus', this.hyper && this._focusTile() === t ? 'Mostrar todos de novo' : 'Ver só esta transmissão', () => this.toggleHyperfocus(t.key), { pressed: this.hyper && this._focusTile() === t }));
       kids.push(mk(fs ? 'fullscreenExit' : 'fullscreen', fs ? 'Sair da tela cheia' : 'Tela cheia', () => this._toggleFullscreen(t)));
     }
     if (spec.stop) kids.push(mk('eyeOff', 'Parar de assistir', () => this._setWatching(t, false)));
@@ -834,7 +836,7 @@ export class CallStage {
 
   _order() {
     const all = [...this.tiles.values()];
-    // telas primeiro; depois câmeras/rostos (você por último, como no GoLive)
+    // telas primeiro; depois câmeras/rostos (você por último,)
     const rank = (t) => (t.kind === 'screen' ? (t.local ? 1 : 0) : (this.people.get(t.uid)?.isSelf ? 3 : 2));
     return all.sort((a, b) => rank(a) - rank(b));
   }
@@ -937,7 +939,7 @@ export class CallStage {
     if (!this.moreBadge.hidden) this.moreBadge.textContent = `+${hidden}`;
     if (this.hyper) {
       this.moreBadge.hidden = false;
-      this.moreBadge.textContent = `Hiperfoco · ${hidden} escondida${hidden === 1 ? '' : 's'}`;
+      this.moreBadge.textContent = `Só esta · ${hidden} oculta${hidden === 1 ? '' : 's'}`;
     }
     this.hooks.onLayout?.({ mode, tiles: tiles.length, anyVideo });
   }

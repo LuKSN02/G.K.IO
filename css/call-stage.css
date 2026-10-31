@@ -1,9 +1,8 @@
 /* ============================================================
-   G.K.IO — Tela de chamada (palco) — visual inspirado no GoLive
-   https://golive.nemtudo.me (Nem Tudo, FARSL 1.0 — ver LICENSE-GOLIVE.md)
+   G.K.IO — Tela de chamada (palco)
    ============================================================ */
 :root {
-  --gkc-ok: #10b981;
+  --gkc-ok: #8B9BFF;
   --gkc-bad: #ef4444;
   --gkc-pill: rgba(8, 10, 18, 0.62);
   --gkc-pill-hi: rgba(8, 10, 18, 0.82);
@@ -25,7 +24,7 @@
 .gkc-tile.gkc-hidden { display: none; }
 .gkc-tile.gkc-enter { animation: gkc-in .3s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes gkc-in { from { opacity: 0; scale: .94; } to { opacity: 1; scale: 1; } }
-.gkc-tile.gkc-speaking { border-color: var(--gkc-ok); box-shadow: 0 0 0 2px var(--gkc-ok), 0 10px 30px rgba(0,0,0,.35); }
+.gkc-tile.gkc-speaking { border-color: var(--gkc-ok); box-shadow: 0 0 0 2px var(--gkc-ok), 0 0 24px rgba(139,155,255,.35), 0 10px 30px rgba(0,0,0,.35); }
 .gkc-tile.gkc-recording .gkc-rec-border { opacity: 1; }
 .gkc-rec-border { position: absolute; inset: 0; border-radius: inherit; border: 2px solid rgba(239,68,68,.7); pointer-events: none; opacity: 0; z-index: 30; transition: opacity .2s; }
 .gkc-tile.gkc-grabbing { cursor: grabbing; }
@@ -47,7 +46,7 @@
 .gkc-ring { position: absolute; inset: -4px; border-radius: 32%; box-shadow: 0 0 0 3px transparent; transition: box-shadow .15s; }
 .gkc-tile.gkc-speaking .gkc-avatar-wrap { transform: scale(1.05); }
 .gkc-tile.gkc-speaking .gkc-ring { box-shadow: 0 0 0 3px var(--gkc-ok); }
-.gkc-tile.gkc-ringing .gkc-ring { animation: gkc-ring 1.6s ease-out infinite; box-shadow: 0 0 0 2px var(--gk-accent, #5B6EE8); }
+.gkc-tile.gkc-ringing .gkc-ring { animation: gkc-ring 1.6s ease-out infinite; box-shadow: 0 0 0 2px var(--gkc-ok); }
 @keyframes gkc-ring { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(1.5); opacity: 0; } }
 .gkc-mic-badge { position: absolute; right: -6px; bottom: -6px; z-index: 2; width: 24px; height: 24px; border-radius: 50%; background: var(--gkc-bad); color: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid #0b0e19; }
 .gkc-mic-badge[hidden] { display: none; }
@@ -55,7 +54,7 @@
 .gkc-face-name { font-size: 13.5px; font-weight: 600; color: #fff; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gkc-face-status { font-family: var(--gk-font-mono, monospace); font-size: 12px; color: rgba(255,255,255,.6); }
 
-/* Só rostos: sem cartão, como a "CallStage" do GoLive */
+/* Só rostos: sem cartão */
 [data-mode="faces"] .gkc-tile { background: transparent; border-color: transparent; box-shadow: none; container-type: normal; overflow: visible; }
 [data-mode="faces"] .gkc-controls, [data-mode="faces"] .gkc-bottom { display: none; }
 [data-mode="faces"] .gkc-tile.gkc-speaking { box-shadow: none; }
@@ -71,10 +70,11 @@
 }
 
 /* ---------- etiquetas ---------- */
-.gkc-bottom { position: absolute; left: 8px; bottom: 8px; right: 8px; z-index: 12; display: flex; align-items: center; gap: 6px; pointer-events: none; }
-.gkc-name { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-radius: 999px; background: var(--gkc-pill); backdrop-filter: blur(6px); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gkc-bottom { position: absolute; left: 8px; top: 8px; right: 8px; z-index: 12; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+.gkc-name { display: inline-flex; border-radius: 8px !important; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-radius: 999px; background: var(--gkc-pill); backdrop-filter: blur(6px); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gkc-name-mic { display: inline-flex; color: var(--gkc-bad); }
-.gkc-live { font-size: 9.5px; letter-spacing: .08em; background: var(--gkc-bad); color: #fff; padding: 1px 6px; border-radius: 6px; font-weight: 700; }
+.gkc-live { font-size: 10px; background: rgba(139,155,255,.28); color: #dfe3ff; padding: 1px 7px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.gkc-live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #ff6b81; animation: gkc-blink 1.4s infinite; }
 .gkc-hand { font-size: 13px; }
 .gkc-rec-badge { background: var(--gkc-bad); color: #fff; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; font-family: var(--gk-font-mono, monospace); animation: gkc-blink 1.4s infinite; }
 @keyframes gkc-blink { 50% { opacity: .55; } }
@@ -91,10 +91,10 @@
 .gkc-placeholder p { margin: 0; max-width: 28ch; }
 
 /* ---------- controles do tile (aparecem no hover) ---------- */
-.gkc-controls { position: absolute; top: 8px; right: 8px; z-index: 20; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100% - 16px); transition: opacity .15s; }
+.gkc-controls { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 20; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px; padding: 5px; width: max-content; max-width: calc(100% - 16px); border-radius: 14px; background: rgba(12,15,28,.82); border: 1px solid rgba(139,155,255,.22); backdrop-filter: blur(10px); transition: opacity .15s, transform .15s; }
 @media (hover: hover) {
-  .gkc-controls { opacity: 0; pointer-events: none; }
-  .gkc-tile:hover .gkc-controls, .gkc-controls:focus-within { opacity: 1; pointer-events: auto; }
+  .gkc-controls { opacity: 0; pointer-events: none; transform: translate(-50%, 6px); }
+  .gkc-tile:hover .gkc-controls, .gkc-controls:focus-within { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
   .gkc-tile.gkc-fullscreen .gkc-controls { opacity: 0; pointer-events: none; }
   .gkc-tile.gkc-fullscreen.gkc-fs-active .gkc-controls { opacity: 1; pointer-events: auto; }
   .gkc-tile.gkc-fullscreen:not(.gkc-fs-active) { cursor: none; }
@@ -106,24 +106,24 @@
 .gkc-strip .gkc-controls { display: none; }
 .gkc-strip { cursor: pointer; }
 .gkc-tile.gkc-no-controls .gkc-controls { display: none; }
-.gkc-cbtn { width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; background: var(--gkc-pill); color: #fff; display: inline-flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); transition: background .12s, transform .12s; padding: 0; }
-.gkc-cbtn:hover { background: var(--gkc-pill-hi); transform: translateY(-1px); }
-.gkc-cbtn.gkc-on { background: var(--gkc-ok); }
+.gkc-cbtn { width: 34px; height: 32px; border-radius: 9px; border: 0; cursor: pointer; background: transparent; color: #e6e9ff; display: inline-flex; align-items: center; justify-content: center; transition: background .12s; padding: 0; }
+.gkc-cbtn:hover { background: rgba(255,255,255,.12); }
+.gkc-cbtn.gkc-on { background: rgba(139,155,255,.3); color: #fff; }
 .gkc-cbtn.gkc-rec { background: var(--gkc-bad); }
 .gkc-cbtn.gkc-bad { color: #ff8a8a; }
-.gkc-cbtn-flat { background: rgba(255,255,255,.08); }
+.gkc-cbtn-flat { background: rgba(255,255,255,.08); border-radius: 50%; width: 34px; height: 34px; }
 .gkc-cbtn svg { width: 18px; height: 18px; }
-.gkc-volgroup { display: inline-flex; align-items: center; gap: 4px; padding-left: 10px; border-radius: 999px; background: var(--gkc-pill); backdrop-filter: blur(6px); }
+.gkc-volgroup { display: inline-flex; align-items: center; gap: 2px; padding-left: 8px; border-right: 1px solid rgba(255,255,255,.12); margin-right: 3px; }
 .gkc-volgroup .gkc-cbtn { background: transparent; }
 .gkc-vol { -webkit-appearance: none; appearance: none; width: 84px; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
   background: linear-gradient(to right, #fff var(--p, 50%), rgba(255,255,255,.28) var(--p, 50%)); }
 .gkc-vol::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
 .gkc-vol::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0; }
-.gkc-zoomreset { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 22; border: 0; cursor: pointer; border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 600; background: var(--gkc-pill-hi); color: #fff; }
+.gkc-zoomreset { position: absolute; right: 10px; top: 10px; left: auto; transform: none; z-index: 22; border: 0; cursor: pointer; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; background: var(--gkc-pill-hi); color: #fff; }
 .gkc-zoomreset[hidden] { display: none; }
 
 /* ---------- estatísticas ---------- */
-.gkc-stats { position: absolute; left: 8px; bottom: 40px; z-index: 21; min-width: 210px; padding: 10px 12px; border-radius: 12px; background: rgba(8,10,18,.86); backdrop-filter: blur(8px); color: #fff; font-size: 12px; border: 1px solid rgba(255,255,255,.1); }
+.gkc-stats { position: absolute; left: 8px; top: 44px; z-index: 21; min-width: 210px; padding: 10px 12px; border-radius: 12px; background: rgba(8,10,18,.86); backdrop-filter: blur(8px); color: #fff; font-size: 12px; border: 1px solid rgba(255,255,255,.1); }
 .gkc-stats[hidden] { display: none; }
 .gkc-stats-title { font-weight: 700; margin-bottom: 6px; font-size: 12.5px; }
 .gkc-stats-row { display: flex; justify-content: space-between; gap: 18px; padding: 1.5px 0; color: rgba(255,255,255,.7); }
@@ -218,15 +218,10 @@
 .gk-incoming-accept { animation: gkc-ring-btn 1.4s ease-in-out infinite; }
 @keyframes gkc-ring-btn { 0%,100% { box-shadow: 0 0 0 0 rgba(16,185,129,.5); } 50% { box-shadow: 0 0 0 10px rgba(16,185,129,0); } }
 
-/* marca d'água / atribuição obrigatória do GoLive (FARSL 1.0 §3) */
-.gkc-watermark { position: absolute; left: 14px; bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 7; font-size: 11px; color: rgba(255,255,255,.55); text-decoration: none; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.06); }
-.gkc-watermark:hover { color: #fff; background: rgba(255,255,255,.12); }
-
 @media (max-width: 900px) {
   .gk-call-screen .gk-call-controls { gap: 6px; padding: 8px; }
   .gk-call-screen .gk-call-ctrl-btn { width: 46px; height: 46px; }
   .gk-call-screen .gk-call-hangup-btn { width: 52px; height: 52px; }
-  .gkc-watermark { position: static; align-self: center; margin: 0 0 calc(10px + env(safe-area-inset-bottom)); }
   .gkc-dock { width: 200px; bottom: 150px; right: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {

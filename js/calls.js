@@ -55,7 +55,7 @@ let callTimerInterval = null;
 let callStartedAt = null;
 
 // ============================================================
-// Palco da chamada (js/call-stage.js) — grade de tiles estilo GoLive:
+// Palco da chamada (js/call-stage.js) — grade de tiles:
 // rostos, câmeras e transmissões de tela, com foco, hiperfoco, zoom,
 // girar/espelhar, PiP, tela cheia, gravação, clip de 30 s e estatísticas.
 // O palco só desenha; aqui ficam os "ganchos" que falam com o LiveKit.
@@ -1194,7 +1194,7 @@ function toggleScreenShareBtn() {
 }
 
 // ============================================================
-// Extras da tela de chamada (estilo GoLive): reações, mão levantada,
+// Extras da tela de chamada reações, mão levantada,
 // gravação da chamada, ajustes rápidos e toque de chamada recebida.
 // Tudo viaja pelo canal de dados do LiveKit — nenhum servidor novo.
 // ============================================================

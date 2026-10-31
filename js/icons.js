@@ -94,7 +94,7 @@ const ICONS = {
   book:         { path: '<path d="M4 5a2 2 0 012-2h6v16H6a2 2 0 00-2 2V5z"/><path d="M20 5a2 2 0 00-2-2h-6v16h6a2 2 0 012 2V5z"/>' },
   clapperboard: { path: '<path d="M3 9l1.4-4.4L18 6l-.9 3H3z"/><rect x="3" y="9" width="18" height="11" rx="1.5"/>' },
 
-  // --- Ícones da tela de chamada (estilo GoLive) ---
+  // --- Ícones da tela de chamada ---
   pip:          { path: '<rect x="2.5" y="4.5" width="19" height="14" rx="2.5"/><rect x="12" y="11" width="7" height="5" rx="1.2" fill="currentColor" stroke="none"/>' },
   pipExit:      { path: '<rect x="2.5" y="4.5" width="19" height="14" rx="2.5"/><path d="M8 9l4 4M12 9L8 13"/>' },
   fullscreen:   { path: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>' },
