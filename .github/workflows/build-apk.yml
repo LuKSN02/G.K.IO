@@ -52,6 +52,10 @@ jobs:
         run: |
           BASE=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           echo "version=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          # versionCode = minutos desde 1970 (~29 milhões): sempre maior que qualquer build anterior,
+          # inclusive as antigas que usavam outro esquema (ex.: 10601). Se ficasse menor, o Android
+          # trataria como "downgrade" e recusaria instalar por cima.
+          echo "code=$(( $(date +%s) / 60 ))" >> "$GITHUB_OUTPUT"
 
       - name: Instalar dependências
         run: npm install
@@ -69,7 +73,7 @@ jobs:
       - name: Ajustar permissões, versão e ícones
         env:
           APP_VERSION: ${{ steps.ver.outputs.version }}
-          APP_VERSION_CODE: ${{ github.run_number }}
+          APP_VERSION_CODE: ${{ steps.ver.outputs.code }}
         run: |
           node scripts/patch-android.js
           bash scripts/make-icons.sh
@@ -102,6 +106,13 @@ jobs:
       - name: Compilar APK
         working-directory: mobile/android
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Conferir assinatura e versão do APK
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | grep -i "SHA-256"
+          "$BT/aapt" dump badging android/app/build/outputs/apk/debug/app-debug.apk | grep -E "^package:"
+          echo "Esperado SHA-256 da chave fixa:"; keytool -list -keystore keystore/debug.keystore -storepass android 2>/dev/null | grep -i fingerprint
 
       - name: Nomear o APK
         run: cp android/app/build/outputs/apk/debug/app-debug.apk "G.K.IO-${{ steps.ver.outputs.version }}.apk"

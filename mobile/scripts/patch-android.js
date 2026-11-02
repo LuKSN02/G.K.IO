@@ -12,6 +12,8 @@ const PERMS = [
   'android.permission.MODIFY_AUDIO_SETTINGS',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.VIBRATE',
+  'android.permission.FOREGROUND_SERVICE',
+  'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
 ];
 const features = ['android.hardware.camera', 'android.hardware.microphone'];
 
@@ -26,8 +28,21 @@ if (!xml.includes('default_notification_channel_id')) {
   xml = xml.replace('</application>', '        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="gkio-messages" />\n    </application>');
 }
 
+// Serviço em primeiro plano da captura de tela (obrigatório no Android 10+; tipo mediaProjection no 14+).
+if (!xml.includes('ScreenCaptureService')) {
+  xml = xml.replace('</application>', '        <service android:name=".ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />\n    </application>');
+}
 fs.writeFileSync(manifestPath, xml);
 console.log('AndroidManifest.xml ajustado.');
+
+// Plugins nativos próprios (captura de tela + modo de áudio de chamada) e a MainActivity que os registra.
+const javaDir = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'java', 'io', 'gkio', 'app');
+const nativeDir = path.join(__dirname, '..', 'native', 'android');
+fs.mkdirSync(javaDir, { recursive: true });
+for (const f of fs.readdirSync(nativeDir)) {
+  if (f.endsWith('.java')) fs.copyFileSync(path.join(nativeDir, f), path.join(javaDir, f));
+}
+console.log('Plugins nativos copiados para', javaDir);
 
 // Versão do app: vem do workflow (APP_VERSION / APP_VERSION_CODE), senão do mobile/package.json. O aviso de atualização compara com isso.
 const version = (process.env.APP_VERSION || require('../package.json').version).replace(/^v/i, '');
@@ -38,3 +53,23 @@ let gradle = fs.readFileSync(gradlePath, 'utf8');
 gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`).replace(/versionName\s+"[^"]*"/, `versionName "${version}"`);
 fs.writeFileSync(gradlePath, gradle);
 console.log(`Versão do app: ${version} (código ${versionCode}).`);
+
+// Assinatura: força o build debug a usar SEMPRE a chave do repositório (mobile/keystore/debug.keystore),
+// sem depender do ~/.android do computador/CI. Chave diferente = "conflito" ao atualizar por cima.
+const ks = path.join(__dirname, '..', 'keystore', 'debug.keystore').replace(/\\/g, '/');
+if (fs.existsSync(ks) && !gradle.includes('gkio-fixed-key')) {
+  gradle = gradle.replace(/android\s*\{/, `android {
+    // gkio-fixed-key
+    signingConfigs {
+        debug {
+            storeFile file('${ks}')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }`);
+  fs.writeFileSync(gradlePath, gradle);
+  console.log('Assinatura fixa configurada:', ks);
+} else if (!fs.existsSync(ks)) {
+  console.warn('AVISO: mobile/keystore/debug.keystore não encontrado — o APK sairá com chave aleatória e não atualizará por cima do anterior.');
+}

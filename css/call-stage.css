@@ -227,3 +227,21 @@
 @media (prefers-reduced-motion: reduce) {
   .gkc-tile, .gkc-float { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Marca própria do G.K.IO: aura de voz + luar do Uivo ---------- */
+.gkc-tile.gkc-speaking {
+  box-shadow: 0 0 0 2px var(--gkc-ok),
+    0 0 calc(12px + var(--lvl, 0) * 56px) rgba(139,155,255, calc(.22 + var(--lvl, 0) * .55)),
+    0 10px 30px rgba(0,0,0,.35);
+}
+.gkc-tile.gkc-speaking .gkc-avatar-wrap { transform: scale(calc(1.03 + var(--lvl, 0) * .14)); transition: transform .08s linear; }
+.gkc-tile.gkc-speaking .gkc-ring { box-shadow: 0 0 0 3px var(--gkc-ok), 0 0 calc(6px + var(--lvl, 0) * 40px) rgba(139,155,255,.7); }
+.gkc-moon { position: absolute; inset: 0; z-index: 30; pointer-events: none; overflow: hidden; animation: gkc-moon-fade 3.2s ease-in-out forwards;
+  background: radial-gradient(70% 55% at 50% 100%, rgba(139,155,255,.28), transparent 70%); }
+.gkc-moon-disc { position: absolute; left: 50%; bottom: -120px; width: 150px; height: 150px; margin-left: -75px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffffff, #dfe3ff 45%, #9aa6ff 100%); box-shadow: 0 0 80px 30px rgba(139,155,255,.55);
+  animation: gkc-moon-rise 3.2s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes gkc-moon-rise { 0% { transform: translateY(0); } 40% { transform: translateY(-62vh); } 80% { transform: translateY(-62vh); } 100% { transform: translateY(-40px); opacity: 0; } }
+@keyframes gkc-moon-fade { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+[data-mode="faces"] .gkc-tile.gkc-speaking { box-shadow: none; }
+.gkc-unsupported { opacity: .55; }

@@ -253,6 +253,17 @@ export class CallStage {
     p.speaking = on;
     this.tiles.get(`cam:${uid}`)?.el.classList.toggle('gkc-speaking', on);
   }
+  /** Volume da voz (0 a 1): a "aura" do tile cresce e brilha junto. */
+  setLevel(uid, level) {
+    const t = this.tiles.get(`cam:${uid}`);
+    if (t) t.el.style.setProperty('--lvl', Math.max(0, Math.min(1, level)).toFixed(2));
+  }
+  /** Luar: um brilho de lua cheia sobe pelo palco (usado no Uivo). */
+  moonlight() {
+    const m = h('div', { class: 'gkc-moon' }, h('span', { class: 'gkc-moon-disc' }));
+    this.root.appendChild(m);
+    setTimeout(() => m.remove(), 3200);
+  }
   setMicMuted(uid, muted) {
     const p = this.people.get(uid); if (!p) return;
     p.micMuted = muted;

@@ -297,6 +297,7 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   }
 
   syncStagePeople();
+  startAura();
   await room.localParticipant.setMicrophoneEnabled(true, audioCaptureDefaults);
   await applyMicProcessing(room, Track, (m) => toast(m)); // supressão de ruído por IA, se escolhida
   // Push-to-talk ligado: entra com o microfone fechado até segurar a tecla.
@@ -860,7 +861,7 @@ export async function startScreenShare() {
       // Android (WebView) não tem getDisplayMedia() — usa o plugin nativo
       // de captura de tela (MediaProjection) via ponte de canvas, e
       // publica a track resultante manualmente na sala.
-      const stream = await startNativeScreenCapture(12);
+      const stream = await startNativeScreenCapture(12, () => stopScreenShare(false));
       const videoTrack = stream.getVideoTracks()[0];
       videoTrack.onended = () => stopScreenShare();
       const localTrack = new LocalVideoTrack(videoTrack);
@@ -873,7 +874,16 @@ export async function startScreenShare() {
     }
     toast('Compartilhamento de tela iniciado.');
   } catch (e) {
-    // usuário cancelou o seletor de tela/janela ou negou a permissão — sem erro pro usuário
+    const msg = String(e?.message || e || '');
+    if (e?.code === 'plugin-missing') {
+      toast('Este app ainda não tem a captura de tela. Atualize o G.K.IO para a versão mais nova.', 'danger');
+    } else if (/cancel|NotAllowed|Permission denied|AbortError/i.test(msg) || e?.name === 'NotAllowedError') {
+      // a pessoa cancelou o seletor / negou a permissão — sem alarde
+    } else {
+      console.warn('[tela] falhou:', e);
+      toast('Não foi possível compartilhar a tela neste aparelho.', 'danger');
+    }
+    if (isNativeAndroid()) stopNativeScreenCapture();
   }
 }
 
@@ -906,7 +916,8 @@ function updateScreenShareButton(active) {
   ['gk-call-screenshare-btn', 'gk-call-bar-screenshare-btn'].forEach((id) => {
     const btn = document.getElementById(id);
     if (!btn) return;
-    btn.style.display = supported ? '' : 'none';
+    btn.style.display = '';
+    btn.classList.toggle('gkc-unsupported', !supported && !active);
     btn.classList.toggle('gk-active', active);
     btn.title = active ? 'Parar compartilhamento de tela' : 'Compartilhar tela';
   });
@@ -1198,7 +1209,7 @@ function toggleScreenShareBtn() {
 // gravação da chamada, ajustes rápidos e toque de chamada recebida.
 // Tudo viaja pelo canal de dados do LiveKit — nenhum servidor novo.
 // ============================================================
-const REACTIONS = ['👍', '👏', '😂', '❤️', '😮', '🎉', '🔥', '😢'];
+const REACTIONS = ['🐺', '👍', '👏', '😂', '❤️', '😮', '🎉', '🔥', '😢'];
 let myHand = false;
 let reactionsWired = false;
 
@@ -1218,7 +1229,7 @@ function wireCallExtras() {
   REACTIONS.forEach((emoji) => {
     bar.appendChild(el('button', {
       type: 'button', title: emoji, 'aria-label': `Reagir com ${emoji}`,
-      onclick: () => { stage?.showReaction(auth.currentUser.uid, emoji); sendCallData('gk-react', { e: emoji }); },
+      onclick: () => { applyReaction(auth.currentUser.uid, emoji); sendCallData('gk-react', { e: emoji }); },
     }, emoji));
   });
   document.getElementById('gk-call-react-btn').addEventListener('click', () => {
@@ -1226,7 +1237,7 @@ function wireCallExtras() {
     bar.classList.toggle('gk-open');
   });
   onCallData('gk-react', (msg, uid) => {
-    if (typeof msg?.e === 'string' && REACTIONS.includes(msg.e)) stage?.showReaction(uid, msg.e);
+    if (typeof msg?.e === 'string' && REACTIONS.includes(msg.e)) applyReaction(uid, msg.e);
   });
 
   // --- mão levantada ---
@@ -1348,3 +1359,40 @@ function startRingtone() {
   } catch (e) { /* sem áudio — o cartão continua visível */ }
 }
 function stopRingtone() { if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
+
+// ---- Marca própria do G.K.IO: o Uivo e a aura de voz ----
+function applyReaction(uid, emoji) {
+  stage?.showReaction(uid, emoji);
+  if (emoji === '🐺') { stage?.moonlight(); if (!isDeafened) playHowl(); }
+}
+let howlCtx = null;
+function playHowl() {
+  try {
+    howlCtx = howlCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (howlCtx.state === 'suspended') howlCtx.resume().catch(() => {});
+    const t = howlCtx.currentTime;
+    const o = howlCtx.createOscillator(); const lfo = howlCtx.createOscillator();
+    const lg = howlCtx.createGain(); const g = howlCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(240, t);
+    o.frequency.exponentialRampToValueAtTime(620, t + 0.9);
+    o.frequency.setValueAtTime(620, t + 1.5);
+    o.frequency.exponentialRampToValueAtTime(330, t + 2.6);
+    lfo.frequency.value = 5.5; lg.gain.value = 9; lfo.connect(lg).connect(o.frequency);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.5);
+    g.gain.setValueAtTime(0.14, t + 1.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 2.7);
+    o.connect(g).connect(howlCtx.destination);
+    o.start(t); lfo.start(t); o.stop(t + 2.8); lfo.stop(t + 2.8);
+  } catch (e) { /* sem áudio */ }
+}
+
+// Aura: o nível de voz de cada pessoa (0–1) alimenta o brilho do tile.
+let auraRaf = 0;
+function auraLoop() {
+  if (!room || !state.activeCall) { auraRaf = 0; return; }
+  const me = auth.currentUser?.uid;
+  stage?.setLevel(me, Math.min(1, (room.localParticipant.audioLevel || 0) * 1.6));
+  room.remoteParticipants.forEach((p) => stage?.setLevel(p.identity, Math.min(1, (p.audioLevel || 0) * 1.6)));
+  auraRaf = requestAnimationFrame(auraLoop);
+}
+function startAura() { if (!auraRaf) auraRaf = requestAnimationFrame(auraLoop); }

@@ -34,8 +34,11 @@ let captureCanvas = null;
 let captureCtx = null;
 let frameImg = null;
 
-export async function startNativeScreenCapture(fps = 12) {
-  const ScreenCapture = window.Capacitor.Plugins.ScreenCapture;
+let stoppedListenerHandle = null;
+export async function startNativeScreenCapture(fps = 12, onStopped = () => {}) {
+  const ScreenCapture = window.Capacitor?.Plugins?.ScreenCapture;
+  // Build antiga do app (sem o plugin nativo): avisa em vez de falhar calado.
+  if (!ScreenCapture) { const err = new Error('plugin-missing'); err.code = 'plugin-missing'; throw err; }
   captureCanvas = document.createElement('canvas');
   captureCtx = captureCanvas.getContext('2d');
   frameImg = new Image();
@@ -47,7 +50,8 @@ export async function startNativeScreenCapture(fps = 12) {
     frameImg.src = 'data:image/jpeg;base64,' + data;
   });
 
-  await ScreenCapture.start(); // aqui aparece o diálogo nativo "Iniciar transmissão?" do Android
+  stoppedListenerHandle = await ScreenCapture.addListener('stopped', () => onStopped());
+  await ScreenCapture.start({ fps }); // aqui aparece o diálogo nativo "Iniciar transmissão?" do Android
 
   // Espera o primeiro frame chegar antes de criar o stream — senão o
   // canvas.captureStream() sai de um canvas ainda em branco.
@@ -62,6 +66,7 @@ export async function startNativeScreenCapture(fps = 12) {
 export async function stopNativeScreenCapture() {
   const ScreenCapture = window.Capacitor?.Plugins?.ScreenCapture;
   if (frameListenerHandle) { frameListenerHandle.remove(); frameListenerHandle = null; }
+  if (stoppedListenerHandle) { stoppedListenerHandle.remove(); stoppedListenerHandle = null; }
   if (ScreenCapture) { try { await ScreenCapture.stop(); } catch (e) {} }
   captureCanvas = null; captureCtx = null; frameImg = null;
 }
