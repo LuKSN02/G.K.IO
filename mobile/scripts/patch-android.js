@@ -29,7 +29,8 @@ if (!xml.includes('default_notification_channel_id')) {
 }
 
 // Serviço em primeiro plano da captura de tela (obrigatório no Android 10+; tipo mediaProjection no 14+).
-if (!xml.includes('ScreenCaptureService')) {
+const hasNative = fs.existsSync(path.join(__dirname, '..', 'native', 'android'));
+if (hasNative && !xml.includes('ScreenCaptureService')) {
   xml = xml.replace('</application>', '        <service android:name=".ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />\n    </application>');
 }
 fs.writeFileSync(manifestPath, xml);
@@ -38,11 +39,15 @@ console.log('AndroidManifest.xml ajustado.');
 // Plugins nativos próprios (captura de tela + modo de áudio de chamada) e a MainActivity que os registra.
 const javaDir = path.join(__dirname, '..', 'android', 'app', 'src', 'main', 'java', 'io', 'gkio', 'app');
 const nativeDir = path.join(__dirname, '..', 'native', 'android');
-fs.mkdirSync(javaDir, { recursive: true });
-for (const f of fs.readdirSync(nativeDir)) {
-  if (f.endsWith('.java')) fs.copyFileSync(path.join(nativeDir, f), path.join(javaDir, f));
+if (fs.existsSync(nativeDir)) {
+  fs.mkdirSync(javaDir, { recursive: true });
+  for (const f of fs.readdirSync(nativeDir)) {
+    if (f.endsWith('.java')) fs.copyFileSync(path.join(nativeDir, f), path.join(javaDir, f));
+  }
+  console.log('Plugins nativos copiados para', javaDir);
+} else {
+  console.warn('AVISO: pasta mobile/native/android não encontrada — APK sairá sem compartilhamento de tela nativo. Suba essa pasta no repositório.');
 }
-console.log('Plugins nativos copiados para', javaDir);
 
 // Versão do app: vem do workflow (APP_VERSION / APP_VERSION_CODE), senão do mobile/package.json. O aviso de atualização compara com isso.
 const version = (process.env.APP_VERSION || require('../package.json').version).replace(/^v/i, '');
