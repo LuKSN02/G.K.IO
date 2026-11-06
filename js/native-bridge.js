@@ -21,6 +21,24 @@ export async function startCallAudioMode() {
   callAudioModeOn = true;
   try { await window.Capacitor.Plugins.CallAudio.startCallMode({ speaker: true }); } catch (e) { /* plugin pode não estar disponível numa build antiga — chamada continua funcionando, só sem a correção */ }
 }
+// Serviço em primeiro plano: mantém microfone e som vivos com o app em segundo plano.
+// Só pode subir depois que a permissão de microfone foi concedida, então tentamos de novo algumas vezes.
+let keepAliveTimers = [];
+export function startCallKeepAlive() {
+  if (!isNativeAndroid()) return;
+  stopCallKeepAliveTimers();
+  const attempt = async () => {
+    try { await window.Capacitor.Plugins.CallAudio.startKeepAlive(); stopCallKeepAliveTimers(); } catch (e) { /* sem permissão ainda ou build antiga: tenta de novo */ }
+  };
+  attempt();
+  keepAliveTimers = [2000, 5000, 10000, 20000].map((ms) => setTimeout(attempt, ms));
+}
+function stopCallKeepAliveTimers() { keepAliveTimers.forEach(clearTimeout); keepAliveTimers = []; }
+export async function stopCallKeepAlive() {
+  stopCallKeepAliveTimers();
+  if (!isNativeAndroid()) return;
+  try { await window.Capacitor.Plugins.CallAudio.stopKeepAlive(); } catch (e) { /* ok */ }
+}
 export async function stopCallAudioMode() {
   if (!isNativeAndroid() || !callAudioModeOn) return;
   callAudioModeOn = false;

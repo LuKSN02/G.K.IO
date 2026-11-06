@@ -14,6 +14,9 @@ const PERMS = [
   'android.permission.VIBRATE',
   'android.permission.FOREGROUND_SERVICE',
   'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+  'android.permission.FOREGROUND_SERVICE_MICROPHONE',
+  'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+  'android.permission.WAKE_LOCK',
 ];
 const features = ['android.hardware.camera', 'android.hardware.microphone'];
 
@@ -32,6 +35,10 @@ if (!xml.includes('default_notification_channel_id')) {
 const hasNative = fs.existsSync(path.join(__dirname, '..', 'native', 'android'));
 if (hasNative && !xml.includes('ScreenCaptureService')) {
   xml = xml.replace('</application>', '        <service android:name=".ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />\n    </application>');
+}
+// Serviço em primeiro plano da chamada (microfone + som continuam com o app em segundo plano).
+if (hasNative && !xml.includes('CallForegroundService')) {
+  xml = xml.replace('</application>', '        <service android:name=".CallForegroundService" android:exported="false" android:foregroundServiceType="microphone|mediaPlayback" />\n    </application>');
 }
 fs.writeFileSync(manifestPath, xml);
 console.log('AndroidManifest.xml ajustado.');

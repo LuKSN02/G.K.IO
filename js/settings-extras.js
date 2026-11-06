@@ -159,6 +159,29 @@ export function renderExtensionsSection(content, sectionHeader) {
   }
   const rerender = () => { content.innerHTML = ''; renderExtensionsSection(content, sectionHeader); };
 
+  // Temas prontos (vêm junto com o app)
+  const installed = new Set(listThemes().map((t) => t.name));
+  const PRESETS = [
+    { name: 'Verade Fábula Deluxe', desc: 'O Fábula completo e estável: cenário ilustrado com sol de raios, arco-íris, montanhas com neve, moinho, casinha com fumaça, lago, balão e pássaros; muda com a hora do dia. Plugin incluso.', file: 'css/themes/verade-fabula-deluxe.css', plugin: 'css/themes/verade-fabula-deluxe.plugin.js' },
+    { name: 'Verade Pomar', desc: 'Estável e elegante: noite de pomar em verde-maçã, ouro e toques de vermelho. Só cor, gradiente e brilho — não mexe em layout, menus, chamadas nem celular.', file: 'css/themes/verade-pomar.css' },{ name: 'Verade', desc: 'Noite de pomar: verde-maçã vivo, vermelho-maçã, folhas e brilho de seiva. Inspirado no clima do Mundo Torajo.', file: 'css/themes/verade.css' },
+    { name: 'Verade Aurora', desc: 'Versão premium: aurora animada, painéis de vidro flutuantes, esporos brilhantes, bordas de luz e mensagens em cartões de cristal.', file: 'css/themes/verade-aurora.css' },
+    { name: 'Verade Éden', desc: 'O definitivo: céu vivo que muda com a hora do seu dia (noite, amanhecer, dia, entardecer), sol/lua, estrelas cadentes, folhas e maçãs caindo com parallax, painéis de vidro e bordas giratórias de luz.', file: 'css/themes/verade-eden.css', plugin: 'css/themes/verade-eden.plugin.js' },
+    { name: 'Verade Fábula', desc: 'Estilo desenho animado: contornos grossos, botões gordinhos que afundam, balões de conversa e um cenário ilustrado atrás de tudo (colinas, macieiras, nuvens, sol/lua) que muda com a hora, com borboletas e vagalumes.', file: 'css/themes/verade-fabula.css', plugin: 'css/themes/verade-fabula.plugin.js' }];
+  content.appendChild(card('Temas prontos', PRESETS.map((pr) => el('div', { class: 'gk-ext-item', style: 'display:flex;align-items:center;gap:12px;justify-content:space-between;' }, [
+    el('div', {}, [el('strong', {}, pr.name), el('div', { class: 'gk-hint' }, pr.desc)]),
+    el('button', {
+      class: 'gk-btn gk-btn-primary', disabled: installed.has(pr.name) ? 'disabled' : null,
+      onclick: async () => {
+        try {
+          const css = await fetch(new URL('../' + pr.file, import.meta.url)).then((r) => { if (!r.ok) throw new Error('arquivo não encontrado'); return r.text(); });
+          addTheme(pr.name, css);
+          if (pr.plugin) { const js = await fetch(new URL('../' + pr.plugin, import.meta.url)).then((r) => r.text()); await addPlugin(pr.name, js); }
+          toast(pr.name + ' instalado!', 'success'); rerender();
+        } catch (e) { toast('Não foi possível instalar: ' + (e.message || e), 'danger'); }
+      },
+    }, installed.has(pr.name) ? 'Instalado' : 'Instalar'),
+  ]))));
+
   // Temas
   const themeList = listThemes().map((t) => itemRow(t, {
     kind: 'tema',

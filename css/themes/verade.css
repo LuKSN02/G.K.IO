@@ -1,0 +1,153 @@
+/* ============================================================
+   VERADE — tema para o G.K.IO
+   Inspirado no clima do "Mundo Torajo": um planeta de frutas, com o
+   verde-maçã vivo de um lado e o vermelho-maçã do outro. Noite de pomar,
+   folhas, brilho de seiva e cantos arredondados de desenho animado.
+   Paleta e ornamentos são originais (nenhum personagem é desenhado aqui).
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap');
+
+html:root[data-theme] {
+  color-scheme: dark;
+
+  /* superfícies: verde-floresta bem escuro, com um toque de seiva */
+  --gk-bg: #0C1710;
+  --gk-surface: #122019;
+  --gk-surface-sunken: #0A130D;
+  --gk-rail: #08100A;
+
+  /* cinzas esverdeados (texto/bordas) */
+  --gk-gray-100: #1B2E22;
+  --gk-gray-200: #26402F;
+  --gk-gray-300: #365A43;
+  --gk-gray-400: #5C8268;
+  --gk-gray-500: #86A992;
+  --gk-gray-600: #A9C7B2;
+  --gk-gray-700: #C8DECE;
+  --gk-gray-800: #E6F2E8;
+  --gk-gray-900: #F7FCEF;
+
+  /* destaque: verde-maçã */
+  --gk-accent: #72D035 !important;
+  --gk-accent-strong: #98EA5A !important;
+  --gk-accent-soft: rgba(114, 208, 53, 0.16) !important;
+  --gk-accent-glow: rgba(114, 208, 53, 0.38) !important;
+
+  /* o "outro lado" do planeta: vermelho-maçã */
+  --gk-danger: #F0495B;
+  --gk-danger-soft: rgba(240, 73, 91, 0.16);
+  --gk-warning: #FFC247;
+  --gk-status-online: #72D035;
+  --gk-status-idle: #FFC247;
+  --gk-status-dnd: #F0495B;
+  --gk-status-offline: #4B6E58;
+
+  --gk-font-display: 'Fredoka', 'Space Grotesk', sans-serif;
+
+  --gk-radius-sm: 9px;
+  --gk-radius-md: 14px;
+  --gk-radius-lg: 20px;
+
+  --gk-brand-gradient: linear-gradient(135deg, #72D035 0%, #2FAE5E 55%, #F0495B 140%);
+  --gk-shadow-sm: 0 2px 4px rgba(0, 8, 2, 0.35);
+  --gk-shadow-md: 0 6px 20px rgba(0, 8, 2, 0.45);
+  --gk-shadow-lg: 0 20px 48px rgba(0, 8, 2, 0.6);
+
+  /* padrão de fundo: folhinhas e sementes esparsas */
+  --gk-frost-pattern: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><g opacity='0.07'><path d='M24 40c16-22 42-20 46-18-2 4-6 34-30 38-10 2-16-6-16-20z' fill='%2372D035'/><path d='M30 38c10 4 22 12 32 20' stroke='%230C1710' stroke-width='2' fill='none'/><path d='M104 112c14-18 36-17 40-15-2 4-5 29-26 33-9 2-14-5-14-18z' fill='%23F0495B'/><circle cx='128' cy='30' r='3' fill='%23FFC247'/><circle cx='58' cy='128' r='2.5' fill='%2372D035'/><circle cx='14' cy='100' r='2' fill='%23F0495B'/></g></svg>");
+}
+
+/* ---------- Tipografia ---------- */
+h1, h2, h3, .gk-display, .gk-title, .gk-sidebar-header { font-family: 'Fredoka', var(--gk-font-display), sans-serif; letter-spacing: 0; }
+::selection { background: rgba(114, 208, 53, 0.35); color: #fff; }
+
+/* ---------- Fundo geral: luz verde de um lado, vermelha do outro ---------- */
+.gk-main {
+  background-image:
+    radial-gradient(900px 520px at 8% -10%, rgba(114, 208, 53, 0.11), transparent 60%),
+    radial-gradient(800px 520px at 108% 112%, rgba(240, 73, 91, 0.09), transparent 60%),
+    var(--gk-frost-pattern);
+  background-color: var(--gk-bg);
+}
+
+/* ---------- Rail ---------- */
+.gk-rail {
+  background-image:
+    linear-gradient(180deg, rgba(114, 208, 53, 0.08), transparent 30%, transparent 70%, rgba(240, 73, 91, 0.08)),
+    var(--gk-frost-pattern);
+  border-right-color: rgba(114, 208, 53, 0.16);
+}
+.gk-rail-item.gk-rail-nav-item { border-radius: 16px; }
+.gk-rail-item.gk-rail-nav-item:hover { background: rgba(114, 208, 53, 0.1); }
+.gk-rail-item.gk-rail-nav-item.gk-active {
+  background: linear-gradient(160deg, rgba(114, 208, 53, 0.22), rgba(47, 174, 94, 0.12));
+  box-shadow: inset 0 0 0 1px rgba(114, 208, 53, 0.35), 0 0 18px rgba(114, 208, 53, 0.18);
+  color: var(--gk-accent-strong);
+}
+
+/* ---------- Sidebar e topo ---------- */
+.gk-sidebar { background: linear-gradient(180deg, #14241B 0%, #101C15 100%); border-right-color: rgba(114, 208, 53, 0.12); }
+.gk-sidebar-header, .gk-topbar { border-bottom: 1px solid rgba(114, 208, 53, 0.14); }
+.gk-topbar { background: rgba(18, 32, 25, 0.88); backdrop-filter: blur(10px); }
+.gk-sidebar-header::after, .gk-topbar::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; pointer-events: none;
+  background: linear-gradient(90deg, #72D035, rgba(114, 208, 53, 0) 35%, rgba(240, 73, 91, 0) 65%, #F0495B);
+  opacity: 0.55;
+}
+.gk-sidebar-header { position: relative; }
+
+.gk-channel { border-radius: 12px; }
+.gk-channel:hover { background: rgba(114, 208, 53, 0.09); }
+.gk-channel.gk-active, .gk-channel.gk-selected, .gk-channel[aria-current="true"] {
+  background: linear-gradient(90deg, rgba(114, 208, 53, 0.2), rgba(114, 208, 53, 0.05));
+  box-shadow: inset 3px 0 0 var(--gk-accent);
+  color: var(--gk-gray-900);
+}
+.gk-server-picker-row:hover { background: rgba(114, 208, 53, 0.09); }
+
+/* ---------- Mensagens ---------- */
+.gk-msg-group:hover { background: rgba(114, 208, 53, 0.045); }
+.gk-mention {
+  background: rgba(114, 208, 53, 0.2); color: #B8F58A; border-radius: 8px; padding: 0 4px;
+}
+
+/* ---------- Caixa de mensagem ---------- */
+.gk-composer-box {
+  background: #0E1C14; border: 1.5px solid rgba(114, 208, 53, 0.22); border-radius: 22px;
+}
+.gk-composer-box:focus-within {
+  border-color: var(--gk-accent);
+  box-shadow: 0 0 0 3px rgba(114, 208, 53, 0.2), 0 0 28px rgba(114, 208, 53, 0.14);
+}
+.gk-composer-box button.gk-send {
+  color: #0C1710; background: var(--gk-brand-gradient); border-radius: 50%; width: 36px; height: 36px;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0;
+  box-shadow: 0 4px 14px rgba(114, 208, 53, 0.4);
+}
+.gk-composer-box button.gk-send:hover { filter: brightness(1.1); transform: scale(1.06) rotate(-6deg); }
+
+/* ---------- Botões ---------- */
+.gk-btn-primary {
+  background: linear-gradient(135deg, #7BDB3A, #3DB561); color: #08210F; font-weight: 700; border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(114, 208, 53, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.gk-btn-primary:hover { background: linear-gradient(135deg, #8BEA48, #4CC972); box-shadow: 0 8px 22px rgba(114, 208, 53, 0.4); }
+.gk-btn-danger, .gk-btn.gk-danger { background: linear-gradient(135deg, #F0495B, #C92B52); color: #fff; }
+
+/* ---------- Modais e cartões ---------- */
+.gk-modal { border: 1px solid rgba(114, 208, 53, 0.22); border-radius: 24px; box-shadow: 0 24px 64px rgba(0, 8, 2, 0.65), 0 0 0 1px rgba(114, 208, 53, 0.06); }
+.gk-modal-icon { background: var(--gk-brand-gradient); color: #08210F; }
+
+/* ---------- Scroll ---------- */
+::-webkit-scrollbar-thumb { background: #2B4A37; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #3F6B50; background-clip: padding-box; }
+
+/* ---------- Chamada: aura verde para quem fala, vermelha para mão levantada ---------- */
+.gkc-stage, #gk-call-stage { background: radial-gradient(1000px 600px at 50% 0%, #17301F, #08100A 70%); }
+.gkc-tile[data-speaking="1"], .gkc-tile.gkc-speaking { box-shadow: 0 0 0 3px var(--gk-accent), 0 0 32px rgba(114, 208, 53, 0.45); }
+.gkc-tile { border-radius: 22px; }
+
+/* ---------- Detalhes de pomar ---------- */
+@keyframes verade-sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(4deg); } }
+.gk-rail-brand img { filter: drop-shadow(0 0 10px rgba(114, 208, 53, 0.55)); animation: verade-sway 6s ease-in-out infinite; transform-origin: 50% 90%; }
+@media (prefers-reduced-motion: reduce) { .gk-rail-brand img { animation: none; } }

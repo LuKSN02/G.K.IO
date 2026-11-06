@@ -249,6 +249,10 @@ function ensureGraph(audioEl) {
     return g;
   } catch (e) { return null; }
 }
+/** Religa o AudioContext do ganho por pessoa se o sistema o suspendeu (ligação, bloqueio de tela...). */
+export function resumeAudioContexts() {
+  try { if (shareCtx && shareCtx.state !== 'running' && shareCtx.state !== 'closed') shareCtx.resume().catch(() => {}); } catch (e) { /* ok */ }
+}
 /** Aplica o volume guardado dessa pessoa a um <audio>. Até 100 % usa o próprio elemento; acima disso, um ganho do WebAudio. */
 export function applyPersonVolume(audioEl, uid) {
   if (!audioEl) return;

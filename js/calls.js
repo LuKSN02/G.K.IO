@@ -37,8 +37,9 @@ import { applyMicProcessing, applyVideoFx, applyPersonVolume, setPersonVolume, g
 import { CallStage, showRecordingModal, recordingSupported } from './call-stage.js';
 import { initVoiceExtras, toggleExtrasPanel, resetVoiceExtras } from './voice-extras.js';
 import { livekitConfig } from './livekit-config.js';
-import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
+import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startCallKeepAlive, stopCallKeepAlive, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 import { icon, iconHtml } from './icons.js';
+import { startAudioGuard, stopAudioGuard, kickSoon, acquireAudioEl, releaseAudioTrack, releaseAudioEl, destroyAudioEls } from './call-audio-guard.js';
 
 let room = null;               // instância única do LiveKit Room — só uma chamada ativa por vez
 // Ensurdecer: silencia TODO áudio recebido, e o microfone junto — mesmo
@@ -286,6 +287,7 @@ async function connectToRoom({ roomName, withVideo, metadata }) {
   // AudioPlaybackStatusChanged em wireRoomEvents cobre o resto pedindo um
   // clique extra.
   try { await room.startAudio(); } catch (e) { /* seguimos — o listener abaixo lida com isso */ }
+  guardCallAudio();
 
   // Se já tinha alguém na sala quando entramos (ex: numa DM, o outro lado
   // costuma entrar primeiro, antes de "tocar"), o RoomEvent.ParticipantConnected
@@ -387,8 +389,10 @@ function wireRoomEvents(r) {
     try { if (payload.byteLength <= 4096) msg = JSON.parse(new TextDecoder().decode(payload)); } catch (e) { return; }
     fns.forEach((fn) => { try { fn(msg, participant.identity); } catch (e) { console.warn('[chamada] handler de dados falhou', e); } });
   });
-  r.on(RoomEvent.ParticipantConnected, (participant) => onParticipantJoined(participant));
-  r.on(RoomEvent.ParticipantDisconnected, (participant) => onParticipantLeft(participant));
+  r.on(RoomEvent.ParticipantConnected, (participant) => { onParticipantJoined(participant); kickSoon(); });
+  r.on(RoomEvent.ParticipantDisconnected, (participant) => { onParticipantLeft(participant); kickSoon(); });
+  r.on(RoomEvent.TrackSubscribed, () => kickSoon());
+  r.on(RoomEvent.Reconnected, () => kickSoon(0));
   r.on(RoomEvent.Disconnected, () => {
     // A sala caiu (rede, kick, servidor) — garante que a UI local também limpe.
     if (state.activeCall) endCall(false);
@@ -402,17 +406,30 @@ function wireRoomEvents(r) {
   });
 }
 
+/** Liga o vigia que mantém o áudio da chamada tocando no celular (ver call-audio-guard.js). */
+function guardCallAudio() {
+  startCallKeepAlive(); // APK: serviço em primeiro plano (mic + som em segundo plano)
+  startAudioGuard({
+    getRoom: () => room,
+    getDeafened: () => isDeafened,
+    getScreenEls: () => [...screenAudioEls.values()],
+    onNeedGesture: () => { if (room) promptEnableAudioPlayback(room); },
+  });
+}
+
 let audioUnlockArmed = false;
 function promptEnableAudioPlayback(r) {
   if (audioUnlockArmed) return;
   audioUnlockArmed = true;
   toast('Toque na tela para ativar o áudio da chamada.');
+  const evs = ['pointerdown', 'touchend', 'click', 'keydown'];
   const unlock = async () => {
     audioUnlockArmed = false;
-    document.removeEventListener('click', unlock);
-    try { await r.startAudio(); } catch (e) { /* tenta de novo no próximo clique, se ainda bloqueado */ }
+    evs.forEach((e) => document.removeEventListener(e, unlock, true));
+    try { await r.startAudio(); } catch (e) { /* tenta de novo no próximo toque, se ainda bloqueado */ }
+    kickSoon(0);
   };
-  document.addEventListener('click', unlock, { once: true });
+  evs.forEach((e) => document.addEventListener(e, unlock, { capture: true }));
 }
 
 function handleTrackSubscribed(track, participant, publication) {
@@ -422,7 +439,7 @@ function handleTrackSubscribed(track, participant, publication) {
     if (track.source === Track.Source.ScreenShareAudio) {
       // Áudio da tela do outro lado: <audio> próprio, com volume/ganho independente (ver tile da tela).
       let a = screenAudioEls.get(otherUid);
-      if (!a) { a = track.attach(); a.autoplay = true; screenAudioEls.set(otherUid, a); }
+      if (!a) { a = track.attach(); a.autoplay = true; a.setAttribute('playsinline', ''); screenAudioEls.set(otherUid, a); }
       else track.attach(a);
       a.muted = isDeafened;
       applyPersonVolume(a, `screen:${otherUid}`);
@@ -433,21 +450,14 @@ function handleTrackSubscribed(track, participant, publication) {
     audioTracks.set(`cam:${otherUid}`, track);
     const isVoiceChannel = state.activeCall?.kind === 'voiceChannel';
     const audioId = isVoiceChannel ? `gk-voice-audio-${otherUid}` : 'gk-remote-dm-audio';
-    let audioEl = document.getElementById(audioId);
-    if (!audioEl) {
-      audioEl = track.attach();
-      audioEl.id = audioId;
-      audioEl.autoplay = true;
-      document.body.appendChild(audioEl);
-    } else {
-      track.attach(audioEl);
-    }
+    const audioEl = acquireAudioEl(audioId, track); // reaproveita <audio> já liberado (celular só deixa tocar elementos já destravados)
     audioEl.muted = isDeafened; // entra já mudo se a pessoa já estava ensurdecida
     applyPersonVolume(audioEl, otherUid); // volume que você ajustou para essa pessoa
     // Reforço além do autoplay: se o navegador rejeitar o play() aqui
     // (autoplay bloqueado), o listener de AudioPlaybackStatusChanged em
     // wireRoomEvents entra em ação e pede um clique pra destravar.
     audioEl.play?.().catch(() => {});
+    kickSoon(); // se o celular recusou (segundo plano), o vigia religa assim que puder
     return;
   }
 
@@ -477,7 +487,7 @@ function handleTrackUnsubscribed(track, participant) {
       audioTracks.delete(`scr:${otherUid}`);
     } else {
       audioTracks.delete(`cam:${otherUid}`);
-      track.detach().forEach((n) => n.remove());
+      releaseAudioTrack(track); // mantém o <audio> para a próxima pessoa/volta (não destrói)
     }
     return;
   }
@@ -704,6 +714,9 @@ function endCall(disconnectRoom) {
   if (disconnectRoom && room) { try { room.disconnect(); } catch (e) {} }
   room = null;
   if (unsubCurrentCall) { unsubCurrentCall(); unsubCurrentCall = null; }
+  stopAudioGuard();
+  stopCallKeepAlive();
+  destroyAudioEls();
   document.getElementById('gk-remote-dm-audio')?.remove();
   document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((n) => n.remove());
   isDeafened = false;
@@ -760,6 +773,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
   }
 
   try { await room.startAudio(); } catch (e) { /* listener de AudioPlaybackStatusChanged cobre o resto */ }
+  guardCallAudio();
   startCallAudioMode();
   upsertVoiceParticipant(room.localParticipant);
   room.remoteParticipants.forEach((p) => upsertVoiceParticipant(p));
@@ -784,7 +798,7 @@ function removeVoiceParticipant(uid) {
   document.getElementById(`gk-voice-member-${uid}`)?.remove();
   stage?.removePerson(uid);
   videoTracks.delete(`cam:${uid}`); audioTracks.delete(`cam:${uid}`);
-  document.getElementById(`gk-voice-audio-${uid}`)?.remove();
+  releaseAudioEl(`gk-voice-audio-${uid}`);
   removeRemoteScreenTile(uid);
   refreshVoiceUI();
 }
