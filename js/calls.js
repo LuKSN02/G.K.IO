@@ -33,7 +33,7 @@ import {
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { getMediaPrefs, setMediaPrefs, getHotkeyPrefs, screenShareOptions, SCREEN_QUALITIES } from './prefs.js';
-import { applyMicProcessing, applyVideoFx, applyPersonVolume, setPersonVolume, getPersonVolume, openVolumePopover, VIDEO_EFFECTS, videoFxSupported } from './voice-fx.js';
+import { applyMicProcessing, applyVideoFx, applyPersonVolume, setPersonVolume, getPersonVolume, openVolumePopover, openPersonSheet, setSelfDeaf, shouldMuteEl, VIDEO_EFFECTS, videoFxSupported } from './voice-fx.js';
 import { CallStage, showRecordingModal, recordingSupported } from './call-stage.js';
 import { initVoiceExtras, toggleExtrasPanel, resetVoiceExtras } from './voice-extras.js';
 import { livekitConfig } from './livekit-config.js';
@@ -441,7 +441,7 @@ function handleTrackSubscribed(track, participant, publication) {
       let a = screenAudioEls.get(otherUid);
       if (!a) { a = track.attach(); a.autoplay = true; a.setAttribute('playsinline', ''); screenAudioEls.set(otherUid, a); }
       else track.attach(a);
-      a.muted = isDeafened;
+      setSelfDeaf(isDeafened);
       applyPersonVolume(a, `screen:${otherUid}`);
       audioTracks.set(`scr:${otherUid}`, track);
       a.play?.().catch(() => {});
@@ -451,7 +451,7 @@ function handleTrackSubscribed(track, participant, publication) {
     const isVoiceChannel = state.activeCall?.kind === 'voiceChannel';
     const audioId = isVoiceChannel ? `gk-voice-audio-${otherUid}` : 'gk-remote-dm-audio';
     const audioEl = acquireAudioEl(audioId, track); // reaproveita <audio> já liberado (celular só deixa tocar elementos já destravados)
-    audioEl.muted = isDeafened; // entra já mudo se a pessoa já estava ensurdecida
+    setSelfDeaf(isDeafened); // entra já mudo se você estava ensurdecido
     applyPersonVolume(audioEl, otherUid); // volume que você ajustou para essa pessoa
     // Reforço além do autoplay: se o navegador rejeitar o play() aqui
     // (autoplay bloqueado), o listener de AudioPlaybackStatusChanged em
@@ -720,6 +720,7 @@ function endCall(disconnectRoom) {
   document.getElementById('gk-remote-dm-audio')?.remove();
   document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((n) => n.remove());
   isDeafened = false;
+  setSelfDeaf(false);
   updateDeafenButtons(false);
   state.activeCall = null;
   stopCallTimer();
@@ -808,6 +809,15 @@ function refreshVoiceUI() {
   syncStagePeople();
 }
 
+// A sidebar de canais é redesenhada a cada mensagem nova/troca de chat e apagava a lista de
+// quem está na call. Quem redesenha avisa com este evento e a lista volta na hora.
+window.addEventListener('gkio-channels-rendered', () => {
+  if (state.activeCall?.kind === 'voiceChannel') renderVoiceMembersList(state.activeCall.id, state.activeCall.participants);
+});
+window.addEventListener('gkio-person-volume', () => {
+  if (state.activeCall?.kind === 'voiceChannel') renderVoiceMembersList(state.activeCall.id, state.activeCall.participants);
+});
+
 function renderVoiceMembersList(channelId, participantsMap) {
   const box = document.getElementById(`gk-voice-members-${channelId}`);
   if (!box) return;
@@ -818,12 +828,18 @@ function renderVoiceMembersList(channelId, participantsMap) {
       class: 'gk-voice-member' + (m.muted ? ' gk-muted' : ''),
       id: `gk-voice-member-${uid}`,
       'data-role': m.role || 'free',
-      title: isMe ? '' : 'Clique com o botão direito para ajustar o volume',
+      title: isMe ? '' : 'Toque para silenciar ou ajustar o volume só para você',
+      // Toque/clique: painel grande com "Silenciar só para mim". Botão direito: o popover pequeno de volume.
+      onclick: isMe ? null : (e) => {
+        e.stopPropagation();
+        openPersonSheet(uid, m.displayName || 'Membro', m.avatarUrl || '', { onDeafenAll: () => { if (!isDeafened) toggleDeafen(); } });
+      },
       oncontextmenu: isMe ? null : (e) => { e.preventDefault(); openVolumePopover(e.currentTarget, uid, m.displayName || 'Membro'); },
     }, [
       el('img', { src: m.avatarUrl || fallbackAvatar(m.displayName) }),
       el('span', {}, m.displayName),
       m.muted ? el('span', { class: 'gk-voice-member-mic-off', title: 'Mutado' }, [icon('micOff', { size: 12 })]) : null,
+      !isMe && getPersonVolume(uid) === 0 ? el('span', { class: 'gk-voice-member-selfmute', title: 'Silenciado só para você' }, [icon('speakerMute', { size: 12 })]) : null,
     ]));
   });
 }
@@ -1063,10 +1079,11 @@ function updateDeafenButtons(deafened) {
 // Muta/desmuta todo áudio já tocando na chamada atual — tanto o de uma
 // DM (um elemento) quanto o de uma sala de voz (um por participante).
 function applyDeafenToAudioEls(deafened) {
+  setSelfDeaf(deafened);
   const dmAudio = document.getElementById('gk-remote-dm-audio');
-  if (dmAudio) dmAudio.muted = deafened;
-  document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((elAudio) => { elAudio.muted = deafened; });
-  screenAudioEls.forEach((a) => { a.muted = deafened; });
+  if (dmAudio) dmAudio.muted = shouldMuteEl(dmAudio); // quem você silenciou só para você continua mudo ao tirar o ensurdecer
+  document.querySelectorAll('audio[id^="gk-voice-audio-"]').forEach((elAudio) => { elAudio.muted = shouldMuteEl(elAudio); });
+  screenAudioEls.forEach((a) => { a.muted = shouldMuteEl(a); });
 }
 
 export async function toggleDeafen() {

@@ -254,9 +254,18 @@ export function resumeAudioContexts() {
   try { if (shareCtx && shareCtx.state !== 'running' && shareCtx.state !== 'closed') shareCtx.resume().catch(() => {}); } catch (e) { /* ok */ }
 }
 /** Aplica o volume guardado dessa pessoa a um <audio>. Até 100 % usa o próprio elemento; acima disso, um ganho do WebAudio. */
+let selfDeaf = false;
+/** Avisa o módulo se VOCÊ está ensurdecido (silencia todo mundo). */
+export function setSelfDeaf(v) { selfDeaf = !!v; }
+/** Um <audio> deve estar mudo se você ensurdeceu OU silenciou aquela pessoa só para você. */
+export const shouldMuteEl = (el) => selfDeaf || el?.dataset?.gkPersonMute === '1';
+
 export function applyPersonVolume(audioEl, uid) {
   if (!audioEl) return;
   const pct = getPersonVolume(uid);
+  // Volume 0 vira MUDO de verdade (no iPhone a propriedade `volume` é ignorada).
+  audioEl.dataset.gkPersonMute = pct === 0 ? '1' : '0';
+  audioEl.muted = shouldMuteEl(audioEl);
   const g = graphs.get(audioEl) || (pct > 100 ? ensureGraph(audioEl) : null);
   if (g) { audioEl.volume = 1; g.gain.gain.value = pct / 100; if (shareCtx?.state === 'suspended') shareCtx.resume().catch(() => {}); }
   else audioEl.volume = Math.min(1, pct / 100);
@@ -265,7 +274,51 @@ export function setPersonVolume(uid, pct, audioEl = null) {
   volumes[uid] = clampPct(pct);
   if (volumes[uid] === 100) delete volumes[uid];
   saveVolumes();
-  applyPersonVolume(audioEl || document.getElementById(`gk-voice-audio-${uid}`), uid);
+  applyPersonVolume(audioEl || document.getElementById(`gk-voice-audio-${uid}`) || document.getElementById('gk-remote-dm-audio'), uid);
+  try { window.dispatchEvent(new CustomEvent('gkio-person-volume', { detail: { uid, pct: getPersonVolume(uid) } })); } catch (e) { /* ok */ }
+}
+
+/**
+ * Painel de baixo (toque) para ajustar UMA pessoa só para você: botão grande de
+ * "Silenciar só para mim", controle de volume e atalho para ensurdecer todo mundo.
+ */
+export function openPersonSheet(uid, name, avatarUrl = '', { onDeafenAll = null } = {}) {
+  document.getElementById('gk-person-sheet')?.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'gk-person-sheet'; wrap.className = 'gk-person-sheet';
+  const back = document.createElement('div'); back.className = 'gk-person-sheet-back';
+  const card = document.createElement('div'); card.className = 'gk-person-sheet-card'; card.setAttribute('role', 'dialog'); card.setAttribute('aria-label', `Ajustar ${name}`);
+  const head = document.createElement('div'); head.className = 'gk-person-sheet-head';
+  if (avatarUrl) { const im = document.createElement('img'); im.src = avatarUrl; im.alt = ''; head.appendChild(im); }
+  const nm = document.createElement('strong'); nm.textContent = name; head.appendChild(nm);
+  const muteBtn = document.createElement('button'); muteBtn.type = 'button'; muteBtn.className = 'gk-person-sheet-mute';
+  const row = document.createElement('div'); row.className = 'gk-volume-row';
+  const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = String(VOLUME_MAX); slider.step = '5'; slider.setAttribute('aria-label', `Volume de ${name}`);
+  const label = document.createElement('span'); label.className = 'gk-volume-val';
+  row.append(slider, label);
+  let lastNonZero = 100;
+  const paint = () => {
+    const v = getPersonVolume(uid);
+    if (v > 0) lastNonZero = v;
+    slider.value = String(v);
+    label.textContent = v === 0 ? 'Mudo' : `${v}%`;
+    muteBtn.classList.toggle('gk-on', v === 0);
+    muteBtn.textContent = v === 0 ? `🔊 Tirar ${name} do mudo` : `🔇 Silenciar ${name} só para mim`;
+  };
+  muteBtn.addEventListener('click', () => { setPersonVolume(uid, getPersonVolume(uid) === 0 ? lastNonZero || 100 : 0); paint(); });
+  slider.addEventListener('input', () => { setPersonVolume(uid, slider.value); paint(); });
+  card.append(head, muteBtn, row);
+  if (onDeafenAll) {
+    const d = document.createElement('button'); d.type = 'button'; d.className = 'gk-person-sheet-alt'; d.textContent = '🙉 Ensurdecer (silenciar todo mundo)';
+    d.addEventListener('click', () => { onDeafenAll(); close(); });
+    card.appendChild(d);
+  }
+  const done = document.createElement('button'); done.type = 'button'; done.className = 'gk-person-sheet-alt'; done.textContent = 'Fechar';
+  card.appendChild(done);
+  wrap.append(back, card); document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  back.addEventListener('click', close); done.addEventListener('click', close);
+  paint();
 }
 
 /** Pequeno painel com o controle de volume de uma pessoa (clique direito ou botão no participante). */

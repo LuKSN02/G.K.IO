@@ -892,6 +892,8 @@ function renderServerSidebar(serverId, categories, channels) {
     }, [el('span', { class: 'gk-channel-icon' }, [icon('plus', { size: 14 })]), el('span', {}, 'Novo canal')]);
     body.appendChild(addBtn);
   }
+  // quem está numa sala de voz precisa redesenhar a lista de participantes (ver calls.js)
+  window.dispatchEvent(new CustomEvent('gkio-channels-rendered', { detail: { serverId } }));
 }
 
 // Confirmação antes de entrar numa sala de voz — evita entrar sem

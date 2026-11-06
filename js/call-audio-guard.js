@@ -19,7 +19,7 @@
 //  • sessão de áudio "play-and-record" (iOS) e MediaSession "tocando" (Android) avisam o
 //    sistema de que é uma chamada e não deve cortar o som em segundo plano.
 // ============================================================
-import { resumeAudioContexts } from './voice-fx.js';
+import { resumeAudioContexts, shouldMuteEl } from './voice-fx.js';
 
 let getRoom = () => null;
 let getDeafened = () => false;
@@ -50,7 +50,8 @@ export async function kick() {
   const deaf = getDeafened();
   for (const el of allAudioEls()) {
     if (!el.srcObject) continue;                 // elemento livre (ninguém falando nele)
-    if (el.muted !== deaf) el.muted = deaf;       // mantém "ensurdecer" coerente
+    const wantMute = deaf || shouldMuteEl(el);     // "ensurdecer" OU pessoa silenciada só para você
+    if (el.muted !== wantMute) el.muted = wantMute;
     if (el.paused) {
       try { await el.play(); } catch (e) { blocked = true; }
     }

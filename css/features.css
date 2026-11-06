@@ -232,3 +232,26 @@
 .gk-report-details{font-size:13px;opacity:.85}
 .gk-mfa-qr{display:flex;justify-content:center;padding:8px;margin:8px 0}
 .gk-mfa-qr svg{width:180px;height:180px;background:#fff;border-radius:8px}
+
+/* ---------- Painel "ajustar pessoa só para mim" (toque) + ícone na lista de voz ---------- */
+.gk-voice-member { cursor: pointer; border-radius: var(--gk-radius-sm); }
+.gk-voice-member:hover { background: var(--gk-gray-100); }
+.gk-voice-member-selfmute { color: var(--gk-warning, #f59e0b); display: inline-flex; margin-left: 2px; }
+.gk-person-sheet { position: fixed; inset: 0; z-index: 10001; display: flex; align-items: flex-end; justify-content: center; }
+.gk-person-sheet-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); }
+.gk-person-sheet-card {
+  position: relative; width: min(480px, 100%); display: flex; flex-direction: column; gap: 12px;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
+  background: var(--gk-surface-raised, var(--gk-surface)); border: 1px solid var(--gk-border, rgba(255, 255, 255, .12)); box-shadow: var(--gk-shadow-lg);
+}
+@media (min-width: 700px) { .gk-person-sheet { align-items: center; } .gk-person-sheet-card { border-radius: 22px; } }
+.gk-person-sheet-head { display: flex; align-items: center; gap: 10px; font-size: 17px; }
+.gk-person-sheet-head img { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; }
+.gk-person-sheet-mute, .gk-person-sheet-alt {
+  min-height: 52px; padding: 12px 16px; border-radius: 16px; font: inherit; font-weight: 700; cursor: pointer; border: 0;
+}
+.gk-person-sheet-mute { background: var(--gk-danger, #ef4444); color: #fff; font-size: 16px; }
+.gk-person-sheet-mute.gk-on { background: var(--gk-accent); color: #07140b; }
+.gk-person-sheet-alt { background: var(--gk-gray-100, rgba(255, 255, 255, .08)); color: var(--gk-gray-800, #fff); }
+.gk-person-sheet .gk-volume-row { display: flex; align-items: center; gap: 12px; }
+.gk-person-sheet .gk-volume-row input { flex: 1; height: 32px; }
