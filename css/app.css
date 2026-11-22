@@ -479,7 +479,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
     var(--gk-bg);
 }
 #gk-app[data-wallpaper="mascot"] .gk-main {
-  background-image: url('img/logo.png');
+  background-image: url('img/logo.png?v=2');
   background-repeat: no-repeat;
   background-position: right -60px bottom -60px;
   background-size: 340px 340px;
@@ -682,7 +682,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
 /* Mensagem só com emoji (até 3) aparece em tamanho grande, como no Discord */
 .gk-msg-line-jumbo { font-size: 38px; line-height: 1.25; }
-.gk-msg-line-jumbo .gk-inline-emoji { width: 44px; height: 44px; vertical-align: -8px; }
+.gk-msg-line-jumbo .gk-inline-emoji { width: 52px; height: 52px; vertical-align: -10px; }
 
 /* ---------- Formatação do texto (ver js/markdown.js) ---------- */
 .gk-msg-line strong { font-weight: 700; color: var(--gk-gray-900); }
@@ -883,7 +883,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 
 /* ---------- Emoji inline em mensagens (emoji personalizado) ---------- */
 .gk-inline-emoji {
-  width: 22px; height: 22px; object-fit: contain; vertical-align: -6px; margin: 0 1px;
+  width: 28px; height: 28px; object-fit: contain; vertical-align: -8px; margin: 0 1px;
 }
 
 /* ---------- Reações rápidas ---------- */
@@ -919,7 +919,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 /* ---------- Painel de emojis / personalizados / GIFs ---------- */
 .gk-emoji-picker {
   position: fixed; z-index: 300;
-  width: 340px; height: 400px;
+  width: 400px; height: 460px;
   background: var(--gk-surface); border: 1px solid var(--gk-gray-100); border-radius: var(--gk-radius-lg);
   box-shadow: var(--gk-shadow-lg);
   display: flex; flex-direction: column; overflow: hidden;
@@ -948,11 +948,11 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-emoji-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .gk-emoji-item {
-  background: none; border: none; font-size: 19px; padding: 5px 0; border-radius: var(--gk-radius-sm);
+  background: none; border: none; font-size: 27px; line-height: 1.15; padding: 5px 0; border-radius: var(--gk-radius-sm);
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .gk-emoji-item:hover { background: var(--gk-surface-sunken); }
-.gk-emoji-item-custom img { width: 22px; height: 22px; object-fit: contain; }
+.gk-emoji-item-custom img { width: 32px; height: 32px; object-fit: contain; }
 .gk-emoji-grid-custom { grid-template-columns: repeat(6, 1fr); }
 .gk-emoji-upload-tile {
   background: var(--gk-accent-soft); color: var(--gk-accent-strong); border: 1px dashed var(--gk-accent);
@@ -1905,7 +1905,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
               linear-gradient(200deg, rgba(79,125,247,0.4) 0%, transparent 55%), var(--gk-bg);
 }
 .gk-wallpaper-tile[data-wallpaper-preview="mascot"] {
-  background-image: url('img/logo.png'); background-size: 140px 140px; background-position: right -20px bottom -20px;
+  background-image: url('img/logo.png?v=2'); background-size: 140px 140px; background-position: right -20px bottom -20px;
   background-repeat: no-repeat; background-color: var(--gk-bg);
 }
 .gk-wallpaper-tile[data-wallpaper-preview="waves"] { background-color: var(--gk-bg); background-image: var(--gk-frost-pattern); background-size: 60px 60px; }
@@ -2146,10 +2146,24 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
 }
 .gk-lightbox-overlay.gk-open { display: flex; }
 .gk-lightbox-img {
-  max-width: 90vw; max-height: 90vh; object-fit: contain;
+  max-width: 90vw; max-height: 85vh; object-fit: contain; user-select: none; -webkit-user-drag: none;
   border-radius: var(--gk-radius-md); box-shadow: var(--gk-shadow-lg);
-  cursor: zoom-out;
+  cursor: zoom-in; will-change: transform; transform-origin: center center;
 }
+.gk-lightbox-overlay { touch-action: none; }
+.gk-lightbox-overlay.gk-zoomed .gk-lightbox-img { cursor: grab; border-radius: 0; }
+.gk-lightbox-overlay.gk-dragging .gk-lightbox-img { cursor: grabbing; }
+.gk-lb-bar {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 2;
+  display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 999px;
+  background: rgba(20, 22, 38, .78); border: 1px solid rgba(255,255,255,.1);
+  backdrop-filter: blur(12px); box-shadow: 0 8px 28px rgba(0,0,0,.45); color: #fff;
+}
+.gk-lb-bar button { width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: inherit; display: grid; place-items: center; cursor: pointer; transition: background .12s; }
+.gk-lb-bar button:hover { background: rgba(255,255,255,.14); }
+.gk-lb-pct { min-width: 50px; text-align: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gk-lb-sep { width: 1px; height: 18px; background: rgba(255,255,255,.18); margin: 0 4px; }
+.gk-lb-hint { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); font-size: 12px; color: #ffffffb0; background: rgba(20,22,38,.6); padding: 5px 12px; border-radius: 999px; pointer-events: none; transition: opacity .2s; }
 .gk-lightbox-close, .gk-lightbox-open {
   position: fixed; top: 18px; width: 40px; height: 40px; border-radius: 50%;
   background: rgba(255,255,255,0.1); color: #fff; border: none; font-size: 16px;
@@ -2203,7 +2217,7 @@ button .gk-icon, button .gk-icon-wrap { vertical-align: middle; }
   .gk-settings-nav-item { flex-shrink: 0; }
   .gk-settings-content { padding: 20px 18px; }
   .gk-screenshare-tile { width: 220px; }
-  .gk-emoji-picker { width: min(92vw, 340px); max-height: 68vh; }
+  .gk-emoji-picker { width: min(94vw, 380px); max-height: 70vh; }
 
   /* Duas barras empilhadas (global + da conversa) custam espaço vertical
      precioso no celular — encolhe as duas e tira o que não cabe: a busca
@@ -2934,10 +2948,21 @@ html[data-streamer] input[type=email]:focus { filter: none; }
 }
 .gk-poll-switch-row strong { display: block; font-size: 14px; color: var(--gk-gray-800); }
 .gk-poll-switch-row small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--gk-gray-500); }
-.gk-poll-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.gk-modal-roomy { padding: 24px 26px; }
+.gk-modal-roomy .gk-field { margin-bottom: 18px; }
+.gk-poll-edit-options { gap: 10px; margin-bottom: 10px; }
+.gk-poll-block { margin-top: 18px; padding: 14px 16px; border-radius: var(--gk-radius-md); background: var(--gk-surface-sunken); border: 1px solid var(--gk-gray-100); }
+.gk-poll-block strong { display: block; font-size: 14px; color: var(--gk-gray-800); }
+.gk-poll-block small { display: block; margin: 2px 0 10px; font-size: 12.5px; color: var(--gk-gray-500); }
+.gk-poll-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.gk-poll-chip { border: 1px solid var(--gk-gray-200); background: var(--gk-surface); color: var(--gk-gray-700, var(--gk-gray-800)); padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.gk-poll-chip:hover { border-color: var(--gk-accent); }
+.gk-poll-chip.gk-on { background: var(--gk-accent); border-color: var(--gk-accent); color: #fff; }
+.gk-poll-footer { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--gk-gray-100); }
+.gk-poll-footer .gk-poll-hint { text-align: left; }
+.gk-poll-footer-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .gk-poll-hint { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gk-gray-400); }
 .gk-poll-hint.gk-ok { color: var(--gk-gray-500); }
-.gk-poll-footer-actions { display: flex; gap: 8px; flex-shrink: 0; }
 #gk-poll-create:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
 /* ============================================================

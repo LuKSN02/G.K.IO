@@ -245,3 +245,23 @@
 @keyframes gkc-moon-fade { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
 [data-mode="faces"] .gkc-tile.gkc-speaking { box-shadow: none; }
 .gkc-unsupported { opacity: .55; }
+
+/* Go Live: quem está assistindo à sua transmissão */
+.gkc-viewers { position: absolute; top: 10px; left: 10px; z-index: 6; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.gkc-viewers-chip { background: rgba(0,0,0,.62); color: #fff; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 4px 10px 4px 22px; font: 600 11px/1.2 inherit; letter-spacing: .04em; cursor: pointer; position: relative; backdrop-filter: blur(6px); }
+.gkc-viewers-chip::before { content: ''; position: absolute; left: 9px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.25); }
+.gkc-viewers-list { background: rgba(15,15,22,.92); border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 6px; max-height: 180px; overflow: auto; min-width: 150px; }
+.gkc-viewers-list[hidden] { display: none; }
+.gkc-viewers-item { color: #e8e8f0; font-size: 12.5px; padding: 4px 8px; border-radius: 6px; }
+
+/* Quadro branco e legendas da chamada */
+.gkc-board { position: absolute; inset: 56px 12px 84px 12px; z-index: 30; display: none; flex-direction: column; background: rgba(15,15,22,.96); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; overflow: hidden; }
+.gkc-board.gk-open { display: flex; }
+.gkc-board-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1); }
+.gkc-board-sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); cursor: pointer; padding: 0; }
+.gkc-board-sw.gk-on { border-color: #8B5CF6; box-shadow: 0 0 0 2px rgba(139,92,246,.5); }
+.gkc-board-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px; background: #12121a; }
+.gkc-board-canvas { display: block; background: #1b1b27; touch-action: none; cursor: crosshair; border-radius: 8px; box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+.gk-call-ctrl-btn.gk-ping { animation: gkc-ping 1s ease-in-out infinite; }
+@keyframes gkc-ping { 50% { box-shadow: 0 0 0 6px rgba(139,92,246,.45); } }
+.gkc-captions { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 25; max-width: min(720px, 90vw); display: none; background: rgba(0,0,0,.72); color: #fff; padding: 8px 14px; border-radius: 10px; font-size: 15px; line-height: 1.4; pointer-events: none; }

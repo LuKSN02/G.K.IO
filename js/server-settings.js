@@ -4,6 +4,10 @@
 // com seções de Visão geral, Canais, Membros e Convites — visibilidade
 // e edição condicionadas ao cargo de quem está olhando.
 // ============================================================
+import { setServerNsfw } from './servers.js';
+import { buildBotsCard } from './bots.js';
+import { buildAutomodCard } from './automod.js';
+import { buildAntiRaidCard, buildVerificationCard } from './server-guard.js';
 import { auth } from './db.js';
 import { state, el, toast, fallbackAvatar, effectiveStatus } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
@@ -26,23 +30,26 @@ import { formatLong } from './message-utils.js';
 import { buildReportsCard } from './reports.js';
 import { setChannelTopic, setChannelAnnouncement, moveChannel, moveCategory, renderRegrasSection, renderEmojisSection, TOPIC_MAX } from './server-extras.js';
 import { initMobileSettings } from './settings-mobile.js';
+import { renderPerfilServidor, renderTagServidor } from './server-profile.js';
 
-let activeSection = 'geral';
+let activeSection = 'perfil';
 let currentServerId = null;
 
 function sections(serverId) {
   const list = [];
-  if (canManageServerInfo(serverId)) list.push({ id: 'geral', label: 'Visão geral', icon: 'snowflake' });
+  const mgr = canManageServerInfo(serverId);
+  if (mgr) list.push({ id: 'perfil', label: 'Perfil do servidor', icon: 'snowflake' });
+  list.push({ id: 'tag', label: 'Tag do servidor', icon: 'sparkles' });
   if (canManageChannels(serverId)) list.push({ id: 'canais', label: 'Canais', icon: '#', isText: true });
-  if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: 'shield' });
-  list.push({ id: 'membros', label: 'Membros', icon: 'members' });
-  if (canViewAuditLog(serverId)) {
-    list.push({ id: 'moderacao', label: 'Moderação', icon: 'block' });
-  }
-  list.push({ id: 'convites', label: 'Convites', icon: 'link' });
-  if (canManageServerInfo(serverId)) list.push({ id: 'boasvindas', label: 'Boas-vindas', icon: 'emojiSmile' });
-  if (canManageServerInfo(serverId)) list.push({ id: 'regras', label: 'Regras', icon: 'shield' });
-  if (canManageServerInfo(serverId)) list.push({ id: 'emojis', label: 'Emojis', icon: 'emojiSmile' });
+  if (mgr) list.push({ id: 'emojis', label: 'Emoji', icon: 'emojiSmile', group: 'Expressões' });
+  list.push({ id: 'membros', label: 'Membros', icon: 'members', group: 'Pessoas' });
+  if (canManageRoles(serverId)) list.push({ id: 'cargos', label: 'Cargos', icon: 'shield', group: 'Pessoas' });
+  list.push({ id: 'convites', label: 'Convites', icon: 'link', group: 'Pessoas' });
+  if (mgr) list.push({ id: 'acesso', label: 'Acesso', icon: 'lock', group: 'Pessoas' });
+  if (mgr) list.push({ id: 'seguranca', label: 'Configurações de Segurança', icon: 'shield', group: 'Moderação' });
+  if (canViewAuditLog(serverId)) list.push({ id: 'auditoria', label: 'Registro de auditoria', icon: 'edit', group: 'Moderação' });
+  if (canKickMembers(serverId)) list.push({ id: 'banimentos', label: 'Banimentos', icon: 'block', group: 'Moderação' });
+  if (mgr) list.push({ id: 'automod', label: 'AutoMod', icon: 'bolt', group: 'Moderação' });
   return list;
 }
 
@@ -77,7 +84,13 @@ function renderNav() {
   const server = state.servers.get(currentServerId);
   nav.innerHTML = '';
   nav.appendChild(el('div', { class: 'gk-settings-nav-title' }, server?.name || 'Servidor'));
+  let lastGroup = null;
   for (const s of sections(currentServerId)) {
+    if (s.group !== lastGroup) {
+      nav.appendChild(el('div', { class: 'gk-settings-nav-sep' }));
+      if (s.group) nav.appendChild(el('div', { class: 'gk-settings-nav-group' }, s.group));
+      lastGroup = s.group;
+    }
     nav.appendChild(el('div', {
       class: 'gk-settings-nav-item' + (activeSection === s.id ? ' gk-active' : ''),
       onclick: () => { activeSection = s.id; renderNav(); renderSection(); mobileNav().showDetail(s.label); },
@@ -88,15 +101,15 @@ function renderNav() {
 function renderSection() {
   const content = document.getElementById('gk-server-settings-content');
   content.innerHTML = '';
-  if (activeSection === 'geral') return renderGeralSection(content);
-  if (activeSection === 'canais') return renderCanaisSection(content);
-  if (activeSection === 'cargos') return renderCargosSection(content);
-  if (activeSection === 'membros') return renderMembrosSection(content);
-  if (activeSection === 'moderacao') return renderModeracaoSection(content);
-  if (activeSection === 'boasvindas') return renderBoasVindasSection(content);
-  if (activeSection === 'convites') return renderConvitesSection(content);
-  if (activeSection === 'regras') return renderRegrasSection(content, sectionHeader);
-  if (activeSection === 'emojis') return renderEmojisSection(content, sectionHeader);
+  const id = activeSection;
+  if (id === 'perfil') return renderPerfilServidor(content, sectionHeader, currentServerId, renderDangerZone);
+  if (id === 'tag') return renderTagServidor(content, sectionHeader, currentServerId, renderSection);
+  if (id === 'canais') return renderCanaisSection(content);
+  if (id === 'cargos') return renderCargosSection(content);
+  if (id === 'membros') return renderMembrosSection(content);
+  if (id === 'auditoria' || id === 'banimentos') return renderModeracaoSection(content);
+  if (id === 'convites' || id === 'acesso' || id === 'seguranca' || id === 'automod') return renderConvitesSection(content);
+  if (id === 'emojis') return renderEmojisSection(content, sectionHeader);
 }
 
 function sectionHeader(title, sub) {
@@ -107,77 +120,11 @@ function sectionHeader(title, sub) {
 }
 
 // ============================================================
-// Seção: Visão geral (nome, descrição, ícone, banner, excluir servidor)
+// Zona de risco (excluir servidor) — aparece no fim do "Perfil do servidor"
 // ============================================================
-function renderGeralSection(content) {
+function renderDangerZone(content) {
   const serverId = currentServerId;
   const server = state.servers.get(serverId);
-  content.appendChild(sectionHeader('Visão geral', 'Nome, descrição e identidade visual do servidor.'));
-
-  let pendingIcon = null;
-  let pendingBanner = null;
-
-  const bannerPreview = el('div', {
-    class: 'gk-settings-banner',
-    style: server.bannerUrl ? `background-image:url(${server.bannerUrl})` : '',
-  }, server.bannerUrl ? [] : ['Clique para escolher um banner']);
-  const bannerInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
-  bannerPreview.addEventListener('click', () => bannerInput.click());
-  bannerInput.addEventListener('change', () => {
-    const file = bannerInput.files[0];
-    if (!file) return;
-    pendingBanner = file;
-    bannerPreview.textContent = '';
-    bannerPreview.style.backgroundImage = `url(${URL.createObjectURL(file)})`;
-  });
-
-  const iconPreview = server.iconUrl
-    ? el('img', { src: server.iconUrl })
-    : el('span', {}, (server.name || '?').slice(0, 2).toUpperCase());
-  const iconInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
-  const iconWrap = el('div', { class: 'gk-server-icon-picker gk-server-icon-picker-sm', onclick: () => iconInput.click() }, [iconPreview]);
-  iconInput.addEventListener('change', () => {
-    const file = iconInput.files[0];
-    if (!file) return;
-    pendingIcon = file;
-    iconWrap.innerHTML = '';
-    iconWrap.appendChild(el('img', { src: URL.createObjectURL(file) }));
-  });
-
-  const nameInput = el('input', { type: 'text', value: server.name || '', maxlength: '60' });
-  const descInput = el('textarea', { maxlength: '200', placeholder: 'Do que se trata o servidor?' }, server.description || '');
-
-  content.appendChild(el('div', { class: 'gk-settings-card' }, [
-    bannerPreview, bannerInput,
-    el('div', { class: 'gk-settings-identity-row' }, [
-      iconWrap, iconInput,
-      el('div', { class: 'gk-hint' }, 'Ícone do servidor'),
-    ]),
-    el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do servidor'), nameInput]),
-    el('div', { class: 'gk-field' }, [el('label', {}, 'Descrição'), descInput]),
-  ]));
-
-  const saveBtn = el('button', { class: 'gk-btn gk-btn-primary' }, 'Salvar alterações');
-  content.appendChild(el('div', { class: 'gk-settings-save-row' }, [saveBtn]));
-  saveBtn.addEventListener('click', async () => {
-    saveBtn.disabled = true;
-    const original = saveBtn.textContent;
-    saveBtn.textContent = 'Salvando...';
-    try {
-      let iconUrl = server.iconUrl;
-      let bannerUrl = server.bannerUrl;
-      if (pendingIcon) { saveBtn.textContent = 'Enviando ícone...'; ({ url: iconUrl } = await uploadToCloudinary(pendingIcon, `server-icons/${auth.currentUser.uid}`)); }
-      if (pendingBanner) { saveBtn.textContent = 'Enviando banner...'; ({ url: bannerUrl } = await uploadToCloudinary(pendingBanner, `server-banners/${auth.currentUser.uid}`)); }
-      await updateServerInfo(serverId, { name: nameInput.value, description: descInput.value, iconUrl, bannerUrl });
-      document.getElementById('gk-sidebar-header-title').textContent = nameInput.value.trim() || server.name;
-    } catch (err) {
-      toast(err.message || 'Não foi possível salvar.', 'danger');
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = original;
-    }
-  });
-
   if (isServerOwner(serverId)) {
     content.appendChild(el('div', { class: 'gk-settings-card gk-danger-zone' }, [
       el('div', { class: 'gk-settings-card-title' }, 'Zona de risco'),
@@ -357,30 +304,35 @@ function renderCanaisSection(content) {
 
     for (const ch of catChannels) {
       const isText = ch.type === 'text';
-      const row = el('div', { class: 'gk-sv-row' }, [
+      const row = el('div', { class: 'gk-sv-row gk-sv-ch-row' });
+      const head = el('div', { class: 'gk-sv-ch-head' }, [
         el('span', { class: 'gk-sv-row-icon' }, isText ? '#' : [icon('speaker', { size: 14 })]),
         ghostInput(ch.name, {
           cls: 'gk-sv-ch-name',
           onCommit: async (v) => { await renameChannel(serverId, ch.id, v); toast('Canal renomeado.'); },
         }),
       ]);
-      if (isText) {
-        row.appendChild(ghostInput(ch.topic || '', {
-          cls: 'gk-sv-ch-topic', maxlength: String(TOPIC_MAX), placeholder: 'tópico do canal', allowEmpty: true,
-          onCommit: async (v) => { await setChannelTopic(serverId, ch.id, v); toast('Tópico atualizado.'); },
-        }));
-      }
-      if (isText) row.appendChild(slowmodeSelect(serverId, ch));
-      if (isText) row.appendChild(announcementPill(serverId, ch));
-      if (isText) row.appendChild(nsfwPill(serverId, ch));
-      row.appendChild(iconBtn('chevronUp', 'Subir canal', () => moveChannel(serverId, ch.id, -1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
-      row.appendChild(iconBtn('chevronDown', 'Descer canal', () => moveChannel(serverId, ch.id, +1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
-      row.appendChild(iconBtn('lock', 'Permissões do canal (por cargo)', () => openChannelPermissionsModal(serverId, ch)));
-      row.appendChild(iconBtn('trash', 'Excluir canal', () => confirmDangerAction(
+      const actions = el('div', { class: 'gk-sv-ch-actions' });
+      actions.appendChild(iconBtn('chevronUp', 'Subir canal', () => moveChannel(serverId, ch.id, -1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
+      actions.appendChild(iconBtn('chevronDown', 'Descer canal', () => moveChannel(serverId, ch.id, +1).catch(() => toast('Não foi possível reordenar.', 'danger'))));
+      actions.appendChild(iconBtn('lock', 'Permissões do canal (por cargo)', () => openChannelPermissionsModal(serverId, ch)));
+      actions.appendChild(iconBtn('trash', 'Excluir canal', () => confirmDangerAction(
         'Excluir canal', `Excluir o canal "#${ch.name}"? As mensagens desse canal deixam de ser acessíveis.`,
         () => deleteChannel(serverId, ch.id),
         { confirmLabel: 'Excluir canal' },
       ), { danger: true }));
+      head.appendChild(actions);
+      row.appendChild(head);
+      if (isText) {
+        const opts = el('div', { class: 'gk-sv-ch-opts' }, [
+          ghostInput(ch.topic || '', {
+            cls: 'gk-sv-ch-topic', maxlength: String(TOPIC_MAX), placeholder: 'Adicionar tópico do canal', allowEmpty: true,
+            onCommit: async (v) => { await setChannelTopic(serverId, ch.id, v); toast('Tópico atualizado.'); },
+          }),
+          el('div', { class: 'gk-sv-ch-flags' }, [slowmodeSelect(serverId, ch), announcementPill(serverId, ch), nsfwPill(serverId, ch)]),
+        ]);
+        row.appendChild(opts);
+      }
       card.appendChild(row);
     }
     if (catChannels.length === 0) card.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhum canal nesta categoria.'));
@@ -432,6 +384,9 @@ function renderRoleCard(serverId, role, members) {
   };
   paintSwatches();
 
+  const hoistBox = el('input', { type: 'checkbox' });
+  hoistBox.checked = !!role?.hoist;
+
   const permChecks = {};
   const permsBox = el('div', { class: 'gk-role-perms' });
   for (const perm of PERMISSION_CATALOG) {
@@ -460,13 +415,13 @@ function renderRoleCard(serverId, role, members) {
       saveBtn.disabled = true;
       try {
         if (isNew) {
-          const id = await createRole(serverId, { name: nameInput.value, color: selectedColor, permissions: readPerms() });
+          const id = await createRole(serverId, { name: nameInput.value, color: selectedColor, hoist: hoistBox.checked, permissions: readPerms() });
           newRoleOpen = false;
           expandedRoles.add(id);          // abre o cargo recém-criado para já atribuir aos membros
           pendingScrollRole = id;
           scheduleRefresh();
         } else {
-          await updateRole(serverId, role.id, { name: nameInput.value, color: selectedColor, permissions: readPerms() });
+          await updateRole(serverId, role.id, { name: nameInput.value, color: selectedColor, hoist: hoistBox.checked, permissions: readPerms() });
         }
       } catch (err) {
         toast(err.message || 'Não foi possível salvar o cargo.', 'danger');
@@ -498,6 +453,7 @@ function renderRoleCard(serverId, role, members) {
   const body = el('div', { class: 'gk-sv-role-body' }, [
     el('div', { class: 'gk-field' }, [el('label', {}, 'Nome'), nameInput]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Cor'), swatchRow]),
+    el('label', { class: 'gk-role-perm-row' }, [hoistBox, el('div', {}, [el('div', { class: 'gk-role-perm-label' }, 'Exibir membros separadamente'), el('div', { class: 'gk-hint' }, 'Na lista de membros, quem tem este cargo aparece num grupo próprio.')])]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Permissões'), permsBox]),
   ]);
 
@@ -657,14 +613,15 @@ function fmtDateTime(ts) {
 
 function renderModeracaoSection(content) {
   const serverId = currentServerId;
-  content.appendChild(sectionHeader('Moderação', 'Quem está banido e o histórico das ações de quem modera o servidor.'));
-  const stillHere = () => content.isConnected && activeSection === 'moderacao' && currentServerId === serverId;
+  const mode = activeSection;
+  content.appendChild(mode === 'banimentos' ? sectionHeader('Banimentos', 'Denúncias recebidas e quem está banido do servidor.') : sectionHeader('Registro de auditoria', 'O histórico das ações de quem modera o servidor.'));
+  const stillHere = () => content.isConnected && activeSection === mode && currentServerId === serverId;
 
   // ----- Denúncias feitas neste servidor (quem pode banir enxerga) -----
-  if (canKickMembers(serverId)) content.appendChild(buildReportsCard({ serverId }));
+  if (mode === 'banimentos' && canKickMembers(serverId)) content.appendChild(buildReportsCard({ serverId }));
 
   // ----- Banidos (só quem pode banir enxerga) -----
-  if (canKickMembers(serverId)) {
+  if (mode === 'banimentos' && canKickMembers(serverId)) {
     const bansBody = el('div', { id: 'gk-bans-list' }, [el('div', { class: 'gk-sv-empty' }, 'Carregando…')]);
     content.appendChild(el('div', { class: 'gk-sv-card' }, [
       el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('block', { size: 14 }), ' Banidos'])]),
@@ -697,11 +654,18 @@ function renderModeracaoSection(content) {
     loadBans();
   }
 
+  if (mode !== 'auditoria') return;
   // ----- Log de auditoria -----
+  const AUDIT_GROUPS = [['', 'Todas as ações'], ['member', 'Membros (expulsar, banir, castigo)'], ['role', 'Cargos'], ['channel', 'Canais e categorias'], ['invite', 'Convites'], ['message', 'Mensagens apagadas'], ['server', 'Servidor (regras, anti-raid…)']];
+  const auditType = el('select', { class: 'gk-sv-select', 'aria-label': 'Tipo de ação' }, AUDIT_GROUPS.map(([v, t]) => el('option', { value: v }, t)));
+  const auditText = el('input', { type: 'search', class: 'gk-sv-input', placeholder: 'Buscar por pessoa ou texto…', 'aria-label': 'Buscar no log' });
+  const auditDays = el('select', { class: 'gk-sv-select', 'aria-label': 'Período' }, [['0', 'Todo o período'], ['1', 'Últimas 24 h'], ['7', 'Últimos 7 dias'], ['30', 'Últimos 30 dias']].map(([v, t]) => el('option', { value: v }, t)));
+  let auditEntries = [];
   const logBody = el('div', { id: 'gk-audit-list' }, [el('div', { class: 'gk-sv-empty' }, 'Carregando…')]);
   const refreshBtn = el('button', { class: 'gk-sv-pill', type: 'button' }, 'Atualizar');
   content.appendChild(el('div', { class: 'gk-sv-card' }, [
     el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('edit', { size: 14 }), ' Log de auditoria']), refreshBtn]),
+    el('div', { class: 'gk-audit-filters' }, [auditType, auditText, auditDays]),
     logBody,
   ]));
   const loadLog = async () => {
@@ -709,9 +673,19 @@ function renderModeracaoSection(content) {
     try { entries = await loadAuditLog(serverId, 100); }
     catch (err) { if (stillHere()) logBody.replaceChildren(el('div', { class: 'gk-sv-empty' }, 'Não foi possível carregar o log (as regras do Firestore já foram publicadas?).')); return; }
     if (!stillHere()) return;
+    auditEntries = entries; paintLog();
+  };
+  const paintLog = () => {
     logBody.innerHTML = '';
-    if (!entries.length) { logBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhuma ação registrada ainda.')); return; }
-    for (const e of entries) {
+    if (!auditEntries.length) { logBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhuma ação registrada ainda.')); return; }
+    const g = auditType.value; const q = auditText.value.trim().toLowerCase(); const days = +auditDays.value;
+    const list = auditEntries.filter((e) => {
+      if (g && !(g === 'channel' ? /^(channel|category)\./ : new RegExp('^' + g + '\\.')).test(String(e.type || ''))) return false;
+      if (days && (e.createdAt?.toMillis?.() || 0) < Date.now() - days * 86400e3) return false;
+      return !q || describeAudit(e).text.toLowerCase().includes(q);
+    });
+    if (!list.length) { logBody.appendChild(el('div', { class: 'gk-sv-empty' }, 'Nenhuma ação com esses filtros.')); return; }
+    for (const e of list) {
       const d = describeAudit(e);
       logBody.appendChild(el('div', { class: 'gk-sv-row gk-audit-row' }, [
         el('span', { class: 'gk-sv-row-icon' }, [icon(d.icon, { size: 14 })]),
@@ -721,6 +695,7 @@ function renderModeracaoSection(content) {
     }
   };
   refreshBtn.addEventListener('click', loadLog);
+  auditType.addEventListener('change', paintLog); auditDays.addEventListener('change', paintLog); auditText.addEventListener('input', paintLog);
   loadLog();
 }
 
@@ -776,8 +751,17 @@ function renderConvitesSection(content) {
   const serverId = currentServerId;
   const me = auth.currentUser?.uid;
   const manage = canManageServerInfo(serverId);
-  content.appendChild(sectionHeader('Convites', 'Gere códigos para outras pessoas entrarem. Defina por quanto tempo valem e quantas vezes podem ser usados.'));
-  const stillHere = () => content.isConnected && activeSection === 'convites' && currentServerId === serverId;
+  const mode = activeSection;
+  const HEAD = {
+    convites: ['Convites', 'Gere códigos para outras pessoas entrarem. Defina por quanto tempo valem e quantas vezes podem ser usados.'],
+    acesso: ['Acesso', 'Quem pode entrar, o que veem ao chegar e o que precisam aceitar.'],
+    seguranca: ['Configurações de Segurança', 'Proteção contra invasões em massa e bots do servidor.'],
+    automod: ['AutoMod', 'Filtros automáticos para palavras, links, spam e menções em excesso.'],
+  };
+  content.appendChild(sectionHeader(...HEAD[mode]));
+  const stillHere = () => content.isConnected && activeSection === mode && currentServerId === serverId;
+  if (mode === 'automod') { content.appendChild(buildAutomodCard(serverId)); return; }
+  if (mode === 'seguranca') { content.appendChild(buildAntiRaidCard(serverId)); content.appendChild(buildBotsCard(serverId)); return; }
 
   // ----- privacidade: privado (só convite) x público (Comunidades) -----
   const server = state.servers.get(serverId) || {};
@@ -814,10 +798,26 @@ function renderConvitesSection(content) {
       ? 'Este servidor é público: qualquer pessoa pode entrar pelas Comunidades. Só o dono muda isso.'
       : 'Este servidor é privado: só entra quem tiver um convite válido. Só o dono muda isso.'));
   }
-  content.appendChild(el('div', { class: 'gk-sv-card gk-privacy-card', id: 'gk-privacy-card' }, [
-    el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('lock', { size: 14 }), ' Privacidade'])]),
-    ...privacyBody,
-  ]));
+  if (isServerOwner(serverId)) {
+    const isNsfw = !!server.nsfw;
+    privacyBody.push(el('div', { class: 'gk-sv-note', style: 'margin:12px 0 6px;' }, 'Servidor +18: quem não confirmar ter 18 anos não consegue entrar. Use se o servidor inteiro tem conteúdo adulto (para só alguns canais, marque o canal como NSFW).'));
+    privacyBody.push(el('button', { type: 'button', class: 'gk-btn' + (isNsfw ? ' gk-btn-danger' : ''), onclick: async () => {
+      try { await setServerNsfw(serverId, !isNsfw); if (state.servers.get(serverId)) state.servers.get(serverId).nsfw = !isNsfw; toast(!isNsfw ? 'Servidor marcado como +18.' : 'Servidor deixou de ser +18.'); renderSection(); }
+      catch (e) { toast('Não foi possível alterar: ' + (e.message || e), 'danger'); }
+    } }, isNsfw ? 'Remover marca +18 do servidor' : 'Marcar servidor inteiro como +18'));
+  }
+  if (mode === 'acesso') {
+    content.appendChild(el('div', { class: 'gk-sv-card gk-privacy-card', id: 'gk-privacy-card' }, [
+      el('div', { class: 'gk-sv-card-head' }, [el('span', { class: 'gk-mod-section-title' }, [icon('lock', { size: 14 }), ' Privacidade'])]),
+      ...privacyBody,
+    ]));
+    content.appendChild(buildVerificationCard(serverId));
+    const sub = (t, d) => el('div', { class: 'gk-subhead' }, [el('h3', {}, t), el('p', { class: 'gk-modal-sub' }, d)]);
+    content.appendChild(sub('Boas-vindas', 'O que acontece quando alguém entra no servidor.'));
+    renderBoasVindasSection(content, true);
+    renderRegrasSection(content, sub);
+    return;
+  }
 
   // ----- criar -----
   const expiry = el('select', { class: 'gk-sv-select', id: 'gk-invite-expiry' }, INVITE_EXPIRY.map(([v, l]) => el('option', { value: String(v) }, l)));
@@ -902,13 +902,13 @@ function renderConvitesSection(content) {
 // ============================================================
 // Seção: Boas-vindas (mensagem ao entrar + cargo automático)
 // ============================================================
-function renderBoasVindasSection(content) {
+function renderBoasVindasSection(content, noHeader = false) {
   const serverId = currentServerId;
   const server = state.servers.get(serverId) || {};
   const welcome = server.welcome || {};
   const { channels } = getCategoriesAndChannels();
   const textChannels = channels.filter((c) => c.type === 'text');
-  content.appendChild(sectionHeader('Boas-vindas', 'O que acontece quando alguém entra no servidor.'));
+  if (!noHeader) content.appendChild(sectionHeader('Boas-vindas', 'O que acontece quando alguém entra no servidor.'));
 
   // ----- mensagem -----
   const enabled = el('input', { type: 'checkbox', id: 'gk-welcome-enabled' });

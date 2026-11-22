@@ -107,6 +107,31 @@ function readFile(file) {
   });
 }
 
+function emptyState(title, text) {
+  return el('div', { class: 'gk-ext-empty' }, [
+    el('div', { class: 'gk-ext-empty-ico' }, [icon('sparkles', { size: 20 })]),
+    el('b', {}, title), el('small', {}, text),
+  ]);
+}
+
+// Código de tema: "gkio-theme:" + base64(JSON {n, c}). Qualquer pessoa cola o código em "Importar" e pronto.
+const THEME_PREFIX = 'gkio-theme:';
+const encodeTheme = (t) => THEME_PREFIX + btoa(unescape(encodeURIComponent(JSON.stringify({ n: t.name, c: t.css }))));
+function decodeTheme(code) {
+  const raw = String(code || '').trim();
+  if (!raw.startsWith(THEME_PREFIX)) throw new Error('Isso não parece um código de tema do G.K.IO.');
+  let o; try { o = JSON.parse(decodeURIComponent(escape(atob(raw.slice(THEME_PREFIX.length))))); } catch (e) { throw new Error('Código de tema inválido ou cortado.'); }
+  if (!o || typeof o.c !== 'string') throw new Error('Código de tema inválido.');
+  return { name: String(o.n || 'Tema importado').slice(0, 60), css: o.c };
+}
+function buildThemeImport(rerender) {
+  const input = el('input', { type: 'text', placeholder: 'Cole aqui um código de tema (gkio-theme:…)', 'aria-label': 'Código de tema' });
+  const btn = el('button', { class: 'gk-btn gk-btn-primary', type: 'button', onclick: () => {
+    try { const t = decodeTheme(input.value); addTheme(t.name, t.css); toast(`Tema "${t.name}" importado.`); rerender(); } catch (e) { toast(e.message, 'danger'); }
+  } }, 'Importar tema');
+  return el('div', { class: 'gk-field-row', style: 'margin-top:10px' }, [input, btn]);
+}
+
 function itemRow(item, { onToggle, onRemove, kind, extra }) {
   return el('div', { class: 'gk-ext-item' }, [
     el('div', { class: 'gk-ext-item-main' }, [
@@ -159,46 +184,29 @@ export function renderExtensionsSection(content, sectionHeader) {
   }
   const rerender = () => { content.innerHTML = ''; renderExtensionsSection(content, sectionHeader); };
 
-  // Temas prontos (vêm junto com o app)
-  const installed = new Set(listThemes().map((t) => t.name));
-  const PRESETS = [
-    { name: 'Verade Fábula Deluxe', desc: 'O Fábula completo e estável: cenário ilustrado com sol de raios, arco-íris, montanhas com neve, moinho, casinha com fumaça, lago, balão e pássaros; muda com a hora do dia. Plugin incluso.', file: 'css/themes/verade-fabula-deluxe.css', plugin: 'css/themes/verade-fabula-deluxe.plugin.js' },
-    { name: 'Verade Pomar', desc: 'Estável e elegante: noite de pomar em verde-maçã, ouro e toques de vermelho. Só cor, gradiente e brilho — não mexe em layout, menus, chamadas nem celular.', file: 'css/themes/verade-pomar.css' },{ name: 'Verade', desc: 'Noite de pomar: verde-maçã vivo, vermelho-maçã, folhas e brilho de seiva. Inspirado no clima do Mundo Torajo.', file: 'css/themes/verade.css' },
-    { name: 'Verade Aurora', desc: 'Versão premium: aurora animada, painéis de vidro flutuantes, esporos brilhantes, bordas de luz e mensagens em cartões de cristal.', file: 'css/themes/verade-aurora.css' },
-    { name: 'Verade Éden', desc: 'O definitivo: céu vivo que muda com a hora do seu dia (noite, amanhecer, dia, entardecer), sol/lua, estrelas cadentes, folhas e maçãs caindo com parallax, painéis de vidro e bordas giratórias de luz.', file: 'css/themes/verade-eden.css', plugin: 'css/themes/verade-eden.plugin.js' },
-    { name: 'Verade Fábula', desc: 'Estilo desenho animado: contornos grossos, botões gordinhos que afundam, balões de conversa e um cenário ilustrado atrás de tudo (colinas, macieiras, nuvens, sol/lua) que muda com a hora, com borboletas e vagalumes.', file: 'css/themes/verade-fabula.css', plugin: 'css/themes/verade-fabula.plugin.js' }];
-  content.appendChild(card('Temas prontos', PRESETS.map((pr) => el('div', { class: 'gk-ext-item', style: 'display:flex;align-items:center;gap:12px;justify-content:space-between;' }, [
-    el('div', {}, [el('strong', {}, pr.name), el('div', { class: 'gk-hint' }, pr.desc)]),
-    el('button', {
-      class: 'gk-btn gk-btn-primary', disabled: installed.has(pr.name) ? 'disabled' : null,
-      onclick: async () => {
-        try {
-          const css = await fetch(new URL('../' + pr.file, import.meta.url)).then((r) => { if (!r.ok) throw new Error('arquivo não encontrado'); return r.text(); });
-          addTheme(pr.name, css);
-          if (pr.plugin) { const js = await fetch(new URL('../' + pr.plugin, import.meta.url)).then((r) => r.text()); await addPlugin(pr.name, js); }
-          toast(pr.name + ' instalado!', 'success'); rerender();
-        } catch (e) { toast('Não foi possível instalar: ' + (e.message || e), 'danger'); }
-      },
-    }, installed.has(pr.name) ? 'Instalado' : 'Instalar'),
-  ]))));
-
   // Temas
   const themeList = listThemes().map((t) => itemRow(t, {
     kind: 'tema',
     onToggle: (v) => setThemeEnabled(t.id, v),
     onRemove: () => { removeTheme(t.id); rerender(); },
-    extra: el('button', {
-      class: 'gk-btn gk-btn-ghost',
-      title: 'Camada de compatibilidade com temas do Discord (BetterDiscord/Vencord). Ligada automaticamente quando o CSS parece ser do Discord.',
-      onclick: () => { setThemeDiscord(t.id, !t.discord); rerender(); },
-    }, 'Discord: ' + (t.discord ? 'sim' : 'não')),
+    extra: el('div', { class: 'gk-ext-extra' }, [
+      el('button', { class: 'gk-btn gk-btn-ghost', title: 'Copia um código que outra pessoa pode importar', onclick: async () => {
+        try { await navigator.clipboard.writeText(encodeTheme(t)); toast('Código do tema copiado! Mande para quem quiser.'); } catch (e) { toast('Não foi possível copiar.', 'danger'); }
+      } }, 'Compartilhar'),
+      el('button', {
+        class: 'gk-btn gk-btn-ghost',
+        title: 'Camada de compatibilidade com temas do Discord (BetterDiscord/Vencord). Ligada automaticamente quando o CSS parece ser do Discord.',
+        onclick: () => { setThemeDiscord(t.id, !t.discord); rerender(); },
+      }, 'Discord: ' + (t.discord ? 'sim' : 'não')),
+    ]),
   }));
   content.appendChild(card('Temas (CSS)', [
-    themeList.length ? el('div', { class: 'gk-ext-list' }, themeList) : el('div', { class: 'gk-hint gk-ext-note' }, 'Nenhum tema instalado. Cole um CSS abaixo — dica: sobrescreva as variáveis --gk-* em :root. Temas do Discord (BetterDiscord/Vencord, como Fluent e OldCord) também funcionam.'),
+    themeList.length ? el('div', { class: 'gk-ext-list' }, themeList) : emptyState('Nenhum tema instalado', 'Escolha um tema pronto acima ou cole um CSS abaixo. Dica: sobrescreva as variáveis --gk-* em :root. Temas do Discord (BetterDiscord/Vencord) também funcionam.'),
     buildAdder({
       kind: 'tema', accept: '.css,text/css', placeholder: ':root { --gk-accent: #ff5d8f; }\n@import url("https://...");',
       onAdd: (n, css) => { addTheme(n, css); rerender(); },
     }),
+    buildThemeImport(rerender),
   ]));
 
   // Plugins
@@ -209,7 +217,7 @@ export function renderExtensionsSection(content, sectionHeader) {
   }));
   content.appendChild(card('Plugins (JavaScript)', [
     el('div', { class: 'gk-ext-banner gk-warn' }, 'Plugins rodam com acesso total à sua conta no G.K.IO. Instale apenas código em que você confia.'),
-    pluginList.length ? el('div', { class: 'gk-ext-list' }, pluginList) : el('div', { class: 'gk-hint gk-ext-note' }, 'Nenhum plugin instalado. O código recebe o objeto `gkio` (toast, addStyle, onCleanup, storage).'),
+    pluginList.length ? el('div', { class: 'gk-ext-list' }, pluginList) : emptyState('Nenhum plugin instalado', 'Cole um código JavaScript abaixo. Ele recebe o objeto gkio (toast, addStyle, onCleanup, storage).'),
     buildAdder({
       kind: 'plugin', accept: '.js,text/javascript', placeholder: "gkio.toast('Olá do plugin!');",
       onAdd: async (n, code) => { await addPlugin(n, code); rerender(); },
@@ -273,6 +281,11 @@ export async function buildDesktopCard() {
     el('option', { value: v, ...(v === cfg.streamerMode ? { selected: 'selected' } : {}) }, l)));
   stSel.addEventListener('change', async () => { await d.setConfig({ streamerMode: stSel.value }); applyStreamerAttr(await d.getStreamerMode()); });
 
+  // --- Sobreposição ---
+  const ovSel = el('select', { class: 'gk-select gk-ext-idle-select' }, [['game', 'Só quando eu estiver em um jogo'], ['always', 'Sempre que estiver em chamada'], ['off', 'Desligada']].map(([v, l]) =>
+    el('option', { value: v, ...(v === (cfg.overlayMode || 'game') ? { selected: 'selected' } : {}) }, l)));
+  ovSel.addEventListener('change', () => d.setConfig({ overlayMode: ovSel.value }));
+
   // --- Proxy ---
   const proxyIn = el('input', { type: 'text', placeholder: 'http://127.0.0.1:8080  (vazio = sistema)', value: cfg.proxy || '' });
   const proxyBtn = el('button', { class: 'gk-btn gk-btn-ghost', onclick: async () => {
@@ -306,6 +319,7 @@ export async function buildDesktopCard() {
       el('div', { class: 'gk-ext-games-add' }, [profIn, profBtn]),
     ]),
     card('Privacidade e rede', [
+      el('div', { class: 'gk-toggle-row' }, [el('span', {}, ['Sobreposição no jogo', el('small', { class: 'gk-ext-hint' }, 'Mostra quem está falando e avisos na esquerda da tela (jogo em janela ou sem bordas)')]), ovSel]),
       el('div', { class: 'gk-toggle-row' }, [el('span', {}, ['Modo streamer', el('small', { class: 'gk-ext-hint' }, 'Oculta e-mails e códigos de convite; sem prévia em notificações')]), stSel]),
       el('div', { class: 'gk-field', style: 'margin-top:10px;' }, [el('label', {}, 'Proxy'), el('div', { class: 'gk-ext-games-add' }, [proxyIn, proxyBtn])]),
     ]),

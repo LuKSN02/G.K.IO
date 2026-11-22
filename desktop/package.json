@@ -1,6 +1,6 @@
 {
   "name": "gkio-desktop",
-  "version": "1.6.1",
+  "version": "1.9.0",
   "description": "G.K.IO — app desktop (Electron)",
   "main": "main.js",
   "author": "G.K.IO",
@@ -16,8 +16,8 @@
     "uiohook-napi": "^1.5.4"
   },
   "devDependencies": {
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8"
+    "electron": "^43.8.0",
+    "electron-builder": "^26.8.0"
   },
   "build": {
     "appId": "io.gkio.desktop",
@@ -30,6 +30,7 @@
       "main.js",
       "preload.js",
       "lib/**",
+      "overlay/**",
       "games.json",
       "package.json"
     ],
@@ -65,6 +66,7 @@
       "target": "dmg",
       "icon": "../img/favicon-512.png"
     },
+    "protocols": [{ "name": "G.K.IO", "schemes": ["gkio"] }],
     "publish": [
       {
         "provider": "github",
@@ -94,6 +96,6 @@
     }
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.8.0"
   }
 }

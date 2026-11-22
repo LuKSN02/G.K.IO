@@ -5,11 +5,12 @@ import { openEventsModal } from './server-extras.js';
 import { initAuthListener, onAuthReady, wireAuthForm, logoutUser, setPresence } from './auth.js';
 import { state, fallbackAvatar, cleanupListener } from './state.js';
 import { stopTyping } from './typing.js';
-import { listenUserServers, openCreateServerModal, openJoinServerModal, selectServer, goToServerPickerView } from './servers.js';
+import { listenUserServers, openCreateServerModal, selectServer, goToServerPickerView } from './servers.js';
 import { openServerSettingsModal, wireServerSettingsModal } from './server-settings.js';
 import { listenFriendsAndDms, goToDmsView, openAddFriendModal, wireFriendsHome, openDmById, hideFriendsHome, showFriendsHome } from './dms.js';
 import { wireComposer, sendAttachmentMessage, selectChannel } from './chat.js';
 import { initMobileNav } from './mobile-nav.js';
+import { initMobileDiscord } from './mobile-discord.js';
 import { checkForApkUpdate } from './app-update.js';
 import { wireGenericModalReset } from './dialogs.js';
 import { refreshMiniProfile } from './profile.js';
@@ -18,6 +19,14 @@ import { openSettingsModal, wireSettingsModal } from './settings.js';
 import { initEmojiPicker, listenCustomEmojis } from './emoji.js';
 import { listenReadStates } from './unread.js';
 import { initPushNotifications, onPushNotificationTap } from './push.js';
+import { initWebPush } from './web-push.js';
+import { initEventReminders } from './event-reminders.js';
+import { initLinkGuard } from './link-guard.js';
+import { initDrafts } from './drafts.js';
+import { initServerGuard } from './server-guard.js';
+import { initQuickReplies } from './quick-replies.js';
+import { syncQuietToProfile } from './quiet-hours.js';
+import { getNotifPrefs } from './prefs.js';
 import { goToFilesView, hideFilesView } from './files.js';
 import { goToCommunitiesView, hideCommunitiesView } from './communities.js';
 import { wireGlobalTopbar, closeProfileMenu } from './topbar.js';
@@ -59,6 +68,10 @@ initHotkeys();
 initExtensions();
 initDesktopIntegration();
 initMobileNav();
+initMobileDiscord();
+initLinkGuard();
+initDrafts();
+initQuickReplies();
 
 onPushNotificationTap((data) => {
   if (data.type === 'dm' && data.dmId) openDmById(data.dmId);
@@ -78,6 +91,10 @@ onAuthReady(() => {
   listenReadStates();
   goToHomeView();
   initPushNotifications();
+  initWebPush();
+  initEventReminders();
+  initServerGuard();
+  syncQuietToProfile(getNotifPrefs());
   checkForApkUpdate();
   initIdleDetection();
   pushActivity();
@@ -117,7 +134,7 @@ function goToHomeView() {
   document.getElementById('gk-server-picker-add').style.display = 'none';
   document.getElementById('gk-topbar-title').textContent = 'Início';
   document.getElementById('gk-topbar-subtitle').textContent = '';
-  document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens diretas';
+  document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens';
   const name = state.user?.displayName || state.user?.username;
   document.getElementById('gk-home-greeting').textContent = name ? `Olá, ${name}!` : 'Olá!';
   document.querySelectorAll('.gk-rail-item').forEach((n) => n.classList.remove('gk-active'));
@@ -171,10 +188,8 @@ function wireStaticUI() {
     }
   });
   document.getElementById('gk-create-server-btn').addEventListener('click', openCreateServerModal);
-  document.getElementById('gk-join-server-btn').addEventListener('click', openJoinServerModal);
-  // Versão celular dos mesmos dois botões (ver .gk-server-picker-actions)
+  // Versão celular do botão (ver .gk-server-picker-actions)
   document.getElementById('gk-m-create-server-btn')?.addEventListener('click', openCreateServerModal);
-  document.getElementById('gk-m-join-server-btn')?.addEventListener('click', openJoinServerModal);
   document.getElementById('gk-dm-rail-item').addEventListener('click', goToDmsView);
   document.getElementById('gk-nav-home').addEventListener('click', goToHomeView);
   document.getElementById('gk-nav-servers').addEventListener('click', goToServerPickerView);

@@ -212,12 +212,13 @@
 .gk-sticker{display:block;width:160px;height:160px;object-fit:contain;margin-top:4px;max-width:100%;overflow:hidden}
 /* A imagem da figurinha precisa ser limitada ao quadrado de 160px — sem isso ela aparecia no tamanho original do arquivo (gigante). */
 .gk-sticker img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain;margin:0}
-.gk-sticker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px;padding:8px;max-height:260px;overflow:auto}
+.gk-sticker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;padding:8px;max-height:300px;overflow:auto}
 .gk-sticker-pick{padding:4px;border:0;border-radius:8px;background:transparent;cursor:pointer}
 .gk-sticker-pick:hover,.gk-sticker-pick:focus-visible{background:var(--gk-bg-hover,rgba(255,255,255,.1));outline:none}
 .gk-sticker-pick img{width:100%;aspect-ratio:1;object-fit:contain}
 .gk-sticker-add{display:flex;align-items:center;justify-content:center;font-size:24px;border:2px dashed currentColor;opacity:.6}
-.gk-sticker-emoji{font-size:32px;line-height:1}
+.gk-sticker.gk-sticker-emoji{display:block;text-align:left;align-self:flex-start;margin-left:0;margin-right:auto;width:fit-content;height:auto;font-size:88px;line-height:1.1;padding:2px 4px;overflow:visible;user-select:none}
+.gk-sticker-pick:not(.gk-sticker-add){font-size:40px;line-height:1;display:flex;align-items:center;justify-content:center;aspect-ratio:1}
 .gk-sticker-mine{position:relative}
 .gk-msg-forwarded{display:flex;align-items:center;gap:4px;font-size:12px;opacity:.65;font-style:italic;margin-bottom:2px}
 .gk-forward-list{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow:auto;margin:8px 0}

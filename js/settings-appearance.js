@@ -83,7 +83,12 @@ export function buildCustomAccentCard(rerender) {
     picker.value = clean.toLowerCase(); text.value = clean; apply(clean); rerender();
   });
 
+  const PRESETS = [['#6C63F5', 'Violeta'], ['#4F7DF7', 'Azul'], ['#14B8A6', 'Turquesa'], ['#22C55E', 'Verde'], ['#F59E0B', 'Âmbar'], ['#F97316', 'Laranja'], ['#EF4444', 'Vermelho'], ['#EC4899', 'Rosa']];
+  const swatches = el('div', { class: 'gk-ap-swatches', role: 'group', 'aria-label': 'Cores prontas' }, PRESETS.map(([hex, name]) =>
+    el('button', { type: 'button', class: 'gk-ap-swatch', title: name, 'aria-label': name, style: `--sw:${hex}`,
+      onclick: () => { picker.value = hex.toLowerCase(); text.value = hex; apply(hex); rerender(); } })));
   return card('Cor de destaque livre', [
+    swatches,
     hint('Escolha qualquer cor — ela vale para botões, links, brilho e seleções neste dispositivo.'),
     el('div', { class: 'gk-ap-color' }, [picker, text,
       el('button', { type: 'button', class: 'gk-btn gk-btn-ghost', onclick: () => { text.value = '#6C63F5'; picker.value = '#6c63f5'; apply('#6C63F5'); rerender(); } }, 'Voltar ao padrão (Cosmic Violet)'),

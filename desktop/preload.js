@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld('gkioDesktop', {
   installUpdate: () => ipcRenderer.send('update:install'),
   // cb({ state: 'checking'|'downloading'|'ready'|'none'|'error', version?, percent?, message? })
   onUpdate: (cb) => { const f = (_e, s) => cb(s); ipcRenderer.on('gkio:update', f); return () => ipcRenderer.removeListener('gkio:update', f); },
+  // cb({ locked?: bool, idleSeconds?: number }) — bloqueio/suspensão e tempo parado do sistema
+  onPower: (cb) => { const f = (_e, s) => cb(s); ipcRenderer.on('gkio:power', f); return () => ipcRenderer.removeListener('gkio:power', f); },
+  // Links gkio://... (convite/servidor/DM). takeDeepLink() devolve o link que abriu o app (uma vez só).
+  takeDeepLink: () => ipcRenderer.invoke('deeplink:take'),
+  onDeepLink: (cb) => { const f = (_e, u) => cb(u); ipcRenderer.on('gkio:deeplink', f); return () => ipcRenderer.removeListener('gkio:deeplink', f); },
+  // Sobreposição (janela por cima do jogo): o site manda o estado da chamada e avisos curtos.
+  setOverlay: (s) => ipcRenderer.send('overlay:state', s),
+  overlayToast: (t) => ipcRenderer.send('overlay:toast', t),
   getStreamerMode: () => ipcRenderer.invoke('streamer:current'),
   onStreamer: (cb) => { const f = (_e, v) => cb(!!v); ipcRenderer.on('gkio:streamer', f); return () => ipcRenderer.removeListener('gkio:streamer', f); },
   clearCache: () => ipcRenderer.invoke('cache:clear'),

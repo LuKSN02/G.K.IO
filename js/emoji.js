@@ -17,6 +17,7 @@ import { state, el, toast } from './state.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { giphyConfig } from './gif-config.js';
 import { icon } from './icons.js';
+import { getRoles } from './servers.js';
 import { renderRichText } from './markdown.js';
 import { renderStickersTab } from './stickers.js';
 
@@ -68,7 +69,8 @@ export function canUseCustomEmoji(emoji) {
   if (!emoji || !uid) return false;
   // Emoji de servidor: todo membro daquele servidor pode usar.
   if (emoji.serverId && state.servers.has(emoji.serverId)) return true;
-  return emoji.uploaderId === uid || (emoji.allowedUserIds || []).includes(uid);
+  return true; // emojis pessoais são livres: não existe mais "pedir acesso"
+
 }
 
 // Nomes de emojis personalizados citados no texto (:nome:) que a pessoa NÃO pode
@@ -243,13 +245,25 @@ function resolveMentionByName(name) {
   const target = name.toLowerCase();
   if (everyoneChipAllowed && (target === 'everyone' || target === 'here')) return { uid: null, name: target, username: target, special: true };
   const hit = mentionCandidates().find((u) => (u.username || '').toLowerCase() === target);
-  if (!hit) return null;
+  if (!hit) {
+    const role = state.currentServerId ? getRoles().find((r) => roleSlug(r.name) === target) : null;
+    return role ? { uid: null, name: role.name, username: target, special: true } : null;
+  }
   return { uid: hit.uid, name: hit.displayName || hit.username, username: hit.username };
 }
 
 // Usado pelo autocomplete do composer (ver wireMentionAutocomplete em
 // chat.js) — retorna quem bate com o prefixo digitado depois do @, por
 // username ou nome de exibição, limitado a um punhado de sugestões.
+export function roleSlug(name) {
+  return String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+}
+export function searchRoleCandidates(prefix) {
+  if (!state.currentServerId) return [];
+  const p = prefix.toLowerCase();
+  return getRoles().map((r) => ({ r, slug: roleSlug(r.name) })).filter((x) => x.slug.length >= 2 && x.slug.startsWith(p))
+    .slice(0, 4).map((x) => ({ special: true, role: true, username: x.slug, displayName: x.r.name, hint: 'Cargo' }));
+}
 export function searchMentionCandidates(prefix) {
   const p = prefix.toLowerCase();
   return mentionCandidates()
@@ -393,32 +407,17 @@ function renderCustomTab() {
   if (pendingEmojiFile) { renderEmojiNameForm(); return; }
   const filter = searchInputEl.value.trim().toLowerCase();
 
-  // 1) Pedidos de acesso aos MEUS emojis (só aparece se houver)
-  if (incomingRequests.length) {
-    bodyEl.appendChild(el('div', { class: 'gk-emoji-category-label' }, 'Pedidos de acesso'));
-    for (const req of incomingRequests) {
-      const emoji = customEmojiCache.get(req.emojiId);
-      bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row' }, [
-        emoji ? el('img', { src: emoji.url, alt: '' }) : el('span', {}),
-        el('div', { class: 'gk-emoji-req-text' }, [
-          el('b', {}, req.requesterName || 'Alguém'),
-          ` quer usar :${req.emojiName}:`,
-        ]),
-        el('button', { class: 'gk-btn gk-btn-ghost gk-btn-sm', type: 'button', onclick: () => answerEmojiRequest(req, false) }, 'Recusar'),
-        el('button', { class: 'gk-btn gk-btn-primary gk-btn-sm', type: 'button', onclick: () => answerEmojiRequest(req, true) }, 'Aceitar'),
-      ]));
-    }
-  }
-
   // 2) Emojis que eu posso usar (meus + liberados) + botão de enviar novo
   const uploadTile = el('button', {
     class: 'gk-emoji-upload-tile', title: 'Enviar novo emoji', type: 'button', onclick: triggerUpload,
   }, [icon('plus', { size: 20 })]);
   const grid = el('div', { class: 'gk-emoji-grid gk-emoji-grid-custom' }, [uploadTile]);
   // emojis de servidores dos quais você não faz parte não aparecem (nem como "peça acesso")
-  const all = [...customEmojiCache.values()].filter((e) => (!e.serverId || state.servers.has(e.serverId)) && (!filter || e.name.includes(filter)));
+  const me = auth.currentUser?.uid;
+  // na janela aparecem só os emojis que EU criei (e os dos servidores onde estou); os de outras pessoas não são listados
+  const all = [...customEmojiCache.values()].filter((e) => (e.serverId ? state.servers.has(e.serverId) : e.uploaderId === me) && (!filter || e.name.includes(filter)));
   const usable = all.filter(canUseCustomEmoji);
-  const locked = all.filter((e) => !canUseCustomEmoji(e));
+  const locked = [];
   bodyEl.appendChild(grid);
   for (const emoji of usable) {
     grid.appendChild(el('button', {
@@ -430,24 +429,6 @@ function renderCustomTab() {
     bodyEl.appendChild(el('div', { class: 'gk-empty-state gk-empty-state-sm' },
       filter ? 'Nenhum emoji encontrado.' : 'Nenhum emoji personalizado ainda. Envie o primeiro!'));
     return;
-  }
-
-  // 3) Emojis de outras pessoas: não dá pra usar sem o OK do criador
-  if (locked.length) {
-    bodyEl.appendChild(el('div', { class: 'gk-emoji-category-label' }, 'De outras pessoas — peça acesso'));
-    for (const emoji of locked) {
-      const status = myRequests.get(emoji.id);
-      const action = status === 'pending'
-        ? el('span', { class: 'gk-emoji-req-state' }, 'Pedido enviado')
-        : status === 'denied'
-          ? el('span', { class: 'gk-emoji-req-state' }, 'Recusado')
-          : el('button', { class: 'gk-btn gk-btn-ghost gk-btn-sm', type: 'button', onclick: () => requestEmojiAccess(emoji) }, 'Pedir acesso');
-      bodyEl.appendChild(el('div', { class: 'gk-emoji-req-row gk-emoji-req-locked' }, [
-        el('img', { src: emoji.url, alt: '' }),
-        el('div', { class: 'gk-emoji-req-text' }, `:${emoji.name}:`),
-        action,
-      ]));
-    }
   }
 
   // 4) Meus emojis liberados para outras pessoas: o criador pode tirar o acesso
@@ -571,7 +552,7 @@ function triggerUpload() {
       const file = uploadFileInput.files[0];
       uploadFileInput.value = '';
       if (!file) return;
-      const maxMB = state.user?.role === 'prime' ? 8 : 2;
+      const maxMB = 25;
       if (file.size > maxMB * 1024 * 1024) { toast(`O emoji precisa ter até ${maxMB}MB.`, 'danger'); return; }
       pendingEmojiFile = file;
       renderTab();

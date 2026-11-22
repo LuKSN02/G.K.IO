@@ -16,6 +16,7 @@ const DEFAULTS = {
   autoUpdate: true,         // checar e baixar atualizações em segundo plano
   streamerMode: 'auto',     // auto (detecta OBS etc.) | on | off
   hardwareAccel: true,      // desligar ajuda em PCs com driver de vídeo problemático (reinicia)
+  overlayMode: 'game',      // sobreposição de voz/avisos: game (só com jogo detectado) | always | off
   startMaximized: false,
   autoClearCache: false,    // limpa o cache (não o login) toda vez que abre
   proxy: '',                // ex.: http://127.0.0.1:8080 ou socks5://host:1080

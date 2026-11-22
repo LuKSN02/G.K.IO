@@ -2,14 +2,15 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <title>G.K.IO</title>
-<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16.png">
-<link rel="apple-touch-icon" sizes="180x180" href="img/favicon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png?v=3">
+<link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16.png?v=3">
+<link rel="apple-touch-icon" sizes="180x180" href="img/favicon-180.png?v=3">
+<meta http-equiv="Content-Security-Policy" content="object-src 'none'; base-uri 'self'">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#6C63F5">
-<link rel="icon" type="image/png" sizes="512x512" href="img/favicon-512.png">
+<link rel="icon" type="image/png" sizes="512x512" href="img/favicon-512.png?v=3">
 <script type="importmap">
 {
  "imports": {
@@ -18,77 +19,117 @@
   "./js/mfa.js": "./js/mfa.js?v=10",
   "./js/preview-config.js": "./js/preview-config.js?v=10",
   "./js/reports.js": "./js/reports.js?v=10",
-  "./js/server-extras.js": "./js/server-extras.js?v=10",
-  "./js/stickers.js": "./js/stickers.js?v=10",
+  "./js/server-extras.js": "./js/server-extras.js?v=11",
+  "./js/stickers.js": "./js/stickers.js?v=12",
   "./js/app-update.js": "./js/app-update.js?v=10",
-  "./js/app.js": "./js/app.js?v=10",
+  "./js/app.js": "./js/app.js?v=17",
   "./js/appearance.js": "./js/appearance.js?v=10",
   "./js/apply-static-icons.js": "./js/apply-static-icons.js?v=10",
-  "./js/audit.js": "./js/audit.js?v=10",
-  "./js/auth.js": "./js/auth.js?v=10",
+  "./js/audit.js": "./js/audit.js?v=11",
+  "./js/auth.js": "./js/auth.js?v=14",
   "./js/background-notify.js": "./js/background-notify.js?v=10",
   "./js/blocks.js": "./js/blocks.js?v=10",
-  "./js/calls.js": "./js/calls.js?v=14",
+  "./js/calls.js": "./js/calls.js?v=20",
   "./js/call-audio-guard.js": "./js/call-audio-guard.js?v=4",
-  "./js/call-stage.js": "./js/call-stage.js?v=1",
-  "./js/chat.js": "./js/chat.js?v=10",
+  "./js/call-stage.js": "./js/call-stage.js?v=2",
+  "./js/chat.js": "./js/chat.js?v=27",
+  "./js/server-profile.js": "./js/server-profile.js?v=3",
+  "./js/forum.js": "./js/forum.js?v=1",
+  "./js/translate.js": "./js/translate.js?v=1",
+  "./js/read-receipts.js": "./js/read-receipts.js?v=1",
+  "./js/mention-extras.js": "./js/mention-extras.js?v=1",
+  "./js/automod.js": "./js/automod.js?v=1",
+  "./js/stage.js": "./js/stage.js?v=1",
+  "./js/sessions.js": "./js/sessions.js?v=2",
+  "./js/a11y-extras.js": "./js/a11y-extras.js?v=1",
+  "./js/user-menu.js": "./js/user-menu.js?v=1",
+  "./js/notes.js": "./js/notes.js?v=1",
+  "./js/reminders.js": "./js/reminders.js?v=1",
+  "./js/server-tools.js": "./js/server-tools.js?v=1",
+  "./js/bots.js": "./js/bots.js?v=1",
+  "./js/birth-input.js": "./js/birth-input.js?v=1",
+  "./js/nsfw-gate.js": "./js/nsfw-gate.js?v=3",
+  "./js/audio-player.js": "./js/audio-player.js?v=1",
   "./js/cloudinary-config.js": "./js/cloudinary-config.js?v=10",
   "./js/cloudinary.js": "./js/cloudinary.js?v=10",
   "./js/color-utils.js": "./js/color-utils.js?v=10",
-  "./js/communities.js": "./js/communities.js?v=10",
+  "./js/communities.js": "./js/communities.js?v=11",
   "./js/cropper.js": "./js/cropper.js?v=10",
-  "./js/db.js": "./js/db.js?v=10",
-  "./js/desktop.js": "./js/desktop.js?v=10",
+  "./js/db.js": "./js/db.js?v=12",
+  "./js/desktop.js": "./js/desktop.js?v=14",
+  "./js/tab-badge.js": "./js/tab-badge.js?v=3",
   "./js/dialogs.js": "./js/dialogs.js?v=10",
   "./js/discord-compat.js": "./js/discord-compat.js?v=10",
-  "./js/dms.js": "./js/dms.js?v=10",
-  "./js/emoji.js": "./js/emoji.js?v=10",
+  "./js/dms.js": "./js/dms.js?v=17",
+  "./js/emoji.js": "./js/emoji.js?v=14",
   "./js/extensions.js": "./js/extensions.js?v=10",
   "./js/files.js": "./js/files.js?v=10",
   "./js/firebase-config.js": "./js/firebase-config.js?v=10",
   "./js/gif-config.js": "./js/gif-config.js?v=10",
   "./js/groups.js": "./js/groups.js?v=10",
   "./js/hotkeys.js": "./js/hotkeys.js?v=10",
-  "./js/icons.js": "./js/icons.js?v=10",
-  "./js/idle.js": "./js/idle.js?v=10",
+  "./js/icons.js": "./js/icons.js?v=11",
+  "./js/idle.js": "./js/idle.js?v=11",
   "./js/landing.js": "./js/landing.js?v=10",
-  "./js/lightbox.js": "./js/lightbox.js?v=10",
+  "./js/lightbox.js": "./js/lightbox.js?v=11",
   "./js/livekit-config.js": "./js/livekit-config.js?v=10",
-  "./js/markdown.js": "./js/markdown.js?v=10",
-  "./js/message-search.js": "./js/message-search.js?v=10",
-  "./js/message-utils.js": "./js/message-utils.js?v=10",
-  "./js/mobile-nav.js": "./js/mobile-nav.js?v=10",
+  "./js/markdown.js": "./js/markdown.js?v=13",
+  "./js/message-search.js": "./js/message-search.js?v=13",
+  "./js/message-utils.js": "./js/message-utils.js?v=11",
+  "./js/mobile-nav.js": "./js/mobile-nav.js?v=12",
+  "./js/mobile-discord.js": "./js/mobile-discord.js?v=2",
+  "./js/sheet.js": "./js/sheet.js?v=1",
   "./js/moderation.js": "./js/moderation.js?v=10",
   "./js/native-bridge.js": "./js/native-bridge.js?v=11",
-  "./js/notify-prefs.js": "./js/notify-prefs.js?v=10",
+  "./js/notify-prefs.js": "./js/notify-prefs.js?v=11",
   "./js/pins.js": "./js/pins.js?v=10",
-  "./js/polls.js": "./js/polls.js?v=10",
-  "./js/prefs.js": "./js/prefs.js?v=10",
-  "./js/profile.js": "./js/profile.js?v=10",
-  "./js/push-config.js": "./js/push-config.js?v=10",
-  "./js/push-server.js": "./js/push-server.js?v=10",
-  "./js/push.js": "./js/push.js?v=10",
+  "./js/polls.js": "./js/polls.js?v=12",
+  "./js/prefs.js": "./js/prefs.js?v=13",
+  "./js/profile.js": "./js/profile.js?v=12",
+  "./js/push-config.js": "./js/push-config.js?v=11",
+  "./js/push-server.js": "./js/push-server.js?v=11",
+  "./js/push.js": "./js/push.js?v=12",
+  "./js/event-reminders.js": "./js/event-reminders.js?v=1",
+  "./js/saved-messages.js": "./js/saved-messages.js?v=1",
+  "./js/xp.js": "./js/xp.js?v=1",
+  "./js/export-chat.js": "./js/export-chat.js?v=1",
+  "./js/link-guard.js": "./js/link-guard.js?v=1",
+  "./js/file-preview.js": "./js/file-preview.js?v=1",
+  "./js/quiet-hours.js": "./js/quiet-hours.js?v=1",
+  "./js/drafts.js": "./js/drafts.js?v=1",
+  "./js/ephemeral.js": "./js/ephemeral.js?v=1",
+  "./js/quick-replies.js": "./js/quick-replies.js?v=1",
+  "./js/code-highlight.js": "./js/code-highlight.js?v=1",
+  "./js/checklist.js": "./js/checklist.js?v=1",
+  "./js/edit-history.js": "./js/edit-history.js?v=1",
+  "./js/server-guard.js": "./js/server-guard.js?v=1",
+  "./js/voice-effects.js": "./js/voice-effects.js?v=1",
+  "./js/call-tools.js": "./js/call-tools.js?v=3",
+  "./js/badges.js": "./js/badges.js?v=3",
+  "./js/web-push.js": "./js/web-push.js?v=1",
   "./js/search-core.js": "./js/search-core.js?v=10",
-  "./js/search.js": "./js/search.js?v=10",
-  "./js/server-settings.js": "./js/server-settings.js?v=10",
+  "./js/search.js": "./js/search.js?v=13",
+  "./js/server-invite.js": "./js/server-invite.js?v=3",
+  "./js/server-settings.js": "./js/server-settings.js?v=21",
   "./js/server-templates.js": "./js/server-templates.js?v=10",
-  "./js/servers.js": "./js/servers.js?v=11",
-  "./js/settings-account.js": "./js/settings-account.js?v=10",
-  "./js/settings-mobile.js": "./js/settings-mobile.js?v=10",
-  "./js/settings-appearance.js": "./js/settings-appearance.js?v=10",
-  "./js/settings-extras.js": "./js/settings-extras.js?v=16",
-  "./js/settings.js": "./js/settings.js?v=10",
-  "./js/splash.js": "./js/splash.js?v=10",
+  "./js/servers.js": "./js/servers.js?v=25",
+  "./js/server-folders.js": "./js/server-folders.js?v=3",
+  "./js/settings-account.js": "./js/settings-account.js?v=17",
+  "./js/settings-mobile.js": "./js/settings-mobile.js?v=11",
+  "./js/settings-appearance.js": "./js/settings-appearance.js?v=11",
+  "./js/settings-extras.js": "./js/settings-extras.js?v=20",
+  "./js/settings.js": "./js/settings.js?v=23",
+  "./js/splash.js": "./js/splash.js?v=9",
   "./js/state.js": "./js/state.js?v=10",
   "./js/theme.js": "./js/theme.js?v=10",
   "./js/threads.js": "./js/threads.js?v=10",
   "./js/token-server.js": "./js/token-server.js?v=10",
-  "./js/topbar.js": "./js/topbar.js?v=10",
+  "./js/topbar.js": "./js/topbar.js?v=11",
   "./js/typing.js": "./js/typing.js?v=10",
   "./js/unread.js": "./js/unread.js?v=10",
-  "./js/voice-extras.js": "./js/voice-extras.js?v=10",
-  "./js/voice-fx.js": "./js/voice-fx.js?v=12",
-  "./js/voice-messages.js": "./js/voice-messages.js?v=10",
+  "./js/voice-extras.js": "./js/voice-extras.js?v=9",
+  "./js/voice-fx.js": "./js/voice-fx.js?v=13",
+  "./js/voice-messages.js": "./js/voice-messages.js?v=11",
   "./js/zoom.js": "./js/zoom.js?v=10"
  }
 }
@@ -167,10 +208,12 @@
 </script>
 <script>document.documentElement.setAttribute('data-gk-gate','pending');</script>
 <link rel="stylesheet" href="css/tokens.css?v=10">
-<link rel="stylesheet" href="css/app.css?v=10">
+<link rel="stylesheet" href="css/app.css?v=12">
 <link rel="stylesheet" href="css/landing.css?v=10">
-<link rel="stylesheet" href="css/features.css?v=12">
-<link rel="stylesheet" href="css/call-stage.css?v=1">
+<link rel="stylesheet" href="css/features.css?v=14">
+<link rel="stylesheet" href="css/call-stage.css?v=4">
+<link rel="stylesheet" href="css/nova.css?v=75">
+<link rel="stylesheet" href="css/mobile.css?v=3">
 </head>
 <body>
 
@@ -185,7 +228,7 @@
 
     <header class="lp-header">
       <a class="lp-logo" href="#" data-lp-top aria-label="G.K.IO — início">
-        <img src="img/logo.png" alt="" width="30" height="30">
+        <img src="img/logo.png?v=2" alt="" width="30" height="30">
         <span>G.K<b>.IO</b></span>
       </a>
       <nav class="lp-nav" aria-label="Seções">
@@ -214,7 +257,7 @@
         <div class="lp-hero-art" aria-hidden="true">
           <div class="lp-window">
             <div class="lp-w-rail">
-              <img class="lp-w-home" src="img/logo.png" alt="">
+              <img class="lp-w-home" src="img/logo.png?v=2" alt="">
               <i class="lp-w-sep"></i>
               <span class="lp-w-srv is-on">G</span>
               <span class="lp-w-srv" style="--c:#2FB67A">T</span>
@@ -269,7 +312,7 @@
               <div class="lp-w-mem is-off"><span class="lp-av" style="--c:#6B7391">C</span><span>Caio</span></div>
             </div>
           </div>
-          <img class="lp-mascot" src="img/logo.png" alt="">
+          <img class="lp-mascot" src="img/logo.png?v=2" alt="">
         </div>
       </section>
 
@@ -362,10 +405,10 @@
 
       <div class="lp-marquee" aria-hidden="true">
         <div class="lp-marquee-track">
-          <span>Converse</span><img src="img/logo.png" alt=""><span>Jogue</span><img src="img/logo.png" alt=""><span>Fique</span><img src="img/logo.png" alt="">
-          <span>Converse</span><img src="img/logo.png" alt=""><span>Jogue</span><img src="img/logo.png" alt=""><span>Fique</span><img src="img/logo.png" alt="">
-          <span>Converse</span><img src="img/logo.png" alt=""><span>Jogue</span><img src="img/logo.png" alt=""><span>Fique</span><img src="img/logo.png" alt="">
-          <span>Converse</span><img src="img/logo.png" alt=""><span>Jogue</span><img src="img/logo.png" alt=""><span>Fique</span><img src="img/logo.png" alt="">
+          <span>Converse</span><img src="img/logo.png?v=2" alt=""><span>Jogue</span><img src="img/logo.png?v=2" alt=""><span>Fique</span><img src="img/logo.png?v=2" alt="">
+          <span>Converse</span><img src="img/logo.png?v=2" alt=""><span>Jogue</span><img src="img/logo.png?v=2" alt=""><span>Fique</span><img src="img/logo.png?v=2" alt="">
+          <span>Converse</span><img src="img/logo.png?v=2" alt=""><span>Jogue</span><img src="img/logo.png?v=2" alt=""><span>Fique</span><img src="img/logo.png?v=2" alt="">
+          <span>Converse</span><img src="img/logo.png?v=2" alt=""><span>Jogue</span><img src="img/logo.png?v=2" alt=""><span>Fique</span><img src="img/logo.png?v=2" alt="">
         </div>
       </div>
 
@@ -457,7 +500,7 @@
           </a>
           <button type="button" class="lp-btn lp-btn--ghost" data-lp-open="register">Criar conta</button>
         </div>
-        <img class="lp-final-mascot" src="img/logo.png" alt="">
+        <img class="lp-final-mascot" src="img/logo.png?v=2" alt="">
       </section>
     </main>
 
@@ -475,7 +518,7 @@
       <span>Conecte pessoas</span><span class="gk-dot">•</span><span>Compartilhe ideias</span><span class="gk-dot">•</span><span>Viva suas histórias</span>
     </div>
     <div class="gk-auth-hero-center">
-      <img src="img/logo.png" alt="G.K.IO" class="gk-auth-hero-mark">
+      <img src="img/logo.png?v=2" alt="G.K.IO" class="gk-auth-hero-mark">
       <div class="gk-auth-hero-wordmark">G.K<span>.IO</span></div>
       <p class="gk-auth-hero-tagline">Mais que um chat,<br>uma comunidade.</p>
     </div>
@@ -490,7 +533,7 @@
     <p class="gk-auth-panel-topline">Junte-se a milhares<br>de pessoas agora mesmo.</p>
     <div class="gk-auth-card">
       <div class="gk-auth-logo">
-        <img src="img/logo.png" alt="G.K.IO" class="gk-mark">
+        <img src="img/logo.png?v=2" alt="G.K.IO" class="gk-mark">
         <div class="gk-wordmark">G.K<span>.IO</span></div>
       </div>
       <h2 id="gk-auth-title">Entrar no G.K.IO</h2>
@@ -502,6 +545,12 @@
             <span data-icon="user" class="gk-inline-icon"></span>
             <input type="text" id="gk-auth-username" autocomplete="username" placeholder="seu-nome">
           </div>
+        </div>
+        <div class="gk-field" id="gk-auth-birth-field" style="display:none;">
+          <label>Data de nascimento</label>
+          <div id="gk-auth-birth-host"></div>
+          <input type="hidden" id="gk-auth-birth">
+          <small class="gk-hint">Usada só para liberar conteúdo +18. Quem tem menos de 18 anos não acessa canais NSFW. Idade mínima: 13 anos.</small>
         </div>
         <div class="gk-field">
           <label>E-mail</label>
@@ -585,7 +634,7 @@
   <div class="gk-topbar-global">
     <button class="gk-icon-btn gk-mobile-menu-btn" id="gk-mobile-menu-btn" title="Menu" style="display:none;" data-icon="menu"></button>
     <div class="gk-topbar-global-brand">
-      <img src="img/logo.png" alt="">
+      <img src="img/logo.png?v=2" alt="">
       <span>G.K.IO</span>
     </div>
     <div class="gk-topbar-global-search-wrap">
@@ -640,7 +689,7 @@
        ativa — ver renderServerPicker() em js/servers.js. -->
   <div class="gk-rail">
     <div class="gk-rail-brand" title="G.K.IO">
-      <img src="img/logo.png" alt="G.K.IO">
+      <img src="img/logo.png?v=2" alt="G.K.IO">
     </div>
 
     <button class="gk-rail-item gk-rail-nav-item gk-active" id="gk-nav-home" title="Início">
@@ -693,7 +742,6 @@
            barra de abas), os dois caminhos aparecem direto, lado a lado. -->
       <div class="gk-server-picker-actions" id="gk-server-picker-actions">
         <button class="gk-btn gk-btn-primary" id="gk-m-create-server-btn" type="button"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
-        <button class="gk-btn gk-btn-ghost" id="gk-m-join-server-btn" type="button"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
       </div>
       <div class="gk-server-menu-wrap">
         <button class="gk-btn gk-btn-ghost gk-btn-block" id="gk-add-server-btn">
@@ -701,7 +749,6 @@
         </button>
         <div class="gk-server-menu" id="gk-server-menu">
           <button id="gk-create-server-btn"><span data-icon="plus" class="gk-inline-icon"></span> Criar servidor</button>
-          <button id="gk-join-server-btn"><span data-icon="key" class="gk-inline-icon"></span> Entrar com convite</button>
         </div>
       </div>
     </div>
@@ -732,7 +779,7 @@
          atalhos pras seções que já existem. -->
     <div class="gk-home-view" id="gk-home-view" style="display:none;">
       <div class="gk-home-view-inner">
-        <img src="img/logo.png" alt="" class="gk-home-mark">
+        <img src="img/logo.png?v=2" alt="" class="gk-home-mark">
         <h2 id="gk-home-greeting">Olá!</h2>
         <p class="gk-modal-sub">O que você quer fazer agora?</p>
         <div class="gk-home-shortcuts">
@@ -768,10 +815,11 @@
     <div class="gk-friends-home" id="gk-friends-home" style="display:none;">
       <div class="gk-friends-home-inner">
         <div class="gk-friends-home-header">
-          <div class="gk-friends-home-tabs">
-            <button class="gk-friends-tab gk-active" id="gk-friends-tab-friends" data-tab="friends">Amigos</button>
-            <button class="gk-friends-tab" id="gk-friends-tab-pending" data-tab="pending">
-              Pedidos
+          <div class="gk-friends-home-tabs" role="tablist">
+            <button class="gk-friends-tab gk-active" id="gk-friends-tab-online" data-tab="online" role="tab">Disponível</button>
+            <button class="gk-friends-tab" id="gk-friends-tab-friends" data-tab="friends" role="tab">Todos</button>
+            <button class="gk-friends-tab" id="gk-friends-tab-pending" data-tab="pending" role="tab">
+              Pendente
               <span class="gk-friends-pending-badge" id="gk-friends-pending-badge" style="display:none;">0</span>
             </button>
           </div>
@@ -814,13 +862,17 @@
      (a pessoa já tinha feito cadastro + primeiro login antes) — ver
      js/auth.js + js/splash.js. -->
 <div class="gk-splash" id="gk-splash">
+  <div class="gk-splash-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="gk-splash-stars" aria-hidden="true"></div>
   <div class="gk-splash-rings">
     <div class="gk-splash-ring gk-ring-1"></div>
     <div class="gk-splash-ring gk-ring-2"></div>
     <div class="gk-splash-ring gk-ring-3"></div>
-    <img src="img/logo.png" alt="G.K.IO" class="gk-splash-mark">
+    <div class="gk-splash-orbit"></div>
+    <img src="img/logo.png?v=2" alt="G.K.IO" class="gk-splash-mark">
   </div>
   <div class="gk-splash-wordmark">G.K<span>.IO</span></div>
+  <div class="gk-splash-tag">Conectando você<span class="gk-splash-dots"><b>.</b><b>.</b><b>.</b></span></div>
   <div class="gk-splash-bar"><div class="gk-splash-bar-fill"></div></div>
 </div>
 
@@ -874,7 +926,6 @@
     <button class="gk-call-ctrl-btn" id="gk-call-camera-btn" title="Ativar câmera" data-icon="camera"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-screenshare-btn" title="Compartilhar tela" data-icon="screenShare"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-react-btn" title="Reações" aria-label="Reações" data-icon="emojiSmile"></button>
-    <button class="gk-call-ctrl-btn" id="gk-call-hand-btn" title="Levantar a mão" aria-label="Levantar a mão" data-icon="hand"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-record-btn" title="Gravar a chamada (áudio)" aria-label="Gravar a chamada" data-icon="record"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-extras-btn" title="Soundboard e atividades" aria-label="Soundboard e atividades" data-icon="gamepad"></button>
     <button class="gk-call-ctrl-btn" id="gk-call-settings-btn" title="Ajustes da chamada" aria-label="Ajustes da chamada" data-icon="sliders"></button>
@@ -908,7 +959,20 @@
 <div id="gk-toast-stack"></div>
 
 <script type="module" src="js/landing.js?v=10"></script>
-<script type="module" src="js/app.js?v=10"></script>
+<script type="module" src="js/app.js?v=11"></script>
 <script type="module" src="js/apply-static-icons.js?v=10"></script>
+<script type="module" src="js/nova.js?v=4"></script>
+<script type="module" src="js/context-menu.js?v=9"></script>
+<script type="module" src="js/home-extras.js?v=1"></script>
+<script type="module" src="js/shortcuts-help.js?v=2"></script>
+<script type="module" src="js/command-palette.js?v=1"></script>
+<script type="module" src="js/quality.js?v=3"></script>
+<script type="module" src="js/mobile-extras.js?v=1"></script>
+<script type="module" src="js/bots.js?v=1"></script>
+<script type="module" src="js/read-receipts.js?v=1"></script>
+<script type="module" src="js/mention-extras.js?v=1"></script>
+<script type="module" src="js/stage.js?v=1"></script>
+<script type="module" src="js/sessions.js?v=1"></script>
+<script type="module" src="js/a11y-extras.js?v=1"></script>
 </body>
 </html>

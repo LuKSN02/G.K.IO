@@ -1,6 +1,6 @@
 // ============================================================
 // G.K.IO — Soundboard e atividades dentro da chamada
-//  · Soundboard: 8 sons sintetizados (sem arquivos) + seus próprios sons (até 6 s,
+//  · Soundboard: 8 sons sintetizados (sem arquivos) + seus próprios sons (até 15 s,
 //    enviados ao Cloudinary; a lista fica neste aparelho). Quem está na chamada ouve.
 //  · Atividades: dados (d4–d100, com modificador e "maior de N d20"), cara ou coroa,
 //    roleta de participantes e jogo da velha.
@@ -18,8 +18,8 @@ const TOPIC_ACT = 'gk-act';
 const CUSTOM_KEY = 'gkio-soundboard-custom';
 const MUTE_KEY = 'gkio-soundboard-muted';
 const MAX_CUSTOM = 12;
-const MAX_SECONDS = 6;
-const MAX_BYTES = 600 * 1024;
+const MAX_SECONDS = 15;
+const MAX_BYTES = 2 * 1024 * 1024;
 
 // ---------- Sons sintetizados ----------
 export const PRESETS = [
@@ -89,7 +89,7 @@ function audioDuration(file) {
 }
 export async function addCustomSound(file, name) {
   if (!file || !/^audio\//.test(file.type)) throw new Error('Escolha um arquivo de áudio.');
-  if (file.size > MAX_BYTES) throw new Error('O som deve ter no máximo 600 KB.');
+  if (file.size > MAX_BYTES) throw new Error('O som deve ter no máximo 2 MB.');
   const secs = await audioDuration(file);
   if (!(secs > 0) || secs > MAX_SECONDS) throw new Error(`O som deve durar até ${MAX_SECONDS} segundos.`);
   const list = getCustomSounds();
@@ -218,14 +218,16 @@ function soundTab() {
   for (const p of PRESETS) {
     grid.appendChild(el('button', { class: 'gk-sfx-btn', type: 'button', title: p.label, onclick: () => triggerSound({ preset: p.id }) }, [el('span', { class: 'gk-sfx-emoji' }, p.emoji), el('span', {}, p.label)]));
   }
-  for (const s of getCustomSounds()) {
-    const b = el('div', { class: 'gk-sfx-custom' }, [
+  wrap.appendChild(el('div', { class: 'gk-extras-sec' }, [el('b', {}, 'Sons prontos'), grid]));
+
+  const mine = getCustomSounds();
+  const mineGrid = el('div', { class: 'gk-sfx-grid' });
+  for (const s of mine) {
+    mineGrid.appendChild(el('div', { class: 'gk-sfx-custom' }, [
       el('button', { class: 'gk-sfx-btn', type: 'button', title: s.name, onclick: () => triggerSound({ url: s.url }) }, [el('span', { class: 'gk-sfx-emoji' }, '🔊'), el('span', {}, s.name)]),
       el('button', { class: 'gk-sfx-del', type: 'button', title: 'Remover som', 'aria-label': `Remover ${s.name}`, onclick: () => { removeCustomSound(s.id); renderPanel(); } }, [icon('close', { size: 11 })]),
-    ]);
-    grid.appendChild(b);
+    ]));
   }
-  wrap.appendChild(grid);
   const file = el('input', { type: 'file', accept: 'audio/*', style: 'display:none' });
   file.addEventListener('change', async () => {
     const f = file.files?.[0]; file.value = '';
@@ -233,13 +235,19 @@ function soundTab() {
     try { toast('Enviando som…'); await addCustomSound(f); toast('Som adicionado!'); renderPanel(); }
     catch (e) { toast(e.message || 'Não foi possível adicionar o som.', 'danger'); }
   });
+  const add = el('button', { class: 'gk-sfx-add', type: 'button', onclick: () => file.click() }, [
+    icon('plus', { size: 16 }),
+    el('span', {}, [el('b', {}, 'Adicionar som'), el('small', {}, `Até ${MAX_SECONDS} segundos · máx. 2 MB`)]),
+  ]);
+  wrap.appendChild(el('div', { class: 'gk-extras-sec' }, [
+    el('div', { class: 'gk-extras-sec-head' }, [el('b', {}, 'Meus sons'), el('span', { class: 'gk-extras-count' }, `${mine.length}/${MAX_CUSTOM}`)]),
+    mine.length ? mineGrid : el('div', { class: 'gk-extras-hint' }, 'Você ainda não adicionou nenhum som. Os seus ficam salvos neste aparelho.'),
+    add, file,
+  ]));
+
   const mute = el('input', { type: 'checkbox' }); mute.checked = isSoundboardMuted();
   mute.addEventListener('change', () => writeJson(MUTE_KEY, mute.checked));
-  wrap.appendChild(el('div', { class: 'gk-extras-actions' }, [
-    el('button', { class: 'gk-btn', type: 'button', onclick: () => file.click() }, [icon('plus', { size: 13 }), ' Adicionar som (até 6 s)']),
-    file,
-    el('label', { class: 'gk-extras-check' }, [mute, ' Silenciar sons dos outros']),
-  ]));
+  wrap.appendChild(el('label', { class: 'gk-extras-check gk-extras-mute' }, [mute, el('span', {}, 'Silenciar sons dos outros')]));
   return wrap;
 }
 
@@ -257,7 +265,7 @@ function actTab() {
     addLog(diceText('Você', r));
     await sendCallData(TOPIC_ACT, { type: 'dice', r });
   });
-  wrap.appendChild(el('div', { class: 'gk-extras-row' }, [el('b', {}, 'Dados'), count, sides, el('span', {}, '+'), mod, el('label', { class: 'gk-extras-check' }, [best, ' maior']), roll]));
+  wrap.appendChild(el('div', { class: 'gk-act-card' }, [el('b', {}, '🎲 Dados'), el('div', { class: 'gk-extras-row' }, [count, sides, el('span', {}, '+'), mod, el('label', { class: 'gk-extras-check' }, [best, ' maior']), roll])]));
   // moeda e roleta
   const coin = el('button', { class: 'gk-btn', type: 'button', onclick: async () => { const heads = randInt(2) === 0; addLog(`Você jogou a moeda: ${heads ? 'cara' : 'coroa'}`); await sendCallData(TOPIC_ACT, { type: 'coin', heads }); } }, '🪙 Cara ou coroa');
   const wheel = el('button', { class: 'gk-btn', type: 'button', onclick: async () => {
@@ -265,14 +273,14 @@ function actTab() {
     const pick = list[randInt(list.length)];
     addLog(`Você girou a roleta: ${pick.name} foi sorteado`); await sendCallData(TOPIC_ACT, { type: 'wheel', pick: pick.uid });
   } }, '🎡 Roleta de participantes');
-  wrap.appendChild(el('div', { class: 'gk-extras-row' }, [coin, wheel]));
+  wrap.appendChild(el('div', { class: 'gk-act-card' }, [el('b', {}, '✨ Sorteios'), el('div', { class: 'gk-extras-row' }, [coin, wheel])]));
   wrap.appendChild(tttSection());
   return wrap;
 }
 
 function tttSection() {
   const me = auth.currentUser?.uid;
-  const sec = el('div', { class: 'gk-ttt' }, [el('b', {}, 'Jogo da velha')]);
+  const sec = el('div', { class: 'gk-ttt gk-act-card' }, [el('b', {}, '⭕ Jogo da velha')]);
   if (pendingInvite) {
     sec.appendChild(el('div', { class: 'gk-extras-row' }, [
       el('span', {}, `${nameOf(pendingInvite.from)} te desafiou`),

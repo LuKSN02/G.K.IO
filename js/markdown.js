@@ -6,6 +6,7 @@
 //
 //   **negrito**      *itálico*      __sublinhado__     ~~riscado~~
 //   `código`         ```bloco```    ||spoiler||        > citação
+//   -# texto pequeno      # Título   ## Título   ### Título
 //   https://link     :emoji_custom:     @menção
 //
 // Nada aqui usa innerHTML: cada trecho vira um nó de texto ou um
@@ -18,6 +19,7 @@
 // sempre literal — igual ao Discord.
 // ============================================================
 import { el } from './state.js';
+import { highlightInto } from './code-highlight.js';
 
 // Mensagens curtas feitas só de emoji aparecem em tamanho grande, como
 // no Discord. Construído com try/catch porque \p{...} depende de
@@ -109,6 +111,11 @@ function prettyUrl(url) {
 // URLs saem primeiro, antes de qualquer regra de markdown: sem isso, um
 // link como https://site.com/a_b_c teria o "_b_" comido como itálico e
 // chegaria quebrado no href.
+// #canal clicável — o resolvedor é registrado por mention-extras.js (depende do servidor aberto).
+let channelResolver = null;
+export function setChannelResolver(fn) { channelResolver = fn; }
+const channelRe = /(?<![^\s])#([a-z0-9_-]{2,80})/;
+
 function parseInline(text, resolveEmoji, resolveMention) {
   const out = [];
   const urlRe = new RegExp(URL_SOURCE, 'g');
@@ -173,6 +180,16 @@ function parseMarkup(text, resolveEmoji, resolveMention) {
       }
     }
 
+    if (channelResolver) {
+      const chm = channelRe.exec(rest);
+      if (chm) {
+        const hit = channelResolver(chm[1]);
+        if (hit && (best === null || chm.index < best.index)) {
+          best = { index: chm.index, length: chm[0].length, node: () => el('span', { class: 'gk-mention gk-chan-chip', role: 'link', title: 'Ir para o canal', onclick: hit.go }, '#' + hit.name) };
+        }
+      }
+    }
+
     if (!best) { out.push(rest); break; }
     if (best.index > 0) out.push(rest.slice(0, best.index));
     const built = best.node();
@@ -204,7 +221,14 @@ function parseLines(segment, resolveEmoji, resolveMention) {
 
   for (const line of lines) {
     const q = line.match(/^>\s?(.*)$/);
-    if (q) { flushText(); quote.push(q[1]); }
+    const sub = line.match(/^-#\s+(\S.*)$/);          // -# texto pequeno e apagado
+    const hd = line.match(/^(#{1,3})\s+(\S.*)$/);     // # / ## / ### título
+    if (sub || hd) {
+      flushQuote(); flushText();
+      if (sub) out.push(el('div', { class: 'gk-md-sub' }, parseInline(sub[1], resolveEmoji, resolveMention)));
+      else out.push(el('div', { class: 'gk-md-h gk-md-h' + hd[1].length }, parseInline(hd[2], resolveEmoji, resolveMention)));
+    }
+    else if (q) { flushText(); quote.push(q[1]); }
     else { flushQuote(); buffer.push(line); }
   }
   flushQuote();
@@ -214,9 +238,9 @@ function parseLines(segment, resolveEmoji, resolveMention) {
 
 // ---------- Blocos de código ``` ``` ----------
 function buildCodeBlock(code, lang) {
-  const block = el('pre', { class: 'gk-md-block' }, [
-    el('code', {}, code.replace(/^\n/, '').replace(/\n$/, '')),
-  ]);
+  const codeEl = el('code', {}, '');
+  highlightInto(codeEl, code.replace(/^\n/, '').replace(/\n$/, ''), lang);
+  const block = el('pre', { class: 'gk-md-block' }, [codeEl]);
   if (lang) block.appendChild(el('span', { class: 'gk-md-block-lang' }, lang));
   return block;
 }
@@ -228,6 +252,34 @@ function buildCodeBlock(code, lang) {
  * @param {(username: string) => {uid: string, name: string, username: string}|null} resolveMention busca quem é @username no contexto atual (servidor/DM)
  * @returns {Array<Node|string>}
  */
+// Fórmulas: $$ ... $$ (KaTeX, carregado só quando aparece uma — se falhar, mostra o texto cru).
+let katexPromise = null;
+function loadKatex() {
+  if (window.katex) return Promise.resolve(window.katex);
+  if (katexPromise) return katexPromise;
+  katexPromise = new Promise((resolve, reject) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css'; document.head.appendChild(css);
+    const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js';
+    s.onload = () => resolve(window.katex); s.onerror = () => { katexPromise = null; reject(new Error('katex')); };
+    document.head.appendChild(s);
+  });
+  return katexPromise;
+}
+function buildMath(tex) {
+  const span = el('span', { class: 'gk-md-math', title: tex }, '$$' + tex + '$$');
+  loadKatex().then((k) => { try { k.render(tex, span, { displayMode: true, throwOnError: false }); } catch (e) { /* mantém o texto */ } }).catch(() => {});
+  return span;
+}
+function withMath(seg, resolveEmoji, resolveMention) {
+  const out = []; const re = /\$\$([^$]{1,400}?)\$\$/g; let last = 0; let m;
+  while ((m = re.exec(seg))) {
+    if (m.index > last) out.push(...parseLines(seg.slice(last, m.index), resolveEmoji, resolveMention));
+    out.push(buildMath(m[1].trim())); last = re.lastIndex;
+  }
+  if (last < seg.length) out.push(...parseLines(seg.slice(last), resolveEmoji, resolveMention));
+  return out;
+}
+
 export function renderRichText(text, resolveEmoji = () => null, resolveMention = () => null) {
   if (!text) return [];
 
@@ -236,11 +288,11 @@ export function renderRichText(text, resolveEmoji = () => null, resolveMention =
   let last = 0;
   let m;
   while ((m = blockRe.exec(text))) {
-    if (m.index > last) nodes.push(...parseLines(text.slice(last, m.index), resolveEmoji, resolveMention));
+    if (m.index > last) nodes.push(...withMath(text.slice(last, m.index), resolveEmoji, resolveMention));
     nodes.push(buildCodeBlock(m[2], m[1]));
     last = blockRe.lastIndex;
   }
-  if (last < text.length) nodes.push(...parseLines(text.slice(last), resolveEmoji, resolveMention));
+  if (last < text.length) nodes.push(...withMath(text.slice(last), resolveEmoji, resolveMention));
 
   return nodes.length ? nodes : [text];
 }

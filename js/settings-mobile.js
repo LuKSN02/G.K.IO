@@ -24,8 +24,12 @@ export function initMobileSettings(shellId) {
   let bar = shell.querySelector('.gk-settings-mbar');
   if (!bar) {
     const back = el('button', {
-      class: 'gk-settings-mback', type: 'button', 'aria-label': 'Voltar para as configurações', title: 'Voltar',
-      onclick: () => { shell.dataset.mview = 'list'; setTitle(shell.dataset.listTitle || 'Configurações'); },
+      class: 'gk-settings-mback', type: 'button', 'aria-label': 'Voltar', title: 'Voltar',
+      onclick: () => {
+        // Dentro de uma seção: volta à lista. Na lista: sai das configurações.
+        if (shell.dataset.mview === 'detail') { shell.dataset.mview = 'list'; setTitle(shell.dataset.listTitle || 'Configurações'); }
+        else document.getElementById('gk-settings-close')?.click();
+      },
     }, [icon('chevronLeft', { size: 22 })]);
     bar = el('div', { class: 'gk-settings-mbar' }, [back, el('div', { class: 'gk-settings-mtitle' })]);
     shell.insertBefore(bar, shell.firstChild);

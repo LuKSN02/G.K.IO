@@ -39,6 +39,13 @@ export function openPollModal(ctx) {
   ]);
   multi.addEventListener('keydown', (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); toggleMulti(); } });
 
+  const DURATIONS = [['Sem prazo', 0], ['1 hora', 3600e3], ['24 horas', 86400e3], ['3 dias', 3 * 86400e3], ['7 dias', 7 * 86400e3]];
+  const duration = { value: '0' };
+  const durChips = DURATIONS.map(([t, ms]) => {
+    const b = el('button', { class: 'gk-poll-chip' + (ms === 0 ? ' gk-on' : ''), type: 'button', 'aria-pressed': String(ms === 0) }, t);
+    b.addEventListener('click', () => { duration.value = String(ms); durChips.forEach((c) => { const on = c === b; c.classList.toggle('gk-on', on); c.setAttribute('aria-pressed', String(on)); }); });
+    return b;
+  });
   const rows = [];
   const filledOptions = () => [...new Set(rows.map((r) => r.input.value.trim()).filter(Boolean))];
   const isValid = () => question.value.trim().length > 0 && filledOptions().length >= MIN_OPTIONS;
@@ -68,7 +75,7 @@ export function openPollModal(ctx) {
     createBtn.disabled = true;
     const ok = await ctx.postPayload({
       content: '',
-      poll: { question: q, options: options.map((text, i) => ({ id: `o${i + 1}`, text })), multi: multi.classList.contains('gk-on') },
+      poll: { question: q, options: options.map((text, i) => ({ id: `o${i + 1}`, text })), multi: multi.classList.contains('gk-on'), ...(+duration.value ? { closesAt: Date.now() + (+duration.value) } : {}) },
       votes: {},
     }, { preview: `📊 Enquete: ${q}` });
     if (ok) close(); else refresh();
@@ -121,6 +128,12 @@ export function openPollModal(ctx) {
     addBtn,
   ]));
   modal.appendChild(multiRow);
+  modal.appendChild(el('div', { class: 'gk-poll-block' }, [
+    el('strong', {}, 'Encerrar automaticamente'),
+    el('small', {}, 'Depois do prazo ninguém mais consegue votar.'),
+    el('div', { class: 'gk-poll-chips' }, durChips),
+  ]));
+  modal.classList.add('gk-modal-roomy');
   modal.appendChild(el('div', { class: 'gk-poll-footer' }, [
     hint,
     el('div', { class: 'gk-poll-footer-actions' }, [
@@ -162,7 +175,8 @@ export function buildPollCard(msg, ctx) {
   const poll = msg.poll;
   const votes = msg.votes || {};
   const uid = auth.currentUser?.uid;
-  const closed = !!msg.pollClosed;
+  const expired = !!(poll.closesAt && Date.now() >= poll.closesAt);
+  const closed = !!msg.pollClosed || expired;
 
   const voters = new Set();
   for (const o of poll.options) (Array.isArray(votes[o.id]) ? votes[o.id] : []).forEach((u) => voters.add(u));
@@ -170,7 +184,7 @@ export function buildPollCard(msg, ctx) {
 
   const card = el('div', { class: 'gk-poll' + (closed ? ' gk-closed' : '') });
   card.appendChild(el('div', { class: 'gk-poll-head' }, [icon('poll', { size: 16 }), el('span', { class: 'gk-poll-question' }, poll.question)]));
-  card.appendChild(el('div', { class: 'gk-poll-sub' }, closed ? 'Enquete encerrada' : poll.multi ? 'Escolha uma ou mais opções' : 'Escolha uma opção'));
+  card.appendChild(el('div', { class: 'gk-poll-sub' }, closed ? 'Enquete encerrada' : (poll.multi ? 'Escolha uma ou mais opções' : 'Escolha uma opção') + (poll.closesAt ? ` · encerra ${new Date(poll.closesAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '')));
 
   for (const o of poll.options) {
     const list = Array.isArray(votes[o.id]) ? votes[o.id] : [];

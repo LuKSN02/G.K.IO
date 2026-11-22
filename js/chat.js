@@ -1,6 +1,10 @@
 // ============================================================
 // G.K.IO — Mensagens (canais de servidor e DMs), com anexos de mídia
 // ============================================================
+import { buildBotEmbed, botTag } from './bots.js';
+import { applyReactionRole } from './server-tools.js';
+import { isForumChannel, openForumPostModal } from './forum.js';
+import { automodBlockReason } from './automod.js';
 import {
   auth,
   channelMessagesCol, addChannelMessage, dmMessagesCol, dmDoc, channelDoc, channelMessageDoc, dmMessageDoc, attachmentsCol,
@@ -13,7 +17,7 @@ import { openProfileCard } from './profile.js';
 import { hideFriendsHome } from './dms.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { playNotifSound, showDesktopNotification } from './prefs.js';
-import { getCustomEmojiVersion, renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates, lockedCustomEmojisIn, isCustomEmojiNameLocked } from './emoji.js';
+import { getCustomEmojiVersion, renderMessageContent, openEmojiPickerForReaction, getCustomEmojiByName, searchMentionCandidates, searchRoleCandidates, roleSlug, lockedCustomEmojisIn, isCustomEmojiNameLocked } from './emoji.js';
 import { openImageLightbox } from './lightbox.js';
 import { notifyTyping, stopTyping, listenTyping } from './typing.js';
 import { markConversationRead, markConversationUnreadFrom, releaseUnreadHold } from './unread.js';
@@ -21,17 +25,27 @@ import { messagePreview, extractMentionedUids, formatLong } from './message-util
 import { effectiveLevel, shouldAlert, refreshNotifButton, openNotifModal, onNotifPrefsChange } from './notify-prefs.js';
 import { openPinnedPanel } from './pins.js';
 import { openPollModal, buildPollCard } from './polls.js';
+import { awardXp } from './xp.js';
+import { verifyBlockReason } from './server-guard.js';
+import { openChecklistModal, buildChecklistCard } from './checklist.js';
+import { ttlFields, filterExpired, sweepExpired } from './ephemeral.js';
+import { nextHistory, openEditHistory } from './edit-history.js';
+import { previewKind, openFilePreview } from './file-preview.js';
+import { buildServerInviteCard } from './server-invite.js';
 import { startVoiceRecording, cancelVoiceRecording, buildVoicePlayer } from './voice-messages.js';
+import { buildAudioFilePlayer, isAudioFile } from './audio-player.js';
 import { icon } from './icons.js';
 import { notifyDmMessage, notifyChannelMessage } from './push.js';
+import { guardChannel, isNsfwChannel, setNsfwView } from './nsfw-gate.js';
 // Import circular com servers.js (que importa selectChannel daqui). É seguro:
 // canManageChannels é uma declaração de função, então já existe no escopo do
 // módulo antes de qualquer chamada — só é usada em resposta a clique, muito
 // depois dos dois módulos terminarem de avaliar.
-import { canManageChannels, canManageMessages, canMentionEveryone, getCategoriesAndChannels, onServerDataChange } from './servers.js';
+import { getRoles, canManageChannels, canManageMessages, canMentionEveryone, getCategoriesAndChannels, onServerDataChange } from './servers.js';
 import { getTimeoutUntilMs } from './moderation.js';
 import { logAudit } from './audit.js';
 import { isBlocked, isRevealed, revealMessage, onBlocksChange } from './blocks.js';
+import { myServerTagFor, buildServerTagChip } from './server-profile.js';
 import { openMessageSearch } from './message-search.js';
 import { openThread, buildThreadLink } from './threads.js';
 import { channelSubtitle, rulesBlockReason } from './server-extras.js';
@@ -71,7 +85,7 @@ function rowSignature(msg, sameGroup, isEditingThis) {
   return JSON.stringify([
     msg, ts, ed, sameGroup, isEditingThis, rowCacheEpoch, getCustomEmojiVersion(),
     state.user?.uid, canPinHere(), canModerateMessagesHere(),
-    state.currentServerId, state.currentChannelId, state.currentDmId,
+    state.currentServerId, state.currentChannelId, state.currentDmId, isForumChannel(),
   ], (k, v) => (v && typeof v === 'object' && typeof v.toMillis === 'function' ? v.toMillis() : v));
 }
 // notifyIfNewIncomingMessage() já zera isFirstSnapshotForConversation antes
@@ -100,6 +114,8 @@ function refreshChannelSubtitle() {
   if (el2 && !el2.classList.contains('gk-typing-label')) setBaseSubtitle(topicSubtitle(state.currentServerId, state.currentChannelId, composerReadOnly));
 }
 export function selectChannel(serverId, channelId, name, readOnly = false) {
+  // Canal NSFW: pede a confirmação de 18+ antes de carregar qualquer coisa dele.
+  if (!guardChannel(serverId, channelId, name, () => selectChannel(serverId, channelId, name, readOnly))) return;
   stopTyping(); // saindo da conversa anterior — libera o doc de "digitando" dela
   hideOverlayViews();
   hideFriendsHome();
@@ -109,6 +125,7 @@ export function selectChannel(serverId, channelId, name, readOnly = false) {
   state.currentDmId = null;
   currentChannelName = name;
   currentDmOtherUid = null;
+  setNsfwView(isNsfwChannel(serverId, channelId));
   document.getElementById('gk-topbar-title').textContent = `# ${name}`;
   setBaseSubtitle(topicSubtitle(serverId, channelId, readOnly));
   document.getElementById('gk-call-btn').style.display = 'none';
@@ -191,7 +208,7 @@ const fmtSecs = (n) => (n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` 
 
 // Motivo pelo qual NÃO dá para enviar agora (ou null).
 function sendBlockReason() {
-  const rb = rulesBlockReason();
+  const rb = rulesBlockReason() || verifyBlockReason();
   if (rb) return rb;
   const t = timeoutRemainingMs();
   if (t > 0) return `Você está de castigo — falta ${formatLong(t)}.`;
@@ -230,7 +247,7 @@ function renderComposerNotice() {
   }
   const disabled = composerReadOnly || timedOut > 0 || dmBlocked;
   textarea.disabled = disabled;
-  for (const id of ['gk-send-btn', 'gk-attach-btn', 'gk-poll-btn', 'gk-voice-btn', 'gk-emoji-btn']) {
+  for (const id of ['gk-send-btn', 'gk-attach-btn', 'gk-poll-btn', 'gk-checklist-btn', 'gk-voice-btn', 'gk-emoji-btn']) {
     const b = document.getElementById(id);
     if (b) b.disabled = disabled;
   }
@@ -248,6 +265,8 @@ export function selectDm(dmId, title, subtitle, otherUid = null) {
   state.currentView = 'dms';
   state.currentServerId = null;
   state.currentDmId = dmId;
+  // Conversa com quem não é amigo: imagens e vídeos ficam desfocados até a pessoa tocar.
+  setNsfwView(otherUid && !(state.friends && state.friends.has(otherUid)) ? 'dm' : false);
   state.currentChannelId = null;
   currentChannelName = '';
   currentDmOtherUid = otherUid;
@@ -291,8 +310,9 @@ function attachMessagesListener(colRef, conversationId) {
   renderMessagesSkeleton();
   const q = query(colRef, orderBy('createdAt'), limit(200));
   const unsub = onSnapshot(q, (snap) => {
-    const messages = [];
-    snap.forEach((d) => messages.push({ id: d.id, ...d.data() }));
+    const all = [];
+    snap.forEach((d) => all.push({ id: d.id, ...d.data() }));
+    const messages = filterExpired(all); // DM com mensagens temporárias: esconde as vencidas
     const isNewIncoming = notifyIfNewIncomingMessage(messages);
     lastRenderedMessages = messages;
     lastRenderedConv = conversationId;
@@ -342,7 +362,8 @@ function notifyIfNewIncomingMessage(messages) {
   const mentioned = (last.mentionedUids || []).includes(state.user?.uid);
   if (shouldAlert(effectiveLevel(currentConvCtx() || {}), mentioned)) {
     playNotifSound();
-    showDesktopNotification(last.authorName || 'Nova mensagem', last.content || messagePreview(last) || '📎 Anexo enviado', last.authorAvatar);
+    const hide = state.currentServerId && state.currentChannelId && isNsfwChannel(state.currentServerId, state.currentChannelId);
+    showDesktopNotification(last.authorName || 'Nova mensagem', hide ? 'Nova mensagem em um canal +18' : (last.content || messagePreview(last) || '📎 Anexo enviado'), hide ? undefined : last.authorAvatar);
   }
   return true;
 }
@@ -369,7 +390,7 @@ function renderMessagesSkeleton() {
 // Anexo(s) da mensagem: `attachments` (vários) ou os campos antigos attachmentUrl/Type/Name (um só).
 function attachmentList(msg) {
   if (Array.isArray(msg.attachments) && msg.attachments.length) return msg.attachments;
-  if (msg.attachmentUrl) return [{ url: msg.attachmentUrl, type: msg.attachmentType, name: msg.attachmentName }];
+  if (msg.attachmentUrl) return [{ url: msg.attachmentUrl, type: msg.attachmentType, name: msg.attachmentName, size: msg.attachmentSize }];
   return [];
 }
 
@@ -381,10 +402,14 @@ function buildAttachmentNode(att, msg, single) {
     ]);
   }
   if (att.type === 'video') return el('div', { class: 'gk-msg-attachment' }, [el('video', { src: att.url, controls: 'true' })]);
-  if (att.type === 'audio' && single) return buildVoicePlayer(msg);
-  return el('a', { class: 'gk-msg-file', href: att.url, target: '_blank', rel: 'noopener' }, [
+  if (att.type === 'audio' && single && msg.audioDuration) return buildVoicePlayer(msg);
+  if (isAudioFile(att)) return buildAudioFilePlayer(att);
+  const fileLink = el('a', { class: 'gk-msg-file', href: att.url, target: '_blank', rel: 'noopener' }, [
     icon('attach', { size: 14 }), el('span', {}, att.name || 'Arquivo anexado'),
   ]);
+  if (!previewKind(att)) return fileLink;
+  return el('div', { class: 'gk-msg-file-wrap' }, [fileLink,
+    el('button', { class: 'gk-btn gk-btn-ghost gk-msg-file-preview', type: 'button', onclick: () => openFilePreview(att) }, 'Pré-visualizar')]);
 }
 
 function renderMessageAttachments(row, msg) {
@@ -467,14 +492,16 @@ function renderMessages(messages, isNewIncoming = false) {
       lastGroup = el('div', { class: 'gk-msg-group' }, [
         el('div', {
           class: 'gk-avatar gk-sz-40', style: 'cursor:pointer;',
-          'data-frame': msg.authorFrameStyle || 'none',
+          'data-frame': resolveAuthorFrame(msg), 'data-author': msg.authorId,
           onclick: () => openProfileCard(msg.authorId),
         }, [el('img', { src: resolveAuthorAvatar(msg) || fallbackAvatar(msg.authorName) })]),
         el('div', { class: 'gk-msg-body' }, [
           el('div', { class: 'gk-msg-head' }, [
-            el('span', { class: 'gk-author', onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
+            el('span', { class: 'gk-author', 'data-author': msg.authorId, onclick: () => openProfileCard(msg.authorId) }, msg.authorName || 'Usuário'),
             msg.authorRole === 'prime' ? el('span', { class: 'gk-badge-prime', title: 'G.K.IO Prime' }, [icon('diamond', { size: 12 })]) : null,
             msg.authorTag ? el('span', { class: 'gk-author-tag' }, msg.authorTag) : null,
+            msg.authorServerTag ? buildServerTagChip(msg.authorServerTag) : null,
+            msg.isBot ? botTag() : null,
             el('span', { class: 'gk-time', title: formatFullDate(date) }, formatTime(msg.createdAt)),
           ]),
         ]),
@@ -517,14 +544,25 @@ function renderMessages(messages, isNewIncoming = false) {
       if (msg.pinned) row.appendChild(el('div', { class: 'gk-msg-pin-tag' }, [icon('pin', { size: 12 }), ' Fixada']));
       if (msg.replyTo) row.appendChild(buildReplyRef(msg.replyTo));
       if (msg.forwarded?.name) row.appendChild(el('div', { class: 'gk-msg-forwarded' }, [icon('reply', { size: 12 }), ` Encaminhada de ${String(msg.forwarded.name).slice(0, 60)}`]));
+      if (msg.forumTitle) {
+        row.classList.add('gk-forum-post');
+        row.appendChild(el('div', { class: 'gk-forum-title' }, msg.forumTitle));
+        if (Array.isArray(msg.forumTags) && msg.forumTags.length) row.appendChild(el('div', { class: 'gk-forum-tags' }, msg.forumTags.map((t) => el('span', { class: 'gk-forum-tag' }, t))));
+        row.addEventListener('click', (e) => { if (!e.target.closest('button, a, video, audio, input, textarea, .gk-msg-actions')) openThread(msg); });
+      }
       if (msg.content) {
         const classes = ['gk-msg-line'];
-        if (msg.authorRole === 'prime') classes.push('gk-msg-line-prime');
         if (isEmojiOnly(msg.content)) classes.push('gk-msg-line-jumbo');
         const line = el('div', { class: classes.join(' ') }, renderMessageContent(msg.content, { everyone: !!msg.mentionEveryone }));
-        if (msg.editedAt) line.appendChild(el('span', { class: 'gk-msg-edited-tag', title: 'Mensagem editada' }, '(editado)'));
+        if (msg.editedAt) {
+          const canSee = msg.authorId === state.user?.uid || canPinHere();
+          const tag = el('span', { class: 'gk-msg-edited-tag', title: canSee && msg.editHistory?.length ? 'Mensagem editada — clique para ver as versões' : 'Mensagem editada' }, '(editado)');
+          if (canSee && msg.editHistory?.length) { tag.classList.add('gk-clickable'); tag.addEventListener('click', () => openEditHistory(msg)); }
+          line.appendChild(tag);
+        }
         row.appendChild(line);
       }
+      if (msg.embed) { const emb = buildBotEmbed(msg.embed); if (emb) row.appendChild(emb); }
       const actionButtons = [
         el('button', {
           class: 'gk-msg-action-btn', type: 'button', title: 'Reagir',
@@ -591,6 +629,14 @@ function renderMessages(messages, isNewIncoming = false) {
           onclick: () => confirmDeleteMessage(msg, !isOwn),
         }, [icon('trash', { size: 14 })]));
       }
+      actionButtons.push(el('button', {
+        class: 'gk-msg-action-btn gk-msg-action-more', type: 'button', title: 'Mais opções',
+        onclick: (e) => {
+          e.stopPropagation();
+          const r = e.currentTarget.getBoundingClientRect();
+          e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left, clientY: r.bottom + 4 }));
+        },
+      }, [icon('more', { size: 15 })]));
       row.appendChild(el('div', { class: 'gk-msg-actions' }, actionButtons));
     }
 
@@ -604,6 +650,8 @@ function renderMessages(messages, isNewIncoming = false) {
     if (msg.sticker) { const st = buildStickerNode(msg.sticker); if (st) row.appendChild(st); }
     if (!isEditingThis) attachLinkPreview(row, msg);
     if (msg.poll && !isEditingThis) row.appendChild(buildPollCard(msg, buildCtx()));
+    if (msg.checklist && !isEditingThis) row.appendChild(buildChecklistCard(msg, buildCtx()));
+    if (msg.serverInvite && !isEditingThis) row.appendChild(buildServerInviteCard(msg));
     body.appendChild(row);
 
     const nodes = [row];
@@ -662,6 +710,26 @@ function resolveAuthorAvatar(msg) {
   }
   return msg.authorAvatar || '';
 }
+
+// A moldura também fica congelada na mensagem (authorFrameStyle). Mesma
+// ideia do avatar: prefere o dado vivo (você, membro do servidor, DM).
+function resolveAuthorFrame(msg) {
+  if (msg.authorId === state.user?.uid) return state.user.frameStyle || 'none';
+  if (state.currentServerId) {
+    const member = state.serverMembersCache.get(state.currentServerId)?.get(msg.authorId);
+    if (member?.user) return member.user.frameStyle || 'none';
+  } else if (state.currentDmId) {
+    const dm = state.dms.get(state.currentDmId);
+    if (dm?.other?.uid === msg.authorId) return dm.other.frameStyle || 'none';
+  }
+  return msg.authorFrameStyle || 'none';
+}
+// Troca de moldura nas Configurações: atualiza na hora os avatares já na tela.
+window.addEventListener('gkio-frame-changed', (e) => {
+  const { uid, frame } = e.detail || {};
+  if (!uid) return;
+  document.querySelectorAll('.gk-avatar[data-author="' + uid + '"]').forEach((a) => a.setAttribute('data-frame', frame || 'none'));
+});
 
 // ---------- Datas ----------
 // "Hoje" / "Ontem" pro que é recente, data por extenso pro resto — e o
@@ -778,7 +846,7 @@ function buildReactionsBar(msg) {
   return bar;
 }
 
-async function toggleReaction(msg, key) {
+export async function toggleReaction(msg, key) {
   const uid = state.user?.uid;
   const ref = getMessageRef(msg.id);
   if (!ref || !uid) return;
@@ -790,6 +858,7 @@ async function toggleReaction(msg, key) {
   }
   try {
     await updateDoc(ref, { [`reactions.${key}`]: already ? arrayRemove(uid) : arrayUnion(uid) });
+    applyReactionRole(msg, key, !already);
   } catch (err) {
     toast('Não foi possível reagir.', 'danger');
   }
@@ -988,7 +1057,8 @@ async function saveEditMessage(msgId) {
   editingMessageId = null;
   editingDraft = '';
   try {
-    await updateDoc(ref, { content: newText, editedAt: serverTimestamp() });
+    const old = lastRenderedMessages.find((m) => m.id === msgId);
+    await updateDoc(ref, { content: newText, editedAt: serverTimestamp(), ...(old ? { editHistory: nextHistory(old) } : {}) });
   } catch (err) {
     toast('Não foi possível editar a mensagem.', 'danger');
   }
@@ -1019,6 +1089,7 @@ async function indexAttachment(payload, context) {
   }
 }
 
+let pendingForum = null;
 export async function sendCurrentMessage() {
   const textarea = document.getElementById('gk-composer-input');
   const text = textarea.value.trim();
@@ -1030,10 +1101,17 @@ export async function sendCurrentMessage() {
     toast(`Você não tem acesso a :${lockedEmojis[0]}: — peça ao criador em Emojis › Personalizados.`, 'danger');
     return; // o texto continua no campo
   }
+  const amWhy = automodBlockReason(text);
+  if (amWhy) { toast(amWhy, 'danger'); return; } // o texto continua no campo
 
   const uid = auth.currentUser.uid;
   const payload = { ...basePayload(), content: text };
   applyReplyAndMentions(payload);
+  if (isForumChannel()) {
+    if (!pendingForum) { openForumPostModal(text || 'Post com anexo', (meta) => { pendingForum = meta; sendCurrentMessage(); }); return; }
+    payload.forumTitle = pendingForum.title; if (pendingForum.tags.length) payload.forumTags = pendingForum.tags;
+    pendingForum = null;
+  }
   if (!payload.mentionEveryone && /(^|\s)@(everyone|here)(?![a-zA-Z0-9_-])/i.test(text) && state.currentServerId) {
     toast('Você não tem permissão para usar @everyone/@here neste servidor — a mensagem vai como texto comum.');
   }
@@ -1046,6 +1124,7 @@ export async function sendCurrentMessage() {
         const { url } = await uploadToCloudinary(file, `attachments/${uid}`);
         return {
           url, name: file.name,
+          size: file.size,
           type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file',
         };
       }));
@@ -1054,6 +1133,7 @@ export async function sendCurrentMessage() {
       payload.attachmentUrl = uploaded[0].url;
       payload.attachmentName = uploaded[0].name;
       payload.attachmentType = uploaded[0].type;
+      payload.attachmentSize = uploaded[0].size || 0;
       if (uploaded.length > 1) payload.attachments = uploaded;
     } catch (err) {
       // Falhou: nada é enviado e os anexos continuam na caixa para tentar de novo.
@@ -1084,8 +1164,10 @@ function basePayload() {
     authorAvatar: state.user.avatarUrl || '',
     authorRole: state.user.role || 'free',
     authorTag: state.user.tag || '',
+    ...(myServerTagFor() ? { authorServerTag: myServerTagFor() } : {}),
     authorFrameStyle: state.user.frameStyle || 'none',
     createdAt: serverTimestamp(),
+    ...ttlFields(), // DM com mensagens temporárias: expiresAt
   };
 }
 
@@ -1104,6 +1186,12 @@ function applyReplyAndMentions(payload) {
     const kind = all[2].toLowerCase();
     payload.mentionEveryone = kind;
     for (const uid of everyoneTargets(kind)) mentioned.add(uid);
+  }
+  // @cargo: avisa quem tem o cargo (mesma permissão do @everyone)
+  if (state.currentServerId && members && canMentionEveryoneHere()) {
+    const wanted = new Set([...(payload.content || '').matchAll(/(?:^|\s)@([a-zA-Z0-9_-]{2,32})/g)].map((m) => m[1].toLowerCase()));
+    const ids = getRoles().filter((r) => wanted.has(roleSlug(r.name))).map((r) => r.id);
+    if (ids.length) for (const [uid, m] of members) if ((m.roleIds || []).some((id) => ids.includes(id))) mentioned.add(uid);
   }
   mentioned.delete(payload.authorId);
   if (mentioned.size) payload.mentionedUids = [...mentioned];
@@ -1158,10 +1246,11 @@ async function postPayload(payload, { preview = '', dmPreview, skipIndex = false
         // de publicar as regras novas): manda só o ponteiro, o resto segue igual.
         await updateDoc(channelDoc(serverId, channelId), pointer);
       }
+      awardXp(serverId);
       notifyChannelMessage(otherServerMemberUids(serverId, uid), {
-        authorName: payload.authorName, preview, serverId, channelId, channelName: currentChannelName, mentionedUids: mentioned,
+        authorName: payload.authorName, preview: isNsfwChannel(serverId, channelId) ? 'Nova mensagem em um canal +18' : preview, serverId, channelId, channelName: currentChannelName, mentionedUids: mentioned,
       });
-      if (!skipIndex) indexAttachment(payload, { serverId, channelId });
+      if (!skipIndex && !isNsfwChannel(serverId, channelId)) indexAttachment(payload, { serverId, channelId }); // NSFW fora do índice de Arquivos
       lastSentAt.set(sentKey(channelId), Date.now());
       renderComposerNotice();
     } else if (state.currentDmId) {
@@ -1180,6 +1269,22 @@ async function postPayload(payload, { preview = '', dmPreview, skipIndex = false
     toast(errorMsg, 'danger');
     return false;
   }
+}
+
+// Envia um texto simples para uma conversa específica (mensagens agendadas), esteja ela aberta ou não.
+export async function sendTextTo(conv, text) {
+  if (!auth.currentUser || !state.user || !conv || !text) return false;
+  const payload = { ...basePayload(), content: text };
+  try {
+    if (conv.kind === 'ch') {
+      await addChannelMessage(conv.serverId, conv.channelId, payload, 0);
+      await updateDoc(channelDoc(conv.serverId, conv.channelId), { lastMessageAt: serverTimestamp(), lastMessageAuthorId: payload.authorId, lastMentionedUids: [] }).catch(() => {});
+    } else {
+      await addDoc(dmMessagesCol(conv.dmId), payload);
+      await updateDoc(dmDoc(conv.dmId), { lastMessageAt: serverTimestamp(), lastMessageAuthorId: payload.authorId, lastMessagePreview: text.slice(0, 80) });
+    }
+    return true;
+  } catch { return false; }
 }
 
 // Uids de todo mundo no servidor, exceto quem acabou de mandar a mensagem
@@ -1322,7 +1427,7 @@ function currentMentionToken(textarea) {
 function updateMentionAutocomplete(textarea) {
   const token = currentMentionToken(textarea);
   if (!token) { closeMentionAutocomplete(); return; }
-  let matches = searchMentionCandidates(token.query);
+  let matches = [...searchRoleCandidates(token.query), ...searchMentionCandidates(token.query)];
   if (canMentionEveryoneHere()) {
     const q = token.query.toLowerCase();
     const specials = [
@@ -1351,7 +1456,7 @@ function renderMentionPanel(textarea) {
       u.special
         ? el('span', { class: 'gk-mention-item-avatar gk-mention-item-special' }, '@')
         : el('img', { class: 'gk-mention-item-avatar', src: u.avatarUrl || fallbackAvatar(u.displayName || u.username) }),
-      el('span', {}, u.special ? `@${u.username}` : (u.displayName || u.username)),
+      el('span', {}, u.role ? `@${u.displayName}` : u.special ? `@${u.username}` : (u.displayName || u.username)),
       el('span', { class: 'gk-mention-item-username' }, u.special ? u.hint : `@${u.username}`),
     ]));
   });
@@ -1458,6 +1563,12 @@ export function wireComposer() {
   document.getElementById('gk-attach-btn').addEventListener('click', () => fileInput.click());
   document.getElementById('gk-voice-btn').addEventListener('click', () => startVoiceRecording(buildCtx()));
   document.getElementById('gk-poll-btn').addEventListener('click', () => openPollModal(buildCtx()));
+  { // botão "Lista de tarefas" ao lado de "Criar enquete"
+    const pollBtn = document.getElementById('gk-poll-btn');
+    const b = Object.assign(document.createElement('button'), { id: 'gk-checklist-btn', title: 'Criar lista de tarefas', type: 'button' });
+    b.className = pollBtn.className; b.setAttribute('aria-label', 'Criar lista de tarefas'); b.appendChild(icon('check', { size: 18 }));
+    pollBtn.after(b); b.addEventListener('click', () => openChecklistModal(buildCtx()));
+  }
   document.getElementById('gk-pins-btn').addEventListener('click', () => openPinnedPanel(buildCtx()));
   document.getElementById('gk-msg-search-btn').addEventListener('click', () => openMessageSearch(buildCtx()));
   // Ctrl+F (ou Cmd+F) com uma conversa aberta abre a busca de mensagens em vez da busca do navegador.
@@ -1514,3 +1625,6 @@ onBlocksChange(() => {
   if (lastRenderedConv && lastRenderedConv === (state.currentChannelId || state.currentDmId)) renderMessages(lastRenderedMessages);
   renderComposerNotice();
 });
+
+// Mensagens temporárias (DM): a cada 30 s some com as vencidas e apaga as suas.
+setInterval(() => { try { sweepExpired(lastRenderedMessages); } catch (e) { /* noop */ } }, 30_000);

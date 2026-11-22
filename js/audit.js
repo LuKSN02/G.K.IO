@@ -64,6 +64,8 @@ export function describeAudit(e) {
     case 'server.welcome': return { icon: 'edit', text: `${a} atualizou as boas-vindas${d.enabled ? ' (ativadas)' : ' (desativadas)'}${d.autoRole ? ` e o cargo automático "${d.autoRole}"` : ''}` };
     case 'server.visibility': return { icon: 'lock', text: d.visibility === 'public' ? `${a} tornou o servidor público` : `${a} tornou o servidor privado (só entra com convite)` };
     case 'message.delete': return { icon: 'trash', text: `${a} apagou uma mensagem de ${t} em #${d.channelName}${d.preview ? `: "${d.preview}"` : ''}` };
+    case 'server.antiraid': return { icon: 'shield', text: d.minutes ? `${a} trancou as entradas por ${d.minutes} min${d.auto ? ' (anti-raid automático)' : ''}` : `${a} liberou as entradas do servidor` };
+    case 'server.verification': return { icon: 'lock', text: `${a} ${d.enabled ? 'ativou' : 'desativou'} a verificação ao entrar` };
     default: return { icon: 'edit', text: `${a} fez uma ação (${e.type})` };
   }
 }

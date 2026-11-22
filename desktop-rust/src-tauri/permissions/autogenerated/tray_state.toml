@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-tray-state"
+description = "Enables the tray_state command without any pre-configured scope."
+commands.allow = ["tray_state"]
+
+[[permission]]
+identifier = "deny-tray-state"
+description = "Denies the tray_state command without any pre-configured scope."
+commands.deny = ["tray_state"]

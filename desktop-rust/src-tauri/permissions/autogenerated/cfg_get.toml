@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cfg-get"
+description = "Enables the cfg_get command without any pre-configured scope."
+commands.allow = ["cfg_get"]
+
+[[permission]]
+identifier = "deny-cfg-get"
+description = "Denies the cfg_get command without any pre-configured scope."
+commands.deny = ["cfg_get"]

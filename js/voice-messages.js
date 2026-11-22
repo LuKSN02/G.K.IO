@@ -106,6 +106,7 @@ async function uploadAndPost(ctx, r) {
   const file = new File([new Blob(r.chunks, { type })], `voz-${Date.now()}.${ext}`, { type });
   ctx.setUploading(true);
   try {
+    const peaks = await computePeaks(file).catch(() => null);
     const { url } = await uploadToCloudinary(file, `voice/${auth.currentUser.uid}`);
     await ctx.postPayload({
       content: '',
@@ -113,12 +114,37 @@ async function uploadAndPost(ctx, r) {
       attachmentType: 'audio',
       attachmentName: 'Mensagem de voz',
       audioDuration: Math.round(seconds * 10) / 10,
+      ...(peaks ? { audioPeaks: peaks } : {}),
     }, { preview: '🎤 Mensagem de voz', skipIndex: true });
   } catch (err) {
     toast(err.message || 'Falha ao enviar a mensagem de voz.', 'danger');
   } finally {
     ctx.setUploading(false);
   }
+}
+
+// ---------- Forma de onda ----------
+export const WAVE_BARS = 36;
+/** Reduz uma lista de amplitudes a N barras (0–100). Exportada para teste. */
+export function reducePeaks(samples, n = WAVE_BARS) {
+  const out = []; const size = Math.max(1, Math.floor(samples.length / n));
+  for (let i = 0; i < n; i++) {
+    let m = 0; for (let j = i * size; j < Math.min(samples.length, (i + 1) * size); j++) m = Math.max(m, Math.abs(samples[j]));
+    out.push(m);
+  }
+  const top = Math.max(...out, 1e-6);
+  return out.map((v) => Math.max(8, Math.round((v / top) * 100)));
+}
+async function computePeaks(file) {
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+  const ac = new AC();
+  try { const buf = await ac.decodeAudioData(await file.arrayBuffer()); return reducePeaks(buf.getChannelData(0)); }
+  finally { ac.close?.(); }
+}
+// Sem onda gravada (mensagens antigas): barras estáveis geradas a partir do id.
+function fakePeaks(id, n = WAVE_BARS) {
+  let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return Array.from({ length: n }, (_, i) => { h = (h * 1664525 + 1013904223) >>> 0; return 25 + Math.round(((h >>> 8) % 60) * (0.6 + 0.4 * Math.sin(i / 3))); });
 }
 
 // ---------- Player ----------
@@ -137,8 +163,13 @@ export function buildVoicePlayer(msg) {
   const durationOf = () => (Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : stored);
 
   const btn = el('button', { class: 'gk-voice-play', type: 'button', title: 'Reproduzir', 'aria-label': 'Reproduzir mensagem de voz' });
-  const fill = el('div', { class: 'gk-voice-fill' });
-  const track = el('div', { class: 'gk-voice-track', role: 'slider', 'aria-label': 'Posição do áudio' }, [fill]);
+  const peaks = Array.isArray(msg.audioPeaks) && msg.audioPeaks.length ? msg.audioPeaks.slice(0, 64) : fakePeaks(msg.id);
+  const bars = peaks.map((v) => el('i', { style: `height:${Math.max(8, Math.min(100, Number(v) || 8))}%` }));
+  const track = el('div', { class: 'gk-voice-wave', role: 'slider', 'aria-label': 'Posição do áudio' }, bars);
+  const speedBtn = el('button', { class: 'gk-voice-speed', type: 'button', title: 'Velocidade' }, '1x');
+  const SPEEDS = [1, 1.5, 2];
+  const paintSpeed = () => { speedBtn.textContent = (audio.playbackRate || 1) + 'x'; };
+  speedBtn.addEventListener('click', () => { const i = SPEEDS.indexOf(audio.playbackRate || 1); audio.playbackRate = SPEEDS[(i + 1) % SPEEDS.length]; paintSpeed(); });
   const time = el('span', { class: 'gk-voice-time' });
 
   const paintButton = () => {
@@ -148,7 +179,8 @@ export function buildVoicePlayer(msg) {
   };
   const paint = () => {
     const d = durationOf();
-    fill.style.width = d ? `${Math.min(100, (audio.currentTime / d) * 100)}%` : '0%';
+    const k = d ? Math.min(1, audio.currentTime / d) : 0; const on = Math.round(k * bars.length);
+    bars.forEach((b, i) => b.classList.toggle('on', i < on));
     time.textContent = audio.paused && audio.currentTime === 0
       ? formatDuration(d)
       : `${formatDuration(audio.currentTime)} / ${formatDuration(d)}`;
@@ -174,5 +206,6 @@ export function buildVoicePlayer(msg) {
 
   paintButton();
   paint();
-  return el('div', { class: 'gk-voice-msg' }, [btn, track, time]);
+  paintSpeed();
+  return el('div', { class: 'gk-voice-msg' }, [btn, track, time, speedBtn]);
 }

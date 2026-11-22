@@ -12,11 +12,13 @@ const mediaDefaults = {
   noiseSuppression: true, echoCancellation: true, autoGainControl: true,
   // noiseMode: 'browser' (padrão do navegador) | 'ai' (RNNoise, ver voice-fx.js) | 'off'
   noiseMode: 'browser', aiStrength: 'standard',
+  voiceEffect: 'none', // efeito de voz (ver voice-effects.js)
   videoFx: 'none', // efeito da câmera (ver VIDEO_EFFECTS em voice-fx.js)
   screenQuality: 'fluid',
 };
 // No app de desktop (Electron) o aviso do sistema já vem ligado — é o que se espera de um app instalado.
-const notifDefaults = { sound: true, desktop: !!window.gkioDesktop, preview: true };
+import { inQuiet, quietFromPrefs } from './quiet-hours.js';
+const notifDefaults = { sound: true, desktop: !!window.gkioDesktop, preview: true, quiet: false, quietFrom: '22:00', quietTo: '07:00' };
 const HOTKEY_KEY = 'gkio-hotkey-prefs';
 const IDLE_KEY = 'gkio-idle-prefs';
 const hotkeyDefaults = { mute: 'Ctrl+Shift+M', deafen: 'Ctrl+Shift+D', ptt: '', pttEnabled: false };
@@ -103,8 +105,10 @@ export async function listMediaDevices() {
   }
 }
 
+export const isQuietNow = () => inQuiet(quietFromPrefs(notifPrefs));
+
 export function playNotifSound() {
-  if (!notifPrefs.sound) return;
+  if (!notifPrefs.sound || isQuietNow()) return;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -129,7 +133,7 @@ export async function requestDesktopPermission() {
 }
 
 export function showDesktopNotification(title, body, icon, onClick) {
-  if (!notifPrefs.desktop) return;
+  if (!notifPrefs.desktop || isQuietNow()) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   // Só fica quieto se a janela está visível E com foco: janela aberta atrás de
   // outros programas continua "visible" para o navegador, e antes disso
@@ -137,6 +141,7 @@ export function showDesktopNotification(title, body, icon, onClick) {
   if (document.visibilityState === 'visible' && document.hasFocus()) return;
   try {
     const hide = !notifPrefs.preview || document.documentElement.hasAttribute('data-streamer'); // modo streamer nunca mostra prévia
+    try { window.gkioDesktop?.overlayToast?.({ title, body: hide ? 'Nova mensagem' : body, icon }); } catch (e) { /* noop */ }
     const n = new Notification(title, { body: hide ? 'Nova mensagem' : body, icon });
     // No app de desktop (Electron), clicar na notificação restaura/foca
     // a janela — no navegador comum, foca a aba. window.focus() é a API

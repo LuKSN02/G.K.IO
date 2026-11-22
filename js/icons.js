@@ -88,6 +88,7 @@ const ICONS = {
   flask:        { path: '<path d="M9 3h6M10 3v6l-5.3 9.3A1.8 1.8 0 006.3 21h11.4a1.8 1.8 0 001.6-2.7L14 9V3"/>' },
 
   chatBubble:   { path: '<path d="M21 11.5a8.5 8.5 0 01-8.5 8.5c-1.2 0-2.3-.2-3.4-.7L4 21l1.8-4.8A8.5 8.5 0 1121 11.5z"/>' },
+  folder:       { path: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>' },
   tray:         { path: '<path d="M3 8l9-5 9 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/><path d="M3 8l9 5 9-5"/>' },
   sparkles:     { path: '<path d="M12 2l1.8 4.9L19 8.7l-4.9 1.8L12 15.4l-1.8-4.9L5 8.7l4.9-1.8L12 2zM19 15l.9 2.5 2.6.9-2.6.9-.9 2.5-.9-2.5-2.6-.9 2.6-.9z"/>', fill: true },
   gamepad:      { path: '<rect x="2" y="7" width="20" height="10" rx="5"/><path d="M7 10v4M5 12h4"/><circle cx="15.5" cy="11" r="1"/><circle cx="18" cy="13" r="1"/>' },

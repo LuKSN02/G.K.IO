@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-streamer-current"
+description = "Enables the streamer_current command without any pre-configured scope."
+commands.allow = ["streamer_current"]
+
+[[permission]]
+identifier = "deny-streamer-current"
+description = "Denies the streamer_current command without any pre-configured scope."
+commands.deny = ["streamer_current"]

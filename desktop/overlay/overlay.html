@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'self'">
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; user-select: none; }
+  #root { position: fixed; left: 12px; top: 56px; width: 280px; display: flex; flex-direction: column; gap: 6px; }
+  .title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #e8e9ff; background: rgba(15,17,28,.72); padding: 3px 9px; border-radius: 8px; align-self: flex-start; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m { display: flex; align-items: center; gap: 8px; opacity: .78; transition: opacity .12s; }
+  .m.on { opacity: 1; }
+  .av { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #2a2d45; box-shadow: 0 0 0 2px transparent; transition: box-shadow .1s; flex: none; }
+  .m.on .av { box-shadow: 0 0 0 2.5px #3ddc84; }
+  .nm { font-size: 13px; font-weight: 600; color: #fff; background: rgba(15,17,28,.78); padding: 3px 9px; border-radius: 8px; max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ic { white-space: nowrap; font-size: 12px; background: rgba(15,17,28,.78); border-radius: 8px; padding: 2px 5px; color: #ff6b6b; }
+  .t { display: flex; gap: 9px; align-items: center; margin-top: 8px; background: rgba(15,17,28,.88); border-left: 3px solid #8B5CF6; border-radius: 10px; padding: 8px 10px; color: #fff; animation: in .18s ease-out; }
+  .t.out { opacity: 0; transform: translateX(-12px); transition: all .25s; }
+  .t img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: none; background: #2a2d45; }
+  .t b { display: block; font-size: 12.5px; }
+  .t span { display: block; font-size: 12px; color: #cfd2f5; word-break: break-word; max-height: 3.6em; overflow: hidden; }
+  @keyframes in { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+</style></head>
+<body><div id="root"></div>
+<script src="overlay.js"></script></body></html>

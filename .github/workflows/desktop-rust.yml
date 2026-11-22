@@ -1,0 +1,59 @@
+name: Desktop (Rust/Tauri)
+# Manual (workflow_dispatch): só gera os instaladores como arquivos para baixar.
+# Tag "desktop-v1.0.1": gera, ASSINA e publica uma Release no GitHub com o latest.json
+# (é isso que o app instalado consulta para se atualizar sozinho).
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependências do Linux
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+      - run: node desktop-rust/prepare-web.mjs
+
+      # --- Release com auto-update (só quando você cria uma tag desktop-v*) ---
+      - name: Build + Release assinada
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop-rust
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'G.K.IO Desktop ${{ github.ref_name }}'
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: --config {\"bundle\":{\"createUpdaterArtifacts\":true}}
+
+      # --- Build simples (execução manual) ---
+      - name: Build simples
+        if: ${{ !startsWith(github.ref, 'refs/tags/desktop-v') }}
+        run: |
+          cargo install tauri-cli --version "^2" --locked
+          cd desktop-rust/src-tauri
+          cargo tauri build
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/desktop-v') }}
+        with:
+          name: gkio-desktop-${{ matrix.os }}
+          path: desktop-rust/src-tauri/target/release/bundle/**/*

@@ -1,6 +1,7 @@
 // ============================================================
 // G.K.IO — Autenticação
 // ============================================================
+import { mountBirthInput } from './birth-input.js';
 import {
   auth, db, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
   signOut, fbUpdateProfile, userDoc, setDoc, getDoc, updateDoc, serverTimestamp,
@@ -9,6 +10,7 @@ import {
 } from './db.js';
 import { stopBackgroundNotifications } from './background-notify.js';
 import { clearPushToken } from './push.js';
+import { clearWebPushToken } from './web-push.js';
 import { state, toast, fallbackAvatar, normalizeUsername } from './state.js';
 import { showStartupSplash } from './splash.js';
 
@@ -98,6 +100,15 @@ async function enterApp(fbUser, cameFromForm) {
   }
 }
 
+function pendingBirth() {
+  let iso = null;
+  try { iso = localStorage.getItem('gkio-pending-birth'); } catch (e) { /* noop */ }
+  const age = ageFromIso(iso);
+  if (age === null || age < 13) return {};
+  const [y, m, d] = iso.split('-').map(Number);
+  return { birthDate: new Date(Date.UTC(y, m - 1, d)) };
+}
+
 async function bootstrapUserDoc(uid, username, email) {
   username = normalizeUsername(username) || `usuario-${uid.slice(0, 6)}`;
   await setDoc(userDoc(uid), {
@@ -119,7 +130,9 @@ async function bootstrapUserDoc(uid, username, email) {
     customBadges: [],
     isAdmin: false,       // só true se setado manualmente no console — libera a seção Administração
     fcmToken: null,        // token de push (FCM) do dispositivo — setado por js/push.js no APK
+    ...pendingBirth(),     // data de nascimento informada no cadastro (só grava uma vez)
   });
+  try { localStorage.removeItem('gkio-pending-birth'); } catch (e) { /* noop */ }
 }
 
 export async function setPresence(statusPresence) {
@@ -149,6 +162,18 @@ function startPresenceHeartbeat() {
   heartbeatTick();
   heartbeatInterval = setInterval(heartbeatTick, 60 * 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeatTick(); });
+}
+
+// 'YYYY-MM-DD' -> idade em anos (null se inválida/futura)
+export function ageFromIso(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const now = new Date();
+  if (y < 1900 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  let age = now.getUTCFullYear() - y;
+  if (now.getUTCMonth() + 1 < mo || (now.getUTCMonth() + 1 === mo && now.getUTCDate() < d)) age--;
+  return age >= 0 && age < 130 ? age : null;
 }
 
 export async function registerUser(username, email, password) {
@@ -189,9 +214,12 @@ export async function loginUser(email, password, keepSignedIn = true) {
 }
 
 export async function logoutUser() {
+  await clearWebPushToken();
   await clearPushToken(); // antes do signOut: ainda precisa estar autenticado pra gravar
   await setPresence('offline');
   stopBackgroundNotifications();
+  try { (await import('./sessions.js')).endCurrentSession?.(); } catch (e) { /* noop */ }
+  try { localStorage.setItem('gkio-wipe-cache', '1'); } catch (e) { /* noop */ }
   await signOut(auth);
 }
 
@@ -218,6 +246,8 @@ export function wireAuthForm() {
   const title = document.getElementById('gk-auth-title');
   const sub = document.getElementById('gk-auth-sub');
   const usernameField = document.getElementById('gk-auth-username-field');
+  const birthField = document.getElementById('gk-auth-birth-field');
+  if (birthField) mountBirthInput(document.getElementById('gk-auth-birth-host'), document.getElementById('gk-auth-birth'));
   const submitBtn = document.getElementById('gk-auth-submit');
   const errorBox = document.getElementById('gk-auth-error');
   const keepSignedInBox = document.getElementById('gk-auth-keep-signed-in');
@@ -230,12 +260,14 @@ export function wireAuthForm() {
       title.textContent = 'Entrar no G.K.IO';
       sub.textContent = 'Bem-vindo de volta. Entre com seu e-mail e senha.';
       usernameField.style.display = 'none';
+      if (birthField) birthField.style.display = 'none';
       submitBtn.textContent = 'Entrar';
       modeToggle.innerHTML = 'Não tem conta? <span class="gk-auth-toggle-action">Criar conta</span>';
     } else {
       title.textContent = 'Criar conta no G.K.IO';
       sub.textContent = 'Escolha um nome de usuário para começar.';
       usernameField.style.display = 'block';
+      if (birthField) birthField.style.display = 'block';
       submitBtn.textContent = 'Criar conta';
       modeToggle.innerHTML = 'Já tem conta? <span class="gk-auth-toggle-action">Entrar</span>';
     }
@@ -259,6 +291,11 @@ export function wireAuthForm() {
     justAuthenticatedViaForm = true;
     try {
       if (mode === 'register') {
+        const birth = document.getElementById('gk-auth-birth')?.value || '';
+        const age = ageFromIso(birth);
+        if (age === null) throw new Error('Informe sua data de nascimento.');
+        if (age < 13) throw new Error('É preciso ter pelo menos 13 anos para criar uma conta.');
+        try { localStorage.setItem('gkio-pending-birth', birth); } catch (e) { /* noop */ }
         const newUser = await registerUser(username, email, password);
         toast(needsEmailVerification(newUser)
           ? 'Conta criada! Confirme seu e-mail para entrar.'

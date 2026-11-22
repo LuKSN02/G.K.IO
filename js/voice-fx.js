@@ -7,6 +7,7 @@
 // ctx.filter), o app segue com o áudio/vídeo normal e avisa uma vez.
 // ============================================================
 import { getMediaPrefs } from './prefs.js';
+import { VoiceEffectProcessor, voiceEffectsSupported } from './voice-effects.js';
 
 const WASM_URL = new URL('./vendor/rnnoise/rnnoise.wasm', import.meta.url).href;
 const WORKLET_URL = new URL('./voice-worklet.js', import.meta.url).href;
@@ -75,8 +76,16 @@ export async function applyMicProcessing(room, Track, onWarn = () => {}) {
   const pub = room?.localParticipant?.getTrackPublication?.(Track.Source.Microphone);
   const track = pub?.audioTrack;
   if (!track || typeof track.setProcessor !== 'function') return;
-  const { noiseMode, aiStrength } = getMediaPrefs();
-  const current = track.getProcessor?.();
+  const { noiseMode, aiStrength, voiceEffect } = getMediaPrefs();
+  let current = track.getProcessor?.();
+  // Efeito de voz escolhido: usa o processador de efeitos (no lugar do RNNoise).
+  if (voiceEffect && voiceEffect !== 'none' && voiceEffectsSupported()) {
+    if (current?.name === 'gkio-voicefx') { current.setEffect(voiceEffect); return; }
+    try { await track.setProcessor(new VoiceEffectProcessor(voiceEffect)); return; }
+    catch (err) { console.warn('[voz] efeito falhou:', err?.message || err); try { await track.stopProcessor(); } catch (e) { /* ok */ } onWarn('Não foi possível ligar o efeito de voz; seu microfone segue normal.'); }
+    return;
+  }
+  if (current?.name === 'gkio-voicefx') { try { await track.stopProcessor(); } catch (e) { /* ok */ } current = null; }
   if (noiseMode !== 'ai') {
     if (current) { try { await track.stopProcessor(); } catch (e) { /* ok */ } }
     return;

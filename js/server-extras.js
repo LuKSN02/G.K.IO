@@ -114,6 +114,9 @@ export function renderRegrasSection(content, header) {
   const enabled = el('input', { type: 'checkbox' }); enabled.checked = !!rules.enabled;
   const text = el('textarea', { class: 'gk-sv-input gk-sv-textarea', rows: '10', maxlength: String(RULES_MAX), placeholder: '1. Respeite todo mundo.\n2. Sem spam.\n3. …' });
   text.value = rules.text || '';
+  const countEl = () => content.querySelector('.gk-rules-count');
+  const upd = () => { const c = countEl(); if (c) c.textContent = `${text.value.length} / ${RULES_MAX}`; };
+  text.addEventListener('input', upd); setTimeout(upd, 0);
   const save = el('button', { class: 'gk-btn gk-btn-primary', type: 'button' }, 'Salvar');
   save.addEventListener('click', async () => {
     save.disabled = true;
@@ -122,10 +125,9 @@ export function renderRegrasSection(content, header) {
     finally { save.disabled = false; }
   });
   content.appendChild(el('div', { class: 'gk-sv-card' }, [
-    el('label', { class: 'gk-nsfw-option' }, [enabled, el('span', {}, [el('strong', {}, 'Exigir aceite das regras'), el('small', {}, 'Quem não aceitou fica sem poder enviar mensagens (o dono é isento).')])]),
+    el('label', { class: 'gk-nsfw-option gk-rules-toggle' }, [enabled, el('span', {}, [el('strong', {}, 'Exigir aceite das regras'), el('small', {}, 'Quem não aceitou fica sem poder enviar mensagens (o dono é isento).')])]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Texto das regras (aceita **negrito**, listas e links)'), text]),
-    el('div', { class: 'gk-hint' }, `${RULES_MAX} caracteres no máximo.`),
-    save,
+    el('div', { class: 'gk-rules-foot' }, [el('span', { class: 'gk-rules-count' }, `0 / ${RULES_MAX}`), save]),
   ]));
 }
 
@@ -210,7 +212,8 @@ function eventForm(serverId) {
 }
 
 // ---------- Emojis do servidor ----------
-const EMOJI_MAX_BYTES = 256 * 1024;
+const EMOJI_MAX_MB = 25;
+const EMOJI_MAX_BYTES = EMOJI_MAX_MB * 1024 * 1024;
 export const isServerEmoji = (e) => !!(e && e.serverId);
 export const canUseServerEmoji = (e) => isServerEmoji(e) && state.servers.has(e.serverId);
 
@@ -228,7 +231,7 @@ export function renderEmojisSection(content, header) {
     const f = file.files?.[0]; file.value = ''; if (!f) return;
     const name = nameIn.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32);
     if (name.length < 2) return toast('Dê um nome de 2 a 32 letras/números ao emoji.', 'danger');
-    if (f.size > EMOJI_MAX_BYTES) return toast('A imagem deve ter no máximo 256 KB.', 'danger');
+    if (f.size > EMOJI_MAX_BYTES) return toast(`A imagem deve ter no máximo ${EMOJI_MAX_MB} MB.`, 'danger');
     add.disabled = true;
     try {
       const up = await uploadToCloudinary(f, 'server-emojis');
@@ -236,7 +239,7 @@ export function renderEmojisSection(content, header) {
       nameIn.value = ''; toast(`Emoji :${name}: adicionado.`);
     } catch (e) { toast('Não foi possível enviar o emoji.', 'danger'); } finally { add.disabled = false; }
   });
-  content.appendChild(el('div', { class: 'gk-sv-card' }, [el('div', { class: 'gk-extras-row' }, [nameIn, add, file]), el('div', { class: 'gk-hint' }, 'Até 256 KB. PNG, GIF, WebP ou JPG.')]));
+  content.appendChild(el('div', { class: 'gk-sv-card gk-emoji-upload-card' }, [el('div', { class: 'gk-extras-row' }, [nameIn, add, file]), el('div', { class: 'gk-emoji-formats' }, [el('span', {}, 'PNG'), el('span', {}, 'GIF'), el('span', {}, 'WebP'), el('span', {}, 'JPG'), el('small', {}, `até ${EMOJI_MAX_MB} MB`)])]));
   content.appendChild(list);
   if (!sid) return;
   if (emojiUnsub) { emojiUnsub(); emojiUnsub = null; }

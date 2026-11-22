@@ -312,6 +312,20 @@ export class CallStage {
     this.layout();
   }
   hasScreen(uid) { return this.tiles.has(`scr:${uid}`); }
+  /** Modo "Go Live": mostra no tile da SUA tela quem está assistindo. viewers = [{ uid, name }] */
+  setViewers(uid, viewers) {
+    const t = this.tiles.get(`scr:${uid}`); if (!t) return;
+    if (!t.viewersEl) {
+      const list = h('div', { class: 'gkc-viewers-list', hidden: true });
+      const chip = h('button', { class: 'gkc-viewers-chip', type: 'button', onclick: (e) => { e.stopPropagation(); list.hidden = !list.hidden; } });
+      t.viewersEl = h('div', { class: 'gkc-viewers' }, [chip, list]);
+      t.viewersEl.chip = chip; t.viewersEl.list = list;
+      t.el.appendChild(t.viewersEl);
+    }
+    const n = viewers.length;
+    t.viewersEl.chip.textContent = n ? `AO VIVO · ${n} assistindo` : 'AO VIVO · ninguém assistindo ainda';
+    t.viewersEl.list.replaceChildren(...(n ? viewers.map((v) => h('div', { class: 'gkc-viewers-item', text: v.name })) : [h('div', { class: 'gkc-viewers-item', text: 'Quando alguém abrir sua tela, aparece aqui.' })]));
+  }
   showReaction(uid, emoji) {
     const t = this.tiles.get(`cam:${uid}`) || this.tiles.get(`scr:${uid}`); if (!t) return;
     const f = h('span', { class: 'gkc-float', text: emoji });

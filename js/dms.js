@@ -12,7 +12,7 @@ import { checkDmsForNotifications } from './background-notify.js';
 import { joinDmCall } from './calls.js';
 import { stopTyping } from './typing.js';
 import { isConversationUnread, onReadStatesChange } from './unread.js';
-import { showUnreadDot, isMuted, onNotifPrefsChange } from './notify-prefs.js';
+import { showUnreadDot, isMuted, onNotifPrefsChange, isDmClosed, reopenDm } from './notify-prefs.js';
 import { icon } from './icons.js';
 import { refreshNotifDot } from './topbar.js';
 import { isBlocked } from './blocks.js';
@@ -27,7 +27,7 @@ let unsubFriendships = null;
 let unsubDms = null;
 
 // Aba ativa na tela "Amigos" — 'friends' (lista de amigos) ou 'pending' (pedidos recebidos).
-let friendsHomeTab = 'friends';
+let friendsHomeTab = 'online';
 
 export function listenFriendsAndDms() {
   const uid = auth.currentUser.uid;
@@ -62,6 +62,7 @@ export function listenFriendsAndDms() {
     refreshPendingBadge();
     renderDmSidebar();
     renderFriendsHome();
+    syncPresenceWatchers();
   });
 
   if (unsubDms) unsubDms();
@@ -85,8 +86,59 @@ export function listenFriendsAndDms() {
     dms.forEach((dm) => state.dms.set(dm.id, dm));
     renderDmSidebar();
     checkDmsForNotifications();
+    syncPresenceWatchers();
   });
 }
+
+// ---------- Presença ao vivo ----------
+// Um ouvinte por pessoa que aparece nas listas (amigos, DMs, grupos). Quando alguém fica
+// online/offline ou muda de status, o doc dela muda e a tela atualiza sozinha.
+const presenceWatchers = new Map(); // uid -> unsub
+let presenceRenderQueued = false;
+function queuePresenceRender() {
+  if (presenceRenderQueued) return;
+  presenceRenderQueued = true;
+  requestAnimationFrame(() => { presenceRenderQueued = false; renderDmSidebar(); renderFriendsHome(); });
+}
+const presenceFields = (u) => [effectiveStatus(u), u.displayName, u.avatarUrl, u.frameStyle, u.activity?.name, u.customStatus?.text].join('|');
+function applyPresence(uid, data) {
+  const f = state.friends.get(uid);
+  if (f) state.friends.set(uid, { ...f, ...data, uid });
+  for (const dm of state.dms.values()) {
+    if (dm.isGroup) {
+      const m = (dm.members || []).find((x) => x.uid === uid);
+      if (m) Object.assign(m, data, { uid });
+    } else if (dm.other && dm.other.uid === uid) {
+      dm.other = { ...dm.other, ...data, uid };
+    }
+  }
+}
+function syncPresenceWatchers() {
+  const me = auth.currentUser?.uid;
+  const want = new Set([...state.friends.keys()]);
+  for (const dm of state.dms.values()) {
+    if (dm.isGroup) (dm.members || []).forEach((m) => want.add(m.uid)); else if (dm.other?.uid) want.add(dm.other.uid);
+  }
+  want.delete(me);
+  for (const [uid, un] of presenceWatchers) if (!want.has(uid)) { un(); presenceWatchers.delete(uid); }
+  for (const uid of want) {
+    if (presenceWatchers.has(uid)) continue;
+    let first = true;
+    const un = onSnapshot(userDoc(uid), (s) => {
+      if (!s.exists()) return;
+      const data = s.data();
+      const known = state.friends.get(uid) || [...state.dms.values()].find((dm) => dm.other?.uid === uid)?.other;
+      const unchanged = known && presenceFields(known) === presenceFields(data);
+      applyPresence(uid, data);
+      if (unchanged) { first = false; return; }
+      first = false;
+      queuePresenceRender();
+    }, () => {});
+    presenceWatchers.set(uid, un);
+  }
+}
+// "Visto por último" vence com o tempo (sem batimento = offline): reavalia de vez em quando.
+setInterval(() => { if (presenceWatchers.size) queuePresenceRender(); }, 30000);
 
 // ---------- DM em grupo ----------
 const USER_CACHE_MS = 30 * 1000;
@@ -130,6 +182,7 @@ export function dmSubtitle(dm) {
 
 // Abre uma DM já carregada em state.dms (1:1 ou grupo).
 export function openDmFromState(dm) {
+  reopenDm(dm.id);
   selectDm(dm.id, dm.other.displayName || dm.other.username, dmSubtitle(dm), dm.other.uid || null, { isGroup: isGroupDm(dm) });
 }
 
@@ -151,7 +204,7 @@ function renderDmSidebar() {
   const body = document.getElementById('gk-sidebar-body');
   body.innerHTML = '';
   body.appendChild(el('div', { class: 'gk-category-label' }, 'Conversas'));
-  const dms = [...state.dms.values()].filter((dm) => dm.other);
+  const dms = [...state.dms.values()].filter((dm) => dm.other && (!isDmClosed(dm) || dm.id === state.currentDmId));
   if (dms.length === 0) {
     body.appendChild(el('div', { class: 'gk-empty-state-sm' }, 'Nenhuma conversa ainda.'));
   }
@@ -174,13 +227,31 @@ function renderDmSidebar() {
       }, [
         el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.username) }),
       ]),
-      el('div', {}, [
-        el('div', { class: 'gk-name' }, dm.other.displayName || dm.other.username),
-        isGroupDm(dm) ? el('div', { class: 'gk-dm-sub' }, [icon('members', { size: 11 }), ` ${(dm.participantIds || []).length} membros`]) : null,
+      el('div', { class: 'gk-dm-text' }, [
+        el('div', { class: 'gk-dm-line' }, [
+          el('div', { class: 'gk-name' }, dm.other.displayName || dm.other.username),
+          dm.lastMessageAt ? el('span', { class: 'gk-dm-when' }, dmWhen(dm.lastMessageAt)) : null,
+        ]),
+        dm.lastMessagePreview
+          ? el('div', { class: 'gk-dm-preview' }, (dm.lastMessageAuthorId === auth.currentUser?.uid ? 'Você: ' : '') + dm.lastMessagePreview)
+          : (isGroupDm(dm) ? el('div', { class: 'gk-dm-sub' }, [icon('members', { size: 11 }), ` ${(dm.participantIds || []).length} membros`]) : null),
       ]),
     ]);
     body.appendChild(row);
   }
+}
+
+// Horário curto da última mensagem: hoje = hora, ontem = "ontem", antes = dd/mm.
+function dmWhen(ts) {
+  const d = ts?.toDate ? ts.toDate() : null;
+  if (!d) return '';
+  const now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86400000);
+  if (diff <= 0) return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (diff === 1) return 'ontem';
+  if (diff < 7) return d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
 function statusLabel(s) {
@@ -201,7 +272,7 @@ export async function sendFriendRequestByUsername(username) {
 
   const existingQ = query(friendshipsCol(), where('userIds', 'array-contains', uid));
   const existingSnap = await getDocs(existingQ);
-  const already = existingSnap.docs.some((d) => d.data().userIds.includes(target.id));
+  const already = existingSnap.docs.some((d) => d.data().userIds.includes(target.id) && ['pending', 'accepted'].includes(d.data().status));
   if (already) throw new Error('Vocês já são amigos ou há um pedido pendente.');
 
   await addDoc(friendshipsCol(), {
@@ -286,7 +357,7 @@ export function goToDmsView() {
   document.getElementById('gk-server-settings-btn').style.display = 'none';
   { const b = document.getElementById('gk-server-events-btn'); if (b) b.style.display = 'none'; }
   document.getElementById('gk-members-toggle-btn').style.display = 'none';
-  document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens diretas';
+  document.getElementById('gk-sidebar-header-title').textContent = 'Mensagens';
   document.getElementById('gk-call-btn').style.display = 'none';
   document.getElementById('gk-messages').innerHTML = '';
   renderDmSidebar();
@@ -329,17 +400,20 @@ function renderFriendsHome() {
   if (friendsHomeTab === 'pending') {
     renderPendingTab(list);
   } else {
-    renderFriendsTab(list);
+    renderFriendsTab(list, friendsHomeTab === 'online');
   }
 }
 
-function renderFriendsTab(list) {
-  const friends = [...state.friends.values()];
-  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Amigos — ${friends.length}`));
+function renderFriendsTab(list, onlyOnline = false) {
+  let friends = [...state.friends.values()];
+  if (onlyOnline) friends = friends.filter((f) => effectiveStatus(f) !== 'offline');
+  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `${onlyOnline ? 'Disponível' : 'Todos os amigos'} — ${friends.length}`));
   if (friends.length === 0) {
     list.appendChild(el('div', { class: 'gk-empty-state' }, [
       el('div', { class: 'gk-emoji' }, [icon('snowflake', { size: 32 })]),
-      el('div', {}, 'Você ainda não tem amigos por aqui. Que tal adicionar alguém?'),
+      el('div', {}, onlyOnline
+        ? (state.friends.size ? 'Nenhum amigo disponível agora.' : 'Você ainda não tem amigos por aqui. Que tal adicionar alguém?')
+        : 'Você ainda não tem amigos por aqui. Que tal adicionar alguém?'),
     ]));
     return;
   }
@@ -362,7 +436,7 @@ function renderFriendsTab(list) {
 
 function renderPendingTab(list) {
   const incoming = state.incomingFriendRequests || [];
-  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Pedidos de amizade — ${incoming.length}`));
+  list.appendChild(el('div', { class: 'gk-friends-list-label' }, `Pendente — ${incoming.length}`));
   if (incoming.length === 0) {
     list.appendChild(el('div', { class: 'gk-empty-state' }, [
       el('div', { class: 'gk-emoji' }, [icon('tray', { size: 32 })]),
@@ -391,6 +465,7 @@ function renderPendingTab(list) {
 // tela home — chamada uma única vez no bootstrap (ver app.js).
 export function wireFriendsHome() {
   document.getElementById('gk-friends-group-btn')?.addEventListener('click', () => openCreateGroupModal());
+  document.getElementById('gk-friends-tab-online').addEventListener('click', () => switchFriendsTab('online'));
   document.getElementById('gk-friends-tab-friends').addEventListener('click', () => switchFriendsTab('friends'));
   document.getElementById('gk-friends-tab-pending').addEventListener('click', () => switchFriendsTab('pending'));
   document.getElementById('gk-friends-add-btn').addEventListener('click', openAddFriendModal);
@@ -398,6 +473,7 @@ export function wireFriendsHome() {
 
 function switchFriendsTab(tab) {
   friendsHomeTab = tab;
+  document.getElementById('gk-friends-tab-online').classList.toggle('gk-active', tab === 'online');
   document.getElementById('gk-friends-tab-friends').classList.toggle('gk-active', tab === 'friends');
   document.getElementById('gk-friends-tab-pending').classList.toggle('gk-active', tab === 'pending');
   renderFriendsHome();
@@ -470,4 +546,13 @@ export function openAddFriendModal() {
   ]));
   overlay.classList.add('gk-open');
   setTimeout(() => input.focus(), 50);
+}
+
+// Desfaz a amizade (as regras do Firestore não permitem apagar o documento, então ele só sai da lista).
+export async function removeFriend(otherUid) {
+  const uid = auth.currentUser.uid;
+  const snap = await getDocs(query(friendshipsCol(), where('userIds', 'array-contains', uid)));
+  const docs = snap.docs.filter((x) => x.data().userIds.includes(otherUid) && x.data().status === 'accepted');
+  await Promise.all(docs.map((x) => updateDoc(x.ref, { status: 'removed' })));
+  state.friends.delete(otherUid);
 }

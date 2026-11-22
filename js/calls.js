@@ -33,9 +33,11 @@ import {
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { getMediaPrefs, setMediaPrefs, getHotkeyPrefs, screenShareOptions, SCREEN_QUALITIES } from './prefs.js';
+import { VOICE_EFFECTS } from './voice-effects.js';
 import { applyMicProcessing, applyVideoFx, applyPersonVolume, setPersonVolume, getPersonVolume, openVolumePopover, openPersonSheet, setSelfDeaf, shouldMuteEl, VIDEO_EFFECTS, videoFxSupported } from './voice-fx.js';
 import { CallStage, showRecordingModal, recordingSupported } from './call-stage.js';
 import { initVoiceExtras, toggleExtrasPanel, resetVoiceExtras } from './voice-extras.js';
+import { initCallTools, resetCallTools } from './call-tools.js';
 import { livekitConfig } from './livekit-config.js';
 import { isNativeAndroid, startCallAudioMode, stopCallAudioMode, startCallKeepAlive, stopCallKeepAlive, startNativeScreenCapture, stopNativeScreenCapture } from './native-bridge.js';
 import { icon, iconHtml } from './icons.js';
@@ -101,7 +103,23 @@ function resetStage() {
   stage?.clear();
 }
 
+// ---------- Go Live: quem está assistindo a MINHA tela ----------
+// O LiveKit não conta espectadores no cliente, então cada espectador avisa pelo canal de dados
+// ("estou assistindo / parei") e quem transmite mantém a lista.
+const liveWatchers = new Set();
+function liveViewerList() {
+  return [...liveWatchers].map((uid) => ({ uid, name: state.activeCall?.participants?.get?.(uid)?.displayName || room?.remoteParticipants?.get(uid)?.name || 'Membro' }));
+}
+function refreshLiveViewers() {
+  const me = auth.currentUser?.uid;
+  if (me && stage?.hasScreen(me)) stage.setViewers(me, liveViewerList());
+}
+function announceWatching(streamerUid, on) {
+  try { room?.localParticipant?.publishData(new TextEncoder().encode(JSON.stringify({ to: streamerUid, w: on ? 1 : 0 })), { reliable: true, topic: 'gkio-live' }).catch(() => {}); } catch (e) { /* silencioso */ }
+}
+
 function setWatchingScreen(uid, on) {
+  announceWatching(uid, on);
   const p = room?.remoteParticipants?.get(uid);
   if (!p) return;
   for (const pub of p.trackPublications.values()) {
@@ -380,6 +398,7 @@ function wireRoomEvents(r) {
     const speakingIds = new Set(speakers.map((p) => p.identity));
     const known = new Set([auth.currentUser.uid, ...Array.from(r.remoteParticipants.keys())]);
     known.forEach((uid) => setTileSpeaking(uid, speakingIds.has(uid)));
+    window.dispatchEvent(new CustomEvent('gkio-speaking', { detail: { ids: [...speakingIds] } }));
   });
   // Canal de dados (soundboard, dados, jogos): quem mandou vem da conexão, não do conteúdo.
   r.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
@@ -468,6 +487,7 @@ function handleTrackSubscribed(track, participant, publication) {
     videoTracks.set(`scr:${otherUid}`, track);
     if (!stage.hasPerson(otherUid)) stage.upsertPerson(otherUid, { name: participant.name || 'Membro' });
     stage.setScreen(otherUid, track, { local: false, watching: true });
+    announceWatching(otherUid, true);
     return;
   }
   if (track.source === Track.Source.Camera) {
@@ -509,6 +529,7 @@ function handleLocalTrackPublished(pub) {
       if (!stage.hasPerson(me)) syncStagePeople();
       videoTracks.set(`scr:${me}`, pub.track);
       stage.setScreen(me, pub.track, { local: true, watching: true });
+      liveWatchers.clear(); refreshLiveViewers();
     }
     state.activeCall && (state.activeCall.screenSharing = true);
     markTileSharing(me, true);
@@ -548,6 +569,7 @@ function onParticipantJoined(participant) {
   }
 }
 function onParticipantLeft(participant) {
+  if (liveWatchers.delete(participant.identity)) refreshLiveViewers();
   if (!state.activeCall) return;
   if (state.activeCall.kind === 'dm') {
     toast('Chamada encerrada.');
@@ -710,6 +732,7 @@ export async function hangupCall() {
 
 function endCall(disconnectRoom) {
   resetVoiceExtras();
+  resetCallTools();
   stopCallAudioMode();
   if (disconnectRoom && room) { try { room.disconnect(); } catch (e) {} }
   room = null;
@@ -778,6 +801,7 @@ export async function joinVoiceChannel(serverId, channelId, name) {
   startCallAudioMode();
   upsertVoiceParticipant(room.localParticipant);
   room.remoteParticipants.forEach((p) => upsertVoiceParticipant(p));
+  window.dispatchEvent(new CustomEvent('gkio-voice-joined', { detail: { serverId, channelId } }));
 }
 
 function upsertVoiceParticipant(participant) {
@@ -1153,6 +1177,7 @@ export function wireCallBar() {
 
   document.getElementById('gk-call-camera-btn').addEventListener('click', toggleCameraInCall);
   initVoiceExtras();
+  initCallTools();
   document.getElementById('gk-call-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
   document.getElementById('gk-call-bar-extras-btn')?.addEventListener('click', () => toggleExtrasPanel());
 
@@ -1182,12 +1207,13 @@ export function wireCallBar() {
 window.addEventListener('gkio-media-prefs-changed', (e) => {
   if (!room) return;
   const d = e.detail || {};
-  if ('noiseMode' in d || 'aiStrength' in d) applyMicProcessing(room, Track, (m) => toast(m));
+  if ('noiseMode' in d || 'aiStrength' in d || 'voiceEffect' in d) applyMicProcessing(room, Track, (m) => toast(m));
   if ('videoFx' in d) applyVideoFx(room, Track, (m) => toast(m));
 });
 
 // ---------- Canal de dados da chamada (usado por voice-extras.js) ----------
 const dataHandlers = new Map(); // topic -> Set<fn(msg, fromUid)>
+export const callParticipantName = (uid) => room?.remoteParticipants?.get(uid)?.name || state.activeCall?.participants?.get?.(uid)?.displayName || 'Alguém';
 export function onCallData(topic, fn) {
   if (!dataHandlers.has(topic)) dataHandlers.set(topic, new Set());
   dataHandlers.get(topic).add(fn);
@@ -1199,6 +1225,11 @@ export async function sendCallData(topic, obj) {
     return true;
   } catch (e) { toast('Não foi possível enviar para a chamada.', 'danger'); return false; }
 }
+onCallData('gkio-live', (msg, from) => {
+  if (!msg || msg.to !== auth.currentUser?.uid) return;
+  if (msg.w) liveWatchers.add(from); else liveWatchers.delete(from);
+  refreshLiveViewers();
+});
 export const isInCall = () => !!(room && state.activeCall);
 /** Quem está na chamada agora (você incluído): [{ uid, name }] */
 export function callParticipantList() {
@@ -1211,10 +1242,25 @@ export function callParticipantList() {
   return list;
 }
 
+/** Para a sobreposição do app desktop: quem está na chamada (você incluído). */
+export function overlaySnapshot() {
+  if (!room || !state.activeCall) return null;
+  const ac = state.activeCall, me = auth.currentUser?.uid;
+  const members = [{ uid: me, self: true, name: state.user?.displayName || state.user?.username || 'Você', avatar: state.user?.avatarUrl || '' }];
+  if (ac.kind === 'voiceChannel') {
+    ac.participants.forEach((m, uid) => { if (uid !== me) members.push({ uid, name: m.displayName, avatar: m.avatarUrl, muted: !!m.muted }); });
+  } else {
+    const o = state.dms?.get?.(ac.dmId)?.other;
+    room.remoteParticipants.forEach((p, id) => members.push({ uid: p.identity || id, name: o?.displayName || o?.username || p.name || 'Membro', avatar: o?.avatarUrl || '' }));
+  }
+  return { title: ac.kind === 'voiceChannel' ? (ac.channelLabel || 'Sala de voz') : 'Chamada', members: members.slice(0, 12) };
+}
+
 export function hasActiveCall() { return !!(room && state.activeCall); }
 
 export async function setMicEnabled(next) {
   if (!room) return;
+  if (next && window.__gkStageAudience) { toast('Você está na plateia do palco — peça a palavra no painel do palco.'); return; }
   await room.localParticipant.setMicrophoneEnabled(next, captureDefaults().audioCaptureDefaults);
   if (next) await applyMicProcessing(room, Track, (m) => toast(m));
   updateMuteButtons(!next);
@@ -1271,20 +1317,6 @@ function wireCallExtras() {
     if (typeof msg?.e === 'string' && REACTIONS.includes(msg.e)) applyReaction(uid, msg.e);
   });
 
-  // --- mão levantada ---
-  const handBtn = document.getElementById('gk-call-hand-btn');
-  handBtn.addEventListener('click', () => {
-    myHand = !myHand;
-    handBtn.classList.toggle('gkc-hand-on', myHand);
-    handBtn.title = myHand ? 'Abaixar a mão' : 'Levantar a mão';
-    stage?.setHand(auth.currentUser.uid, myHand);
-    sendCallData('gk-hand', { up: myHand });
-  });
-  onCallData('gk-hand', (msg, uid) => {
-    stage?.setHand(uid, !!msg?.up);
-    if (msg?.up) toast(`${nameOf(uid)} levantou a mão ✋`);
-  });
-
   // --- gravação da chamada (áudio de todo mundo misturado) ---
   const recBtn = document.getElementById('gk-call-record-btn');
   if (!recordingSupported()) recBtn.style.display = 'none';
@@ -1306,27 +1338,54 @@ function wireCallExtras() {
   });
   window.addEventListener('gkio-call-ended', () => {
     myHand = false;
-    document.getElementById('gk-call-hand-btn')?.classList.remove('gkc-hand-on');
   });
 }
 
+const SCREEN_Q_INFO = {
+  fluid:    ['Fluida', '720p · 30 fps', 'Jogos e vídeos'],
+  balanced: ['Equilibrada', '1080p · 30 fps', 'Uso geral'],
+  sharp:    ['Nítida', '1080p · 15 fps', 'Texto e slides'],
+  hd60:     ['Fluida 60', '720p · 60 fps', 'Jogos rápidos'],
+  ultra:    ['Máxima', '1080p · 60 fps', 'Exige PC e internet fortes'],
+};
 function buildSettingsPanel(panel) {
   const prefs = getMediaPrefs();
   const select = (label, value, options, onChange) => {
     const s = el('select', {}, options.map(([v, t]) => el('option', { value: v }, t)));
     s.value = value;
     s.addEventListener('change', () => onChange(s.value));
-    return el('label', {}, [label, s]);
+    return el('label', { class: 'gkc-set-field' }, [el('span', {}, label), s]);
   };
+  const section = (ic, title, ...kids) => el('section', { class: 'gkc-set-sec' }, [
+    el('div', { class: 'gkc-set-sec-head' }, [icon(ic, { size: 14 }), el('b', {}, title)]), ...kids,
+  ]);
   const noiseVal = prefs.noiseMode === 'ai' ? (prefs.aiStrength === 'strong' ? 'ai-strong' : 'ai') : (prefs.noiseMode || 'browser');
+  const curQ = prefs.screenQuality in SCREEN_QUALITIES ? prefs.screenQuality : 'fluid';
+  const grid = el('div', { class: 'gkc-q-grid', role: 'radiogroup', 'aria-label': 'Qualidade da transmissão de tela' });
+  for (const id of Object.keys(SCREEN_QUALITIES)) {
+    const [name, spec, use] = SCREEN_Q_INFO[id] || [SCREEN_QUALITIES[id].label, '', ''];
+    const btn = el('button', { class: 'gkc-q-opt' + (id === curQ ? ' gk-on' : ''), type: 'button', role: 'radio', 'aria-checked': String(id === curQ), 'data-q': id }, [
+      el('span', { class: 'gkc-q-name' }, name), el('span', { class: 'gkc-q-spec' }, spec), el('span', { class: 'gkc-q-use' }, use),
+    ]);
+    btn.addEventListener('click', () => {
+      setMediaPrefs({ screenQuality: id });
+      grid.querySelectorAll('.gkc-q-opt').forEach((o) => { const on = o === btn; o.classList.toggle('gk-on', on); o.setAttribute('aria-checked', String(on)); });
+      if (isScreenSharing()) toast('Vale a partir da próxima transmissão.');
+    });
+    grid.appendChild(btn);
+  }
   panel.replaceChildren(
-    el('h4', {}, 'Ajustes da chamada'),
-    select('Cancelamento de ruído do microfone', noiseVal, [['browser', 'Do navegador'], ['ai', 'IA (RNNoise)'], ['ai-strong', 'IA — forte'], ['off', 'Desligado']],
-      (v) => setMediaPrefs(v === 'ai' ? { noiseMode: 'ai', aiStrength: 'standard' } : v === 'ai-strong' ? { noiseMode: 'ai', aiStrength: 'strong' } : { noiseMode: v })),
-    select('Efeito da câmera', VIDEO_EFFECTS.some((f) => f.id === prefs.videoFx) ? prefs.videoFx : 'none',
-      VIDEO_EFFECTS.map((f) => [f.id, f.label]), (v) => setMediaPrefs({ videoFx: v })),
-    select('Qualidade da transmissão de tela (próxima transmissão)', prefs.screenQuality in SCREEN_QUALITIES ? prefs.screenQuality : 'fluid',
-      Object.entries(SCREEN_QUALITIES).map(([id, q]) => [id, q.label]), (v) => { setMediaPrefs({ screenQuality: v }); if (isScreenSharing()) toast('Vale a partir da próxima transmissão.'); }),
+    el('div', { class: 'gkc-set-head' }, [icon('sliders', { size: 16 }), el('h4', {}, 'Ajustes da chamada')]),
+    section('screenShare', 'Transmissão de tela', grid, el('p', { class: 'gkc-set-note' }, 'Vale a partir da próxima transmissão.')),
+    section('mic', 'Microfone',
+      select('Cancelamento de ruído', noiseVal, [['browser', 'Do navegador'], ['ai', 'IA (RNNoise)'], ['ai-strong', 'IA — forte'], ['off', 'Desligado']],
+        (v) => setMediaPrefs(v === 'ai' ? { noiseMode: 'ai', aiStrength: 'standard' } : v === 'ai-strong' ? { noiseMode: 'ai', aiStrength: 'strong' } : { noiseMode: v })),
+      select('Efeito de voz', VOICE_EFFECTS.some((f) => f.id === prefs.voiceEffect) ? prefs.voiceEffect : 'none',
+        VOICE_EFFECTS.map((f) => [f.id, f.label]), (v) => setMediaPrefs({ voiceEffect: v })),
+      el('p', { class: 'gkc-set-note' }, 'Com um efeito ligado, a IA de ruído fica pausada.')),
+    section('camera', 'Câmera',
+      select('Efeito', VIDEO_EFFECTS.some((f) => f.id === prefs.videoFx) ? prefs.videoFx : 'none',
+        VIDEO_EFFECTS.map((f) => [f.id, f.label]), (v) => setMediaPrefs({ videoFx: v }))),
   );
   if (!videoFxSupported()) panel.querySelectorAll('select')[1].disabled = true;
 }

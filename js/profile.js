@@ -4,10 +4,12 @@
 import { userDoc, socialLinksCol, getDoc, getDocs } from './db.js';
 import { state, el, toast, fallbackAvatar, effectiveStatus, currentActivity, activeCustomStatus, profileCosmetics, hexToRgba } from './state.js';
 import { openOrCreateDm } from './dms.js';
+import { BADGE_CATALOG, buildBadgeRow } from './badges.js';
 import { startDmCall } from './calls.js';
 import { uploadToCloudinary } from './cloudinary.js';
 import { openSettingsModal } from './settings.js';
 import { icon } from './icons.js';
+import { buildNoteBox } from './notes.js';
 import { isBlocked, toggleBlock } from './blocks.js';
 import { openReportModal } from './reports.js';
 import { confirmDangerAction } from './dialogs.js';
@@ -18,15 +20,8 @@ export const SOCIAL_ICONS = {
   twitch: 'twitch', discord: 'discord', tiktok: 'tiktok', linkedin: 'link', website: 'link',
 };
 
-// Catálogo de insígnias — customBadges guarda só os ids (ex: ['og','beta']),
-// atribuídos manualmente pelo console do Firebase (ver firestore.rules:
-// nenhum desses campos é editável pelo próprio usuário).
-export const BADGE_CATALOG = {
-  og: { icon: 'trophy', label: 'Veterano' },
-  booster: { icon: 'bolt', label: 'Booster' },
-  beta: { icon: 'flask', label: 'Beta Tester' },
-  founder: { icon: 'crown', label: 'Fundador' },
-};
+// Catálogo e cálculo das insígnias: ver js/badges.js
+export { BADGE_CATALOG };
 
 function primeDurationLabel(ts) {
   if (!ts || !ts.toDate) return 'Assinante Prime.';
@@ -151,17 +146,10 @@ export async function openProfileCard(uid) {
   if (user.tag) metaChips.push(el('span', { class: 'gk-author-tag' }, user.tag));
   if (metaChips.length) body.appendChild(el('div', { class: 'gk-profile-meta-row' }, metaChips));
 
-  if (user.customBadges && user.customBadges.length) {
-    const badgesRow = el('div', { class: 'gk-profile-badges-row' });
-    for (const key of user.customBadges) {
-      const b = BADGE_CATALOG[key];
-      if (!b) continue;
-      badgesRow.appendChild(el('span', { class: 'gk-profile-badge-chip', title: b.label }, [icon(b.icon, { size: 13 }), ` ${b.label}`]));
-    }
-    if (badgesRow.children.length) body.appendChild(badgesRow);
-  }
+  { const badges = buildBadgeRow(user, icon, el); if (badges) body.appendChild(badges); }
 
   if (user.bio) body.appendChild(el('div', { class: 'gk-profile-bio' }, user.bio));
+  { const nb = buildNoteBox(uid); if (nb) body.appendChild(nb); }
 
   if (links.length && !(privacy.hideLinks && uid !== state.user.uid)) {
     const linksBox = el('div', { class: 'gk-profile-links' });

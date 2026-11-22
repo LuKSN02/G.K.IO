@@ -13,7 +13,7 @@
 // ============================================================
 import { state, effectiveStatus } from './state.js';
 import { icon } from './icons.js';
-import { selectServer, getCategoriesAndChannels, canSendInChannel } from './servers.js';
+import { selectServer, getCategoriesAndChannels, canSendInChannel, canManageChannels } from './servers.js';
 import { selectChannel, selectDm, getLoadedMessages, jumpToMessage } from './chat.js';
 import { filterMessages } from './search-core.js';
 import { messagePreview } from './message-utils.js';
@@ -29,7 +29,7 @@ function matches(term, ...fields) {
   return fields.some((f) => f && norm(f).includes(term));
 }
 
-function buildResults(rawTerm) {
+export function buildResults(rawTerm) {
   const term = norm(rawTerm.trim());
   if (!term) return null;
 
@@ -64,7 +64,7 @@ function buildResults(rawTerm) {
   if (state.currentServerId) {
     const { channels } = getCategoriesAndChannels();
     const chMatches = (channels || [])
-      .filter((c) => matches(term, c.name))
+      .filter((c) => matches(term, c.name) && !(c.nsfw && !state.user?.adultConfirmedAt && !canManageChannels(state.currentServerId)))
       .slice(0, MAX_PER_GROUP)
       .map((c) => ({
         kind: 'channel',
@@ -183,7 +183,7 @@ function renderResults(groups, rawTerm) {
   box.classList.add('gk-open');
 }
 
-function goToResult(item) {
+export function goToResult(item) {
   if (item.kind === 'message') {
     jumpToMessage(item.id);
   } else if (item.kind === 'server') {

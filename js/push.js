@@ -22,6 +22,7 @@ import { toast } from './state.js';
 import { isNativeAndroid } from './native-bridge.js';
 import { pushConfig } from './push-config.js';
 import { levelFromPrefs, shouldAlert } from './notify-prefs.js';
+import { inQuiet } from './quiet-hours.js';
 
 let onNotificationTap = null; // callback registrado por app.js (navega pra DM/canal certo)
 
@@ -147,22 +148,29 @@ async function sendPushToUid(uid, { title, body, data, filter }) {
   try {
     const snap = await getDoc(userDoc(uid));
     const userData = snap.exists() ? snap.data() : null;
-    const fcmToken = userData ? userData.fcmToken : null;
+    if (!userData) return;
     if ((userData.blockedUids || []).includes(auth.currentUser.uid)) return; // quem recebe me bloqueou: sem push
-    if (!fcmToken) return; // pessoa nunca abriu o APK (ou push ainda não registrou) — nada a fazer
+    // Android (fcmToken) + navegadores (webTokens): a pessoa pode ter os dois.
+    const targets = [];
+    if (userData.fcmToken) targets.push({ token: userData.fcmToken, platform: 'android' });
+    for (const t of (Array.isArray(userData.webTokens) ? userData.webTokens : [])) targets.push({ token: t, platform: 'web' });
+    if (!targets.length) return; // nenhum aparelho registrado — nada a fazer
+    if (userData.quietHours && inQuiet(userData.quietHours, userData.quietHours.off)) return; // não perturbe (horário de quem recebe)
     // Quem recebe pode ter silenciado essa conversa (ou pedido só @menções).
     if (filter && !shouldAlert(levelFromPrefs(userData.notifPrefs, filter.ctx), filter.mentioned)) return;
 
     const idToken = await getIdToken(auth.currentUser);
-    const res = await fetch(pushConfig.tokenEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-      body: JSON.stringify({ token: fcmToken, title, body, data }),
-    });
-    if (!res.ok) {
-      const resBody = await res.text().catch(() => '(sem corpo)');
-      console.warn(`[push] Worker respondeu ${res.status}:`, resBody);
-    }
+    await Promise.all(targets.map(async ({ token, platform }) => {
+      const res = await fetch(pushConfig.tokenEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ token, platform, title, body, data }),
+      });
+      if (!res.ok) {
+        const resBody = await res.text().catch(() => '(sem corpo)');
+        console.warn(`[push] Worker respondeu ${res.status}:`, resBody);
+      }
+    }));
   } catch (e) {
     console.warn('[push] Erro no fetch pro Worker:', e.message);
   }

@@ -8,7 +8,7 @@
 // que decide quando chamar showStartupSplash().
 // ============================================================
 
-const SPLASH_VISIBLE_MS = 1400; // tempo mínimo visível antes de poder sumir
+const SPLASH_VISIBLE_MS = 1900; // tempo mínimo visível antes de poder sumir
 const SPLASH_FADE_MS = 480;     // duração do fade-out (bate com o CSS)
 
 export function showStartupSplash() {

@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { resolvedMode, setThemeMode } from './theme.js';
 import { openAddFriendModal, goToDmsView, openDmById, acceptFriendRequest, declineFriendRequest } from './dms.js';
 import { selectServer } from './servers.js';
+import { isConversationUnread, onReadStatesChange } from './unread.js';
 
 export function wireGlobalTopbar() {
   document.getElementById('gk-topbar-theme-btn').addEventListener('click', () => {
@@ -65,6 +66,8 @@ function statusLabelShort(s) {
 
 // ---------- Sino de notificações (pedidos de amizade pendentes) ----------
 function wireNotifBell() {
+  onReadStatesChange(() => refreshNotifDot());
+  setInterval(() => refreshNotifDot(), 5000);
   const btn = document.getElementById('gk-notif-btn');
   const panel = document.getElementById('gk-notif-panel');
   btn.addEventListener('click', (e) => {
@@ -85,33 +88,55 @@ function wireNotifBell() {
 export function refreshNotifDot() {
   const dot = document.getElementById('gk-notif-dot');
   if (!dot) return;
-  const count = (state.incomingFriendRequests || []).length;
+  const count = (state.incomingFriendRequests || []).length + unreadDms().length;
   dot.style.display = count > 0 ? 'block' : 'none';
   const panel = document.getElementById('gk-notif-panel');
   if (panel && panel.classList.contains('gk-open')) renderNotifPanel();
+}
+
+function unreadDms() {
+  return [...state.dms.values()]
+    .filter((dm) => dm.other && dm.id !== state.currentDmId && isConversationUnread(dm.id, dm.lastMessageAt, dm.lastMessageAuthorId))
+    .sort((a, b) => (b.lastMessageAt?.toMillis?.() || 0) - (a.lastMessageAt?.toMillis?.() || 0))
+    .slice(0, 8);
 }
 
 function renderNotifPanel() {
   const panel = document.getElementById('gk-notif-panel');
   panel.innerHTML = '';
   const requests = state.incomingFriendRequests || [];
-  if (!requests.length) {
+  const unread = unreadDms();
+  if (!requests.length && !unread.length) {
     panel.appendChild(el('div', { class: 'gk-notif-row-sub', style: 'padding:16px 8px; text-align:center;' }, 'Nenhuma notificação nova.'));
     return;
   }
-  panel.appendChild(el('div', { class: 'gk-notif-panel-title' }, 'Pedidos de amizade'));
-  for (const req of requests) {
-    panel.appendChild(el('div', { class: 'gk-notif-row' }, [
-      el('div', { class: 'gk-avatar gk-sz-32' }, [el('img', { src: req.avatarUrl || fallbackAvatar(req.displayName || req.username) })]),
-      el('div', {}, [
-        el('div', { class: 'gk-notif-row-name' }, req.displayName || req.username),
-        el('div', { class: 'gk-notif-row-sub' }, 'Quer ser seu amigo'),
-      ]),
-      el('div', { class: 'gk-notif-row-actions' }, [
-        el('button', { class: 'gk-friend-action-btn gk-friend-action-accept', title: 'Aceitar', onclick: () => { acceptFriendRequest(req.friendshipId); renderNotifPanel(); } }, [icon('check', { size: 14 })]),
-        el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', onclick: () => { declineFriendRequest(req.friendshipId); renderNotifPanel(); } }, [icon('close', { size: 14 })]),
-      ]),
-    ]));
+  if (unread.length) {
+    panel.appendChild(el('div', { class: 'gk-notif-panel-title' }, 'Mensagens não lidas'));
+    for (const dm of unread) {
+      panel.appendChild(el('div', { class: 'gk-notif-row', style: 'cursor:pointer;', onclick: () => { panel.classList.remove('gk-open'); goToDmsView(); openDmById(dm.id); } }, [
+        el('div', { class: 'gk-avatar gk-sz-32' }, [el('img', { src: dm.other.avatarUrl || fallbackAvatar(dm.other.displayName || dm.other.username) })]),
+        el('div', { style: 'min-width:0;' }, [
+          el('div', { class: 'gk-notif-row-name' }, dm.other.displayName || dm.other.username),
+          el('div', { class: 'gk-notif-row-sub', style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;' }, dm.lastMessagePreview || 'Nova mensagem'),
+        ]),
+      ]));
+    }
+  }
+  if (requests.length) {
+    panel.appendChild(el('div', { class: 'gk-notif-panel-title' }, 'Pedidos de amizade'));
+    for (const req of requests) {
+      panel.appendChild(el('div', { class: 'gk-notif-row' }, [
+        el('div', { class: 'gk-avatar gk-sz-32' }, [el('img', { src: req.avatarUrl || fallbackAvatar(req.displayName || req.username) })]),
+        el('div', {}, [
+          el('div', { class: 'gk-notif-row-name' }, req.displayName || req.username),
+          el('div', { class: 'gk-notif-row-sub' }, 'Quer ser seu amigo'),
+        ]),
+        el('div', { class: 'gk-notif-row-actions' }, [
+          el('button', { class: 'gk-friend-action-btn gk-friend-action-accept', title: 'Aceitar', onclick: () => { acceptFriendRequest(req.friendshipId); renderNotifPanel(); } }, [icon('check', { size: 14 })]),
+          el('button', { class: 'gk-friend-action-btn gk-friend-action-decline', title: 'Recusar', onclick: () => { declineFriendRequest(req.friendshipId); renderNotifPanel(); } }, [icon('close', { size: 14 })]),
+        ]),
+      ]));
+    }
   }
 }
 

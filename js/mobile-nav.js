@@ -55,7 +55,14 @@ export function updateMobileNav() {
   root.dataset.mview = state.currentView || '';
 }
 
+/** Abre a tela de Amigos (página) a partir da lista de Mensagens. */
+export function openFriendsPage() { forcedMain = true; updateMobileNav(); }
+
 function goBackToList() {
+  if (mode === 'page') { // Início, Comunidades, Arquivos, Amigos: volta para a lista de Mensagens
+    if (forcedMain) { forcedMain = false; updateMobileNav(); } else document.getElementById('gk-dm-rail-item')?.click();
+    return;
+  }
   if (history.state && history.state.gk === 'chat') { history.back(); return; } // dispara popstate
   forceList = true; updateMobileNav();
 }
@@ -67,14 +74,15 @@ export function initMobileNav() {
     const back = el('button', { id: 'gk-mobile-back-btn', class: 'gk-icon-btn gk-mobile-back-btn', type: 'button', title: 'Voltar', 'aria-label': 'Voltar para a lista', onclick: goBackToList }, [icon('chevronLeft', { size: 22 })]);
     topbar.insertBefore(back, topbar.firstChild);
   }
-  // Atalho para Amigos no cabeçalho da lista de Mensagens
+  // Botão "Convidar pessoas" no cabeçalho da lista de canais: só aparece dentro de um
+  // servidor (ver .gk-on-server em nova.js/nova.css) e abre o card de convite por DM.
   const headerBtns = document.querySelector('.gk-sidebar-header > div');
-  if (headerBtns && !document.getElementById('gk-mobile-friends-btn')) {
-    const btn = el('button', { id: 'gk-mobile-friends-btn', class: 'gk-mobile-friends-btn', type: 'button', title: 'Amigos', 'aria-label': 'Amigos' }, [icon('members', { size: 18 })]);
-    btn.addEventListener('click', async () => {
-      const { goToDmsView } = await import('./dms.js');
-      goToDmsView();            // limpa a conversa e mostra a tela de Amigos
-      forcedMain = true; sig = signature(); updateMobileNav();
+  if (headerBtns && !document.getElementById('gk-invite-btn')) {
+    const btn = el('button', { id: 'gk-invite-btn', class: 'gk-invite-btn', type: 'button', title: 'Convidar pessoas', 'aria-label': 'Convidar pessoas' }, [icon('personPlus', { size: 18 })]);
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const { openInviteFriendsModal } = await import('./server-invite.js');
+      openInviteFriendsModal(state.currentServerId);
     });
     headerBtns.insertBefore(btn, headerBtns.firstChild);
   }

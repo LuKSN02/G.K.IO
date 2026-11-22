@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cache-clear"
+description = "Enables the cache_clear command without any pre-configured scope."
+commands.allow = ["cache_clear"]
+
+[[permission]]
+identifier = "deny-cache-clear"
+description = "Denies the cache_clear command without any pre-configured scope."
+commands.deny = ["cache_clear"]

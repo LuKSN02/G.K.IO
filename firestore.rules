@@ -44,7 +44,8 @@ service cloud.firestore {
       return resource.data.authorId == request.auth.uid
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'editedAt']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'editedAt', 'editHistory'])
+        && (!('editHistory' in request.resource.data) || (request.resource.data.editHistory is list && request.resource.data.editHistory.size() <= 5));
     }
     // Reações: diferente da edição, QUALQUER pessoa que enxerga a conversa
     // pode mexer — só no campo 'reactions', sem tocar em mais nada da
@@ -63,6 +64,14 @@ service cloud.firestore {
     function isValidVoteUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
         && !resource.data.get('pollClosed', false)
+        && (!('poll' in resource.data) || !('closesAt' in resource.data.poll) || request.time.toMillis() < resource.data.poll.closesAt)
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+    // Lista de tarefas (checklist): qualquer pessoa da conversa marca/desmarca — só o campo 'checks'.
+    function isValidCheckUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checks'])
+        && 'checklist' in resource.data
         && request.resource.data.authorId == resource.data.authorId
         && request.resource.data.createdAt == resource.data.createdAt;
     }
@@ -107,9 +116,23 @@ service cloud.firestore {
       return !('role' in resource.data) // primeira escrita (criação do doc) passa livre
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','wallpaper','wallpaperUrl','activity','notifPrefs','pronouns','customStatus','avatarHistory','privacy','profileTheme','profileEffect','nameplate','blockedUids','email'])
+            .hasOnly(['displayName','avatarUrl','bannerUrl','bannerType','bio','statusPresence','lastActiveAt','tag','frameStyle','username','fcmToken','webTokens','quietHours','wallpaper','wallpaperUrl','activity','notifPrefs','pronouns','customStatus','avatarHistory','adultConfirmedAt','birthDate','privacy','profileTheme','profileEffect','nameplate','blockedUids','email','botCommands','serverTag'])
+          && (!('serverTag' in request.resource.data) || request.resource.data.serverTag == null
+              || (request.resource.data.serverTag is map && request.resource.data.serverTag.keys().hasOnly(['sid'])))
           // Personalização de perfil (tema/efeito/placa são cosméticos Prime — a checagem de Prime é no app;
           // aqui só validamos formato e tamanho)
+          // Data de nascimento: grava uma única vez (timestamp, 13+ anos). Não dá para trocar depois.
+          && (!('birthDate' in request.resource.data.diff(resource.data).affectedKeys())
+              || ((!('birthDate' in resource.data) || resource.data.birthDate == null)
+                  && request.resource.data.birthDate is timestamp
+                  && request.resource.data.birthDate > timestamp.date(1900, 1, 1)
+                  && request.resource.data.birthDate <= timestamp.date(request.time.year() - 13, request.time.month(), request.time.day())))
+          // Confirmação de 18+: só com data de nascimento que comprove 18 anos completos (ou null para retirar)
+          && (!('adultConfirmedAt' in request.resource.data.diff(resource.data).affectedKeys())
+              || request.resource.data.adultConfirmedAt == null
+              || (request.resource.data.adultConfirmedAt == request.time
+                  && request.resource.data.get('birthDate', null) != null
+                  && request.resource.data.birthDate <= timestamp.date(request.time.year() - 18, request.time.month(), request.time.day())))
           && (!('pronouns' in request.resource.data) || (request.resource.data.pronouns is string && request.resource.data.pronouns.size() <= 32))
           && (!('customStatus' in request.resource.data) || request.resource.data.customStatus == null
               || (request.resource.data.customStatus is map
@@ -117,6 +140,8 @@ service cloud.firestore {
                   && request.resource.data.customStatus.emoji is string && request.resource.data.customStatus.emoji.size() <= 16))
           && (!('avatarHistory' in request.resource.data) || (request.resource.data.avatarHistory is list && request.resource.data.avatarHistory.size() <= 8))
           && (!('privacy' in request.resource.data) || request.resource.data.privacy is map)
+          && (!('quietHours' in request.resource.data) || (request.resource.data.quietHours is map && request.resource.data.quietHours.keys().hasOnly(['on','from','to','off'])))
+          && (!('webTokens' in request.resource.data) || (request.resource.data.webTokens is list && request.resource.data.webTokens.size() <= 8))
           // blockedUids = lista de uids que a pessoa bloqueou (máx. 200); email espelha o e-mail do Auth
           && (!('blockedUids' in request.resource.data) || (request.resource.data.blockedUids is list && request.resource.data.blockedUids.size() <= 200))
           && (!('email' in request.resource.data) || (request.resource.data.email is string && request.resource.data.email.size() <= 254))
@@ -159,6 +184,32 @@ service cloud.firestore {
       allow update: if (isSelf(uid) && isValidSelfProfileEdit()) || isValidAdminBadgeEdit();
       // Excluir a própria conta (Configurações > Conta)
       allow delete: if isSelf(uid);
+
+      // Mensagens salvas — só o próprio usuário.
+      match /saved/{msgId} {
+        allow read, write: if signedIn() && isSelf(uid)
+          && (request.method == 'delete' || (request.resource.data.content is string && request.resource.data.content.size() <= 1000));
+      }
+
+      // Aparelhos conectados (sessões) — só o próprio usuário.
+      match /sessions/{sessionId} {
+        allow read, write: if signedIn() && isSelf(uid);
+      }
+
+      // Notas privadas sobre outras pessoas — só o dono da nota lê e escreve.
+      // Preferências suas (ex.: pastas de servidores) — só você lê e escreve.
+      match /prefs/{prefId} {
+        allow read: if signedIn() && isSelf(uid);
+        allow write: if signedIn() && isSelf(uid)
+          && (request.method == 'delete' || (prefId == 'serverFolders'
+            && request.resource.data.keys().hasOnly(['folders', 'updatedAt'])
+            && request.resource.data.folders is list && request.resource.data.folders.size() <= 30));
+      }
+
+      match /privateNotes/{targetUid} {
+        allow read, write: if signedIn() && isSelf(uid)
+          && (request.method == 'delete' || (request.resource.data.text is string && request.resource.data.text.size() <= 500));
+      }
 
       match /socialLinks/{linkId} {
         allow read: if signedIn();
@@ -244,7 +295,7 @@ service cloud.firestore {
         allow update: if signedIn()
           && (isValidMessageEdit() || isValidPollClose()
               || (request.auth.uid in get(/databases/$(database)/documents/directMessages/$(dmId)).data.participantIds
-                  && (isValidReactionUpdate() || isValidVoteUpdate() || isValidPinUpdate() || isValidThreadCounterUpdate())));
+                  && (isValidReactionUpdate() || isValidVoteUpdate() || isValidCheckUpdate() || isValidPinUpdate() || isValidThreadCounterUpdate())));
         // Numa DM não existe moderação: só o próprio autor apaga o que escreveu.
         allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
 
@@ -280,10 +331,31 @@ service cloud.firestore {
     // a permissão granular 'manageServer' (cargo personalizado).
     function isValidServerInfoEdit(serverId) {
       return (isServerAdminOrOwner(serverId) || hasPermission(serverId, 'manageServer'))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId','visibility','rules'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','description','iconUrl','bannerUrl','welcome','autoRoleId','visibility','rules','nsfw','automod','antiRaid','joinLockUntil','verification','bannerColor','profileTraits','profileGames','serverTag'])
+        // perfil do servidor: faixa em cor, até 5 características, até 10 jogos; tag = { text, icon, color } ou null
+        && (!('bannerColor' in request.resource.data) || (request.resource.data.bannerColor is string && request.resource.data.bannerColor.size() <= 12))
+        && (!('profileTraits' in request.resource.data) || (request.resource.data.profileTraits is list && request.resource.data.profileTraits.size() <= 5))
+        && (!('profileGames' in request.resource.data) || (request.resource.data.profileGames is list && request.resource.data.profileGames.size() <= 10))
+        && (!('serverTag' in request.resource.data) || request.resource.data.serverTag == null
+            || (request.resource.data.serverTag is map && request.resource.data.serverTag.get('text', '') is string && request.resource.data.serverTag.get('text', '').size() <= 4))
         // visibility ('public' | 'private'): só o dono muda
         && (!('visibility' in request.resource.data.diff(resource.data).affectedKeys())
             || (isServerOwner(serverId) && request.resource.data.visibility in ['public', 'private']))
+        // nsfw (servidor inteiro +18): só o dono muda
+        && (!('nsfw' in request.resource.data.diff(resource.data).affectedKeys())
+            || (isServerOwner(serverId) && request.resource.data.nsfw is bool))
+        // automod = { enabled, words[], blockLinks, spamMax, spamSeconds, maxMentions } — moderação automática
+        && (!('automod' in request.resource.data) || (request.resource.data.automod is map
+            && request.resource.data.automod.get('words', []).size() <= 100))
+        // antiRaid = { enabled, joins, minutes, lockMinutes } · joinLockUntil = ms até quando as entradas ficam trancadas
+        && (!('antiRaid' in request.resource.data) || (request.resource.data.antiRaid is map
+            && request.resource.data.antiRaid.get('joins', 8) is int && request.resource.data.antiRaid.get('minutes', 2) is int
+            && request.resource.data.antiRaid.get('lockMinutes', 15) is int && request.resource.data.antiRaid.get('lockMinutes', 15) <= 1440))
+        && (!('joinLockUntil' in request.resource.data) || request.resource.data.joinLockUntil is int)
+        // verification = { enabled, question, hash (SHA-256 da resposta), version }
+        && (!('verification' in request.resource.data) || (request.resource.data.verification is map
+            && request.resource.data.verification.get('question', '') is string && request.resource.data.verification.get('question', '').size() <= 120
+            && request.resource.data.verification.get('hash', '') is string && request.resource.data.verification.get('hash', '').size() <= 64))
         // welcome = { enabled, channelId, message } · autoRoleId = cargo dado a quem entra (ou null)
         && (!('welcome' in request.resource.data) || request.resource.data.welcome is map)
         // rules = { enabled, text (até 2000), version } — tela de regras com aceite
@@ -312,6 +384,7 @@ service cloud.firestore {
     function isSelfJoiningOnly(serverId) {
       return !(request.auth.uid in resource.data.memberIds)
         && !isBanned(serverId, request.auth.uid)
+        && resource.data.get('joinLockUntil', 0) < request.time.toMillis() // anti-raid: entradas trancadas
         && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
         && (resource.data.get('visibility', 'private') != 'private' || isJoiningWithNewMemberDoc(serverId));
     }
@@ -362,9 +435,21 @@ service cloud.firestore {
       let autoRole = get(/databases/$(database)/documents/servers/$(serverId)).data.get('autoRoleId', null);
       return autoRole != null && request.resource.data.get('roleIds', []) == [autoRole];
     }
-    function isValidSelfMemberEdit() {
-      // nickname, e o aceite das regras (rulesVersion só pode ser um inteiro; rulesAcceptedAt é a hora do servidor)
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'rulesAcceptedAt', 'rulesVersion'])
+    // Cargos por reação: a pessoa só pode adicionar/remover cargos que o dono listou em
+    // servers/{id}/reactionRoles/_allowed (o app só lista cargos sem permissões).
+    function reactionRoleChangeOk(serverId) {
+      let before = resource.data.get('roleIds', []).toSet();
+      let after = request.resource.data.get('roleIds', []).toSet();
+      let allowedPath = /databases/$(database)/documents/servers/$(serverId)/reactionRoles/_allowed;
+      return exists(allowedPath)
+        && after.difference(before).hasOnly(get(allowedPath).data.get('roleIds', []))
+        && before.difference(after).hasOnly(get(allowedPath).data.get('roleIds', []));
+    }
+    function isValidSelfMemberEdit(serverId) {
+      // nickname, o aceite das regras (rulesVersion só pode ser um inteiro; rulesAcceptedAt é a hora do servidor) e cargos por reação
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'rulesAcceptedAt', 'rulesVersion', 'roleIds', 'verifiedAt', 'verifiedVersion'])
+        && (!('verifiedAt' in request.resource.data.diff(resource.data).affectedKeys()) || (request.resource.data.verifiedAt == request.time && request.resource.data.verifiedVersion is int))
+        && (!('roleIds' in request.resource.data.diff(resource.data).affectedKeys()) || reactionRoleChangeOk(serverId))
         && (!('rulesVersion' in request.resource.data) || request.resource.data.rulesVersion is int)
         && (!('rulesAcceptedAt' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.rulesAcceptedAt == request.time);
     }
@@ -403,6 +488,12 @@ service cloud.firestore {
     // cargo listado em viewRoleIds (cópia, gravada pelo app, dos cargos com "Ver canal: permitir").
     // O doc do canal em si continua legível por todo membro (a lista de canais precisa dele);
     // o que fica protegido é o CONTEÚDO: mensagens, "digitando", presença e sinalização de voz.
+    // Canal NSFW (+18): só lê quem confirmou ter 18 anos (users/{uid}.adultConfirmedAt).
+    function nsfwOk(serverId, channelId) {
+      return !get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('nsfw', false)
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adultConfirmedAt', null) != null;
+    }
+
     function canAccessChannel(serverId, channelId) {
       let ch = get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data;
       return !ch.get('private', false)
@@ -478,14 +569,14 @@ service cloud.firestore {
           && request.resource.data.get('lastMentionedUids', []) is list;
 
         match /messages/{msgId} {
-          allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
+          allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId) && nsfwOk(serverId, channelId);
           allow create: if signedIn() && isServerMember(serverId) && request.resource.data.authorId == request.auth.uid
             && canAccessChannel(serverId, channelId)
             && canPostInChannel(serverId, channelId) && rulesOk(serverId)
             && !isTimedOut(serverId)
             && slowmodeOk(serverId, channelId);
           allow update: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
-            && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidPollClose()
+            && (isValidMessageEdit() || isValidReactionUpdate() || isValidVoteUpdate() || isValidCheckUpdate() || isValidPollClose()
                 || (isValidThreadCounterUpdate() && !isTimedOut(serverId))
                 || (isValidPinUpdate() && canModerateMessages(serverId)));
           // O autor apaga a própria mensagem; quem tem "Gerenciar mensagens" (ou gerencia
@@ -496,7 +587,7 @@ service cloud.firestore {
           // Respostas do tópico: leem/escrevem quem enxerga o canal; castigo barra responder;
           // o autor apaga a própria resposta e quem modera apaga a de qualquer um.
           match /threadMessages/{replyId} {
-            allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId);
+            allow read: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId) && nsfwOk(serverId, channelId);
             allow create: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
               && !isTimedOut(serverId) && rulesOk(serverId) && isValidThreadReply();
             allow delete: if signedIn() && isServerMember(serverId) && canAccessChannel(serverId, channelId)
@@ -534,6 +625,12 @@ service cloud.firestore {
 
       // Eventos agendados: qualquer membro lê e marca "tenho interesse" (só o campo interestedUids);
       // criar/editar/apagar é de quem gerencia o servidor (o criador também apaga o seu).
+      // Cargos por reação (config por mensagem + lista _allowed). Só o dono grava.
+      match /reactionRoles/{id} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow write: if signedIn() && isServerOwner(serverId);
+      }
+
       match /events/{eventId} {
         allow read: if signedIn() && isServerMember(serverId);
         allow create: if signedIn() && isServerMember(serverId) && canManageServerInfoRule(serverId)
@@ -563,13 +660,23 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if signedIn() && isServerMember(serverId);
         allow create: if signedIn() && isSelf(uid) && isValidSelfMemberJoin(serverId);
-        allow update: if signedIn() && ((isSelf(uid) && isValidSelfMemberEdit()) || isServerOwner(serverId)
+        allow update: if signedIn() && ((isSelf(uid) && isValidSelfMemberEdit(serverId)) || isServerOwner(serverId)
                                         || (canKickMembers(serverId) && isValidTimeoutChange(serverId, uid)));
         allow delete: if signedIn() && (isSelf(uid) || isServerOwner(serverId) || canKickMembers(serverId));
       }
 
       // Banidos — só quem pode expulsar lê/cria/remove. Não dá para banir o dono, a si
       // mesmo nem (exceto o dono) um admin. A pessoa banida NÃO consegue ler esta lista.
+      // Atividade/nível: cada membro só mexe no PRÓPRIO placar, e só sobe até 25 XP por escrita.
+      match /xp/{uid} {
+        allow read: if signedIn() && isServerMember(serverId);
+        allow create: if signedIn() && isSelf(uid) && isServerMember(serverId)
+          && request.resource.data.xp is int && request.resource.data.xp >= 0 && request.resource.data.xp <= 25;
+        allow update: if signedIn() && isSelf(uid) && isServerMember(serverId)
+          && request.resource.data.xp is int
+          && request.resource.data.xp > resource.data.xp && request.resource.data.xp - resource.data.xp <= 25;
+      }
+
       match /bans/{uid} {
         allow read: if signedIn() && isServerMember(serverId) && canKickMembers(serverId);
         allow create: if signedIn() && isServerMember(serverId) && canKickMembers(serverId)

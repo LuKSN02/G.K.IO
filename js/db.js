@@ -12,9 +12,9 @@ import {
   updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
+  getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
   getDoc, getDocs, query, where, orderBy, limit, onSnapshot,
-  serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment,
+  serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment, deleteField,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 // Observação: o upload de mídia (avatar, banner, anexos) usa o Cloudinary
 // (ver js/cloudinary.js), não o Firebase Storage — o Storage exige o plano
@@ -23,7 +23,21 @@ import {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Cache offline (IndexedDB): o app abre sem internet mostrando o que já tinha carregado e envia o que
+// foi escrito quando a conexão volta. Se o navegador não suportar, cai para o modo normal.
+// Depois de sair da conta, o cache offline (mensagens da conta anterior) é apagado antes de abrir o Firestore.
+try {
+  if (localStorage.getItem('gkio-wipe-cache')) {
+    indexedDB.deleteDatabase(`firestore/[DEFAULT]/${firebaseConfig.projectId}/main`);
+    localStorage.removeItem('gkio-wipe-cache');
+  }
+} catch (e) { /* noop */ }
+function makeDb() {
+  try {
+    return initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
+  } catch (e) { return getFirestore(app); }
+}
+export const db = makeDb();
 
 export {
   onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -32,7 +46,7 @@ export {
   sendEmailVerification, reload, deleteUser,
   updatePassword, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider,
   collection, doc, setDoc, addDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment,
+  query, where, orderBy, limit, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, writeBatch, startAfter, runTransaction, increment, deleteField,
 };
 
 // ---------- Referências de coleção (schema do G.K.IO) ----------

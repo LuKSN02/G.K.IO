@@ -31,9 +31,24 @@ function check() {
   }
 }
 
+// App desktop: o sistema informa bloqueio/suspensão e quanto tempo o PC está parado.
+// Usar o PC em outra janela (jogo, navegador) conta como atividade; bloquear a tela vira "ausente" na hora.
+function hookSystemPower() {
+  const d = window.gkioDesktop;
+  if (!d || !d.onPower) return;
+  d.onPower((s) => {
+    if (!s) return;
+    if (s.locked === true) {
+      if (getIdlePrefs().enabled && state.user && !autoIdle && state.user.statusPresence === 'online' && !state.activeCall) { autoIdle = true; setPresence('idle'); }
+    } else if (s.locked === false) onActivity();
+    else if (typeof s.idleSeconds === 'number' && s.idleSeconds < 25) onActivity();
+  });
+}
+
 export function initIdleDetection() {
   if (started) return;
   started = true;
+  hookSystemPower();
   ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart'].forEach((ev) =>
     document.addEventListener(ev, onActivity, { passive: true, capture: true }));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) onActivity(); });

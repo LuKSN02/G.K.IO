@@ -63,7 +63,7 @@ export default {
 
     let body;
     try { body = await request.json(); } catch (e) { return json({ error: 'JSON inválido.' }, 400, corsHeaders); }
-    const { token, title, body: msgBody, data } = body || {};
+    const { token, title, body: msgBody, data, platform } = body || {};
     if (!token || typeof token !== 'string') return json({ error: '"token" (fcmToken do destinatário) é obrigatório.' }, 400, corsHeaders);
 
     try {
@@ -72,15 +72,26 @@ export default {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: {
-            token,
-            notification: { title: String(title || 'G.K.IO'), body: String(msgBody || '') },
-            // FCM só aceita strings nos valores de "data" — stringifica tudo.
-            data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
-            // channel_id: o mesmo canal de ALTA importância criado pelo app (js/push.js).
-            // Sem isso o Android usa o canal padrão do FCM e a notificação chega muda/escondida.
-            android: { priority: 'high', notification: { channel_id: 'gkio-messages', sound: 'default' } },
-          },
+          message: platform === 'web'
+            // Navegador: mensagem só de DADOS — o service worker (sw.js) monta e mostra a
+            // notificação (assim decide não duplicar quando o site está aberto).
+            ? {
+                token,
+                data: {
+                  title: String(title || 'G.K.IO'), body: String(msgBody || ''),
+                  ...Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
+                },
+                webpush: { headers: { Urgency: 'high', TTL: '86400' } },
+              }
+            : {
+                token,
+                notification: { title: String(title || 'G.K.IO'), body: String(msgBody || '') },
+                // FCM só aceita strings nos valores de "data" — stringifica tudo.
+                data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
+                // channel_id: o mesmo canal de ALTA importância criado pelo app (js/push.js).
+                // Sem isso o Android usa o canal padrão do FCM e a notificação chega muda/escondida.
+                android: { priority: 'high', notification: { channel_id: 'gkio-messages', sound: 'default' } },
+              },
         }),
       });
       if (!fcmRes.ok) {

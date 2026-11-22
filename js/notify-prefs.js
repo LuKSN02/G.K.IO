@@ -113,3 +113,31 @@ export function openNotifModal({ serverId, channelId, dmId, channelName }, onCha
   overlay.classList.add('gk-open');
   return ctx;
 }
+
+// ---------- Conversas fechadas (somem da lista até chegar mensagem nova) ----------
+// notifPrefs.closedDms = { [dmId]: momento (ms) em que a conversa foi fechada }
+const MAX_CLOSED = 100;
+const msOf = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : 0));
+export function isDmClosed(dm) {
+  const at = prefsOf().closedDms?.[dm.id];
+  if (!at) return false;
+  // mensagem nova depois do fechamento → a conversa volta sozinha
+  return msOf(dm.lastMessageAt) <= at;
+}
+async function writeClosed(mutate) {
+  const uid = auth.currentUser?.uid;
+  if (!uid || !state.user) return;
+  const next = JSON.parse(JSON.stringify(prefsOf()));
+  next.closedDms = next.closedDms || {};
+  mutate(next.closedDms);
+  const keys = Object.keys(next.closedDms);
+  if (keys.length > MAX_CLOSED) keys.sort((a, b) => next.closedDms[a] - next.closedDms[b]).slice(0, keys.length - MAX_CLOSED).forEach((k) => delete next.closedDms[k]);
+  if (!keys.length) delete next.closedDms;
+  const prev = state.user.notifPrefs;
+  state.user.notifPrefs = next;
+  emit();
+  try { await updateDoc(userDoc(uid), { notifPrefs: next }); }
+  catch (err) { state.user.notifPrefs = prev; emit(); toast('Não foi possível salvar.', 'danger'); }
+}
+export const closeDm = (dmId) => writeClosed((c) => { c[dmId] = Date.now() + 1000; });
+export const reopenDm = (dmId) => { if (prefsOf().closedDms?.[dmId]) return writeClosed((c) => { delete c[dmId]; }); };

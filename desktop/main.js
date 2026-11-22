@@ -4,7 +4,7 @@
 // bandeja, iniciar minimizado, iniciar com o sistema, instância única,
 // atalhos globais (mutar/ensurdecer/PTT) e janela que lembra posição.
 // ============================================================
-const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, desktopCapturer, Menu, net } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, shell, session, desktopCapturer, Menu, net, nativeImage, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -29,13 +29,15 @@ const { toAccelerator } = require('./lib/accelerator');
 const games = require('./lib/games');
 const blur = require('./lib/blur');
 const updater = require('./lib/updater');
+const overlay = require('./lib/overlay');
+const badge = require('./lib/badge');
 const { imgPath } = require('./lib/assets');
 
 let win = null;
 let quitting = false;
 let origin = null;
 let httpServer = null;
-const state = { unread: 0, muted: false, deafened: false, inCall: false };
+const state = { unread: 0, muted: false, deafened: false, inCall: false, away: false };
 let shortcutMap = {};
 
 // Windows só exibe notificações de um app cujo AppUserModelID bate com o do atalho
@@ -49,8 +51,24 @@ if (!config.get().hardwareAccel) app.disableHardwareAcceleration();
 process.on('uncaughtException', (e) => logger.log('uncaughtException', e));
 process.on('unhandledRejection', (e) => logger.log('unhandledRejection', e instanceof Error ? e : String(e)));
 
+// Links gkio://invite/<codigo>, gkio://server/<id>, gkio://dm/<id> (convites e atalhos abrem direto no app).
+const DEEP_RE = /^gkio:\/\/(invite|server|dm)\/[A-Za-z0-9_-]{3,64}\/?$/;
+const deepFrom = (argv) => (argv || []).find((a) => typeof a === 'string' && DEEP_RE.test(a)) || null;
+let pendingLink = deepFrom(process.argv);
+function handleDeepLink(url) {
+  if (!url || !DEEP_RE.test(url)) return;
+  pendingLink = url;
+  showWindow();
+  sendToWeb('gkio:deeplink', url);
+}
+try {
+  if (process.defaultApp && process.argv[1]) app.setAsDefaultProtocolClient('gkio', process.execPath, [path.resolve(process.argv[1])]);
+  else app.setAsDefaultProtocolClient('gkio');
+} catch (e) { /* noop */ }
+app.on('open-url', (e, url) => { e.preventDefault(); handleDeepLink(url); }); // macOS
+
 if (!app.requestSingleInstanceLock()) { app.quit(); } else {
-  app.on('second-instance', () => showWindow());
+  app.on('second-instance', (_e, argv) => { showWindow(); handleDeepLink(deepFrom(argv)); });
 }
 
 function webRoot() { return app.isPackaged ? path.join(process.resourcesPath, 'web') : path.join(__dirname, '..'); }
@@ -77,9 +95,18 @@ function applyTray() {
   if (cfg.trayEnabled) { if (!tray.exists()) tray.create(actions, state); else tray.update(actions, state); }
   else tray.destroy();
 }
+let lastUnread = 0;
 function applyBadge() {
   app.setBadgeCount(state.unread); // macOS/Linux (Unity)
-  if (process.platform === 'win32' && win) win.setTitle(state.unread > 0 ? `(${state.unread}) G.K.IO` : 'G.K.IO');
+  if (process.platform === 'win32' && win && !win.isDestroyed()) {
+    // O título da janela vem da própria página ("(3) G.K.IO | Amigos"); aqui só o selo no ícone da barra de tarefas.
+    const kind = badge.kindOf(state);
+    const label = kind === 'red' ? `${state.unread} com novidades` : kind === 'green' ? 'Em chamada' : kind === 'yellow' ? 'Ausente' : '';
+    try { win.setOverlayIcon(badge.overlayIcon(kind, state.unread), label); } catch (e) { /* noop */ }
+  }
+  // Pisca o botão na barra de tarefas quando chega algo novo com a janela sem foco.
+  if (win && !win.isDestroyed() && state.unread > lastUnread && !win.isFocused()) { try { win.flashFrame(true); } catch (e) { /* noop */ } }
+  lastUnread = state.unread;
 }
 function sendToWeb(channel, payload) { if (win && !win.isDestroyed()) win.webContents.send(channel, payload); }
 function streamerOn() {
@@ -103,8 +130,8 @@ async function clearCache() {
 }
 function applyGameScanner() {
   const cfg = config.get();
-  if (!cfg.gameActivity) { if (games.stop()) sendToWeb('gkio:game', null); return; }
-  games.start(() => config.get().customGames, (g) => sendToWeb('gkio:game', g));
+  if (!cfg.gameActivity) { if (games.stop()) sendToWeb('gkio:game', null); overlay.setGame(null); return; }
+  games.start(() => config.get().customGames, (g) => { sendToWeb('gkio:game', g); overlay.setGame(g); });
 }
 function applyLoginItem() {
   if (!app.isPackaged) return; // em dev, registrar o electron.exe cru no startup seria um erro
@@ -165,6 +192,35 @@ async function createWindow() {
     if (!quitting && c.trayEnabled && c.closeToTray) { e.preventDefault(); win.hide(); }
   });
   win.on('closed', () => { win = null; });
+  win.on('focus', () => { try { win.flashFrame(false); } catch (e) { /* noop */ } });
+
+  // Recuperação: se a página travar ou o renderizador morrer, recarrega sozinho (no máx. 3x em 2 min).
+  let recent = [];
+  const recover = (why) => {
+    const now = Date.now(); recent = recent.filter((t) => now - t < 120000);
+    logger.log('recover', why);
+    if (recent.length >= 3 || !win || win.isDestroyed()) return;
+    recent.push(now); setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.reloadIgnoringCache(); }, 800);
+  };
+  win.webContents.on('render-process-gone', (_e, d) => { if (d.reason !== 'clean-exit') recover('render-process-gone:' + d.reason); });
+  let hangTimer = null;
+  win.on('unresponsive', () => { logger.log('unresponsive'); clearTimeout(hangTimer); hangTimer = setTimeout(() => recover('unresponsive'), 15000); });
+  win.on('responsive', () => clearTimeout(hangTimer));
+
+  // Campo de texto: corretor ortográfico + recortar/copiar/colar (o Electron não traz menu por padrão).
+  win.webContents.on('context-menu', (_e, p) => {
+    if (!p.isEditable && !p.selectionText) return;
+    const items = [];
+    if (p.isEditable && p.misspelledWord) {
+      for (const s of (p.dictionarySuggestions || []).slice(0, 5)) items.push({ label: s, click: () => win.webContents.replaceMisspelling(s) });
+      if (!items.length) items.push({ label: 'Sem sugestões', enabled: false });
+      items.push({ label: 'Adicionar ao dicionário', click: () => win.webContents.session.addWordToSpellCheckerDictionary(p.misspelledWord) }, { type: 'separator' });
+    }
+    if (p.isEditable) items.push({ role: 'cut', label: 'Recortar', enabled: p.editFlags.canCut });
+    items.push({ role: 'copy', label: 'Copiar', enabled: p.editFlags.canCopy });
+    if (p.isEditable) items.push({ role: 'paste', label: 'Colar', enabled: p.editFlags.canPaste }, { type: 'separator' }, { role: 'selectAll', label: 'Selecionar tudo' });
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
 
   // Links externos abrem no navegador; navegação fica restrita à origem do app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -188,8 +244,20 @@ async function createWindow() {
 function setupPermissions() {
   const ses = session.defaultSession;
   const allowed = new Set(['media', 'notifications', 'display-capture', 'clipboard-sanitized-write', 'fullscreen', 'mediaKeySystem']);
-  ses.setPermissionRequestHandler((wc, perm, cb) => cb(allowed.has(perm)));
-  ses.setPermissionCheckHandler((wc, perm) => allowed.has(perm));
+  // Só a página do próprio app (origem local ou a remoteUrl configurada) recebe permissões.
+  const fromApp = (url) => { try { return !!origin && new URL(url).origin === new URL(origin).origin; } catch (e) { return false; } };
+  ses.setPermissionRequestHandler((wc, perm, cb, details) => cb(allowed.has(perm) && fromApp(details?.requestingUrl || wc?.getURL?.())));
+  ses.setPermissionCheckHandler((wc, perm, requestingOrigin) => allowed.has(perm) && fromApp(requestingOrigin || wc?.getURL?.()));
+  // CSP básica no app desktop: bloqueia plugins/<object>, troca de <base> e envio de formulários para fora.
+  // (Propositalmente sem restringir script-src: o site usa scripts inline e SDKs de CDN.)
+  ses.webRequest.onHeadersReceived((details, cb) => {
+    const h = { ...details.responseHeaders };
+    if (details.resourceType === 'mainFrame' && fromApp(details.url)) {
+      h['Content-Security-Policy'] = ["object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"];
+    }
+    cb({ responseHeaders: h });
+  });
+  if (process.platform !== 'darwin') { try { ses.setSpellCheckerLanguages(['pt-BR', 'en-US']); } catch (e) { logger.log('spellcheck', e); } }
 
   // getDisplayMedia() (compartilhar tela) não funciona no Electron sem isto:
   // mostramos um menu com as telas/janelas e devolvemos a escolhida.
@@ -209,10 +277,21 @@ function setupPermissions() {
   }, { useSystemPicker: true });
 }
 
+// Estado do sistema (bloqueio, suspensão, tempo parado) para o status "ausente" automático.
+function setupPower() {
+  const send = (p) => sendToWeb('gkio:power', p);
+  powerMonitor.on('lock-screen', () => send({ locked: true }));
+  powerMonitor.on('suspend', () => send({ locked: true }));
+  powerMonitor.on('unlock-screen', () => send({ locked: false, idleSeconds: 0 }));
+  powerMonitor.on('resume', () => send({ locked: false, idleSeconds: 0 }));
+  setInterval(() => { try { send({ idleSeconds: powerMonitor.getSystemIdleTime() }); } catch (e) { /* noop */ } }, 20000);
+}
+
 function setupIpc() {
   ipcMain.handle('cfg:get', () => { const { window: _w, ...rest } = config.get(); return { ...rest, packaged: app.isPackaged, version: app.getVersion(), blurOptions: blur.available(), builtinGames: games.builtinCount, profile: profileArg || '', streamerActive: streamerOn(), dataPath: app.getPath('userData') }; });
   ipcMain.handle('cfg:set', (_e, patch) => {
     const bools = ['startMaximized', 'hardwareAccel', 'autoClearCache', 'trayEnabled', 'closeToTray', 'startMinimized', 'openOnStartup', 'globalShortcuts', 'gameActivity', 'autoUpdate'];
+    if ('overlayMode' in (patch || {}) && ['game', 'always', 'off'].includes(patch.overlayMode)) clean.overlayMode = patch.overlayMode;
     const clean = {};
     for (const k of bools) if (k in (patch || {})) clean[k] = !!patch[k];
     if ('remoteUrl' in (patch || {})) clean.remoteUrl = String(patch.remoteUrl || '');
@@ -230,6 +309,7 @@ function setupIpc() {
     if ('gameActivity' in clean || 'customGames' in clean) applyGameScanner();
     if ('streamerMode' in clean) applyStreamer();
     if ('proxy' in clean) applyProxy();
+    if ('overlayMode' in clean) overlay.setMode(clean.overlayMode);
     let needsRestart = 'hardwareAccel' in clean;
     if ('blur' in clean && !blur.apply(win, clean.blur)) needsRestart = true;
     const { window: _w, ...rest } = config.get();
@@ -237,11 +317,17 @@ function setupIpc() {
   });
   ipcMain.on('tray:state', (_e, s) => {
     state.unread = Math.max(0, Number(s?.unread) || 0);
-    state.muted = !!s?.muted; state.deafened = !!s?.deafened; state.inCall = !!s?.inCall;
+    state.muted = !!s?.muted; state.deafened = !!s?.deafened; state.inCall = !!s?.inCall; state.away = !!s?.away;
     tray.update(actions, state); applyBadge();
   });
   ipcMain.handle('shortcuts:set', (_e, map) => { shortcutMap = map || {}; return applyShortcuts(); });
   ipcMain.on('window:show', showWindow);
+  // só aceita estes canais vindos da janela principal (não da própria sobreposição)
+  const fromMain = (e) => win && !win.isDestroyed() && e.sender === win.webContents;
+  ipcMain.on('overlay:state', (e, s) => { if (fromMain(e)) overlay.setState(s); });
+  ipcMain.on('overlay:toast', (e, t) => { if (fromMain(e)) overlay.toast(t); });
+  ipcMain.on('overlay:content', (e, v) => overlay.setHasContent(v));
+  ipcMain.handle('deeplink:take', () => { const l = pendingLink; pendingLink = null; return l; });
   ipcMain.handle('streamer:current', () => streamerOn());
   ipcMain.handle('cache:clear', async () => { await clearCache(); return true; });
   ipcMain.on('app:openData', () => shell.openPath(app.getPath('userData')));
@@ -284,6 +370,8 @@ app.whenReady().then(async () => {
   }
   setupPermissions(); setupIpc();
   await createWindow();
+  setupPower();
+  overlay.setMode(config.get().overlayMode);
   applyTray(); applyLoginItem(); applyGameScanner(); applyStreamer();
   if (updater.init((st) => sendToWeb('gkio:update', st)) && config.get().autoUpdate) {
     setTimeout(() => updater.check(), 8000);
@@ -293,5 +381,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => { games.stop(); streamer.stop(); globalShortcut.unregisterAll(); ptt.setBinding(null, () => {}); if (httpServer) httpServer.close(); });
+app.on('will-quit', () => { overlay.destroy(); games.stop(); streamer.stop(); globalShortcut.unregisterAll(); ptt.setBinding(null, () => {}); if (httpServer) httpServer.close(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin' && (quitting || !config.get().trayEnabled)) app.quit(); });

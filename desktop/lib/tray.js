@@ -2,6 +2,7 @@
 // (normal / não lidas / mutado / ensurdecido) e menu de contexto.
 const { Tray, Menu, nativeImage } = require('electron');
 const { imgPath } = require('./assets');
+const badge = require('./badge');
 
 let tray = null;
 let baseIcon = null;
@@ -26,7 +27,7 @@ function badged(color) {
   if (img.isEmpty()) return img;
   const { width: w, height: h } = img.getSize();
   const buf = Buffer.from(img.toBitmap()); // BGRA
-  const r = Math.round(w * 0.22), cx = w - r - 1, cy = r + 1;
+  const r = Math.round(w * 0.26), cx = w - r - 1, cy = r + 1;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const d = Math.hypot(x - cx, y - cy);
     if (d <= r + 1.5) {
@@ -40,8 +41,8 @@ function badged(color) {
   return out;
 }
 
-const COLORS = { unread: [239, 68, 68], muted: [245, 158, 11], deafened: [120, 120, 130] };
-const pickColor = (s) => (s.deafened ? COLORS.deafened : s.muted ? COLORS.muted : s.unread > 0 ? COLORS.unread : null);
+// vermelho = novidades, verde = em chamada, amarelo = ausente (mesma regra da barra de tarefas)
+const pickColor = (s) => { const k = badge.kindOf(s); return k ? badge.COLORS[k] : null; };
 
 function menu(actions, s) {
   return Menu.buildFromTemplate([
@@ -68,7 +69,7 @@ function create(actions, state) {
 function update(actions, state) {
   if (!tray) return;
   tray.setImage(badged(pickColor(state)));
-  tray.setToolTip(state.unread > 0 ? `G.K.IO — ${state.unread} não lida(s)` : 'G.K.IO');
+  tray.setToolTip(state.unread > 0 ? `G.K.IO — ${state.unread} com novidades` : state.inCall ? 'G.K.IO — em chamada' : state.away ? 'G.K.IO — ausente' : 'G.K.IO');
   tray.setContextMenu(menu(actions, state));
 }
 function destroy() { if (tray) { tray.destroy(); tray = null; } }

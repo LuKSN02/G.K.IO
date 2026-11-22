@@ -11,8 +11,13 @@ import {
 } from './db.js';
 import { state, el, toast, fallbackAvatar } from './state.js';
 import { icon } from './icons.js';
+import { buildSessionsCard } from './sessions.js';
+import { exportFriends } from './export-chat.js';
+import { buildQuickRepliesCard } from './quick-replies.js';
+import { isAdultConfirmed, setAdultConfirmed, showNsfwGate, isMinor } from './nsfw-gate.js';
 import { blockedList, unblockUser, onBlocksChange } from './blocks.js';
 import { clearPushToken } from './push.js';
+import { clearWebPushToken } from './web-push.js';
 import { listFactors, startEnrollment, finishEnrollment, removeFactor, mfaErrorMessage } from './mfa.js';
 import { stopBackgroundNotifications } from './background-notify.js';
 
@@ -110,6 +115,25 @@ export function renderAccountSection(content, { sectionHeader, toggleRow }) {
     el('div', { class: 'gk-field' }, [el('label', {}, 'Nome de usuário'), el('div', {}, '@' + (state.user?.username || ''))]),
   ]));
 
+  // ---------- Conteúdo adulto (+18) ----------
+  const adultBody = el('div', {});
+  const renderAdult = () => {
+    adultBody.innerHTML = '';
+    if (isAdultConfirmed()) {
+      adultBody.appendChild(el('div', { class: 'gk-hint', style: 'margin-bottom:10px;' }, 'Você confirmou ter 18 anos ou mais e pode abrir canais NSFW. Retire a confirmação para voltar a bloqueá-los neste login.'));
+      adultBody.appendChild(el('button', { type: 'button', class: 'gk-btn', onclick: async () => { if (await setAdultConfirmed(false)) { toast('Confirmação retirada. Canais NSFW voltam a pedir confirmação.'); renderAdult(); } } }, 'Retirar confirmação de 18+'));
+    } else {
+      if (isMinor()) {
+        adultBody.appendChild(el('div', { class: 'gk-hint' }, 'Canais e servidores +18 não estão disponíveis para a sua conta, de acordo com a data de nascimento informada.'));
+      } else {
+        adultBody.appendChild(el('div', { class: 'gk-hint', style: 'margin-bottom:10px;' }, 'Canais NSFW (+18) estão bloqueados e escondidos da lista. Confirme que tem 18 anos ou mais para liberar.'));
+        adultBody.appendChild(el('button', { type: 'button', class: 'gk-btn', onclick: () => showNsfwGate('conteúdo +18', () => { toast('Conteúdo +18 liberado.'); renderAdult(); }, 'servidor') }, 'Liberar conteúdo +18'));
+      }
+    }
+  };
+  renderAdult();
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [el('div', { class: 'gk-settings-card-title' }, 'Conteúdo adulto (+18)'), adultBody]));
+
   // ---------- Alterar e-mail ----------
   const newEmail = el('input', { type: 'email', id: 'gk-acc-new-email', autocomplete: 'email', placeholder: 'novo@email.com' });
   const emailPass = passwordField('Senha atual', 'gk-acc-email-pass', 'current-password');
@@ -161,7 +185,16 @@ export function renderAccountSection(content, { sectionHeader, toggleRow }) {
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Privacidade'),
     toggleRow('Esconder o jogo que estou jogando', !!privacy.hideActivity, (v) => savePrivacy({ hideActivity: v })),
+    toggleRow('Mostrar "Visto" nas minhas conversas privadas (e ver o dos outros)', !privacy.hideReadReceipts, (v) => savePrivacy({ hideReadReceipts: !v })),
     toggleRow('Esconder meus links no perfil', !!privacy.hideLinks, (v) => savePrivacy({ hideLinks: v })),
+  ]));
+
+  content.appendChild(buildSessionsCard());
+  content.appendChild(buildQuickRepliesCard());
+  content.appendChild(el('div', { class: 'gk-settings-card' }, [
+    el('div', { class: 'gk-settings-card-title' }, 'Seus dados'),
+    el('div', { class: 'gk-hint' }, 'Para exportar uma conversa, clique com o botão direito no canal ou na DM → "Exportar conversa".'),
+    el('button', { class: 'gk-btn gk-btn-ghost', type: 'button', style: 'margin-top:8px', onclick: exportFriends }, 'Exportar lista de amigos (.json)'),
   ]));
 
   // ---------- Bloqueados ----------
@@ -256,6 +289,7 @@ export async function deleteMyAccount() {
     await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
   });
   await tryStep('push', () => clearPushToken());
+  await tryStep('webpush', () => clearWebPushToken());
   stopBackgroundNotifications();
   // Perfil: se as regras novas ainda não foram publicadas isto falha — e aí não seguimos
   // para o apagar do login, senão a conta some e o perfil fica órfão para sempre.

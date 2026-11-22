@@ -10,6 +10,8 @@ import { ACCENTS, PREMIUM_ACCENTS, getThemePrefs, setThemeMode, setAccent } from
 import { VIDEO_EFFECTS } from './voice-fx.js';
 import { linkPreviewsEnabled, setLinkPreviews } from './link-preview.js';
 import { buildReportsCard } from './reports.js';
+import { syncQuietToProfile } from './quiet-hours.js';
+import { isWebPushSupported, isWebPushOn, enableWebPush, disableWebPush } from './web-push.js';
 import { getMediaPrefs, setMediaPrefs, SCREEN_QUALITIES, getNotifPrefs, setNotifPrefs, listMediaDevices, requestDesktopPermission } from './prefs.js';
 import { icon } from './icons.js';
 import { openImageCropper } from './cropper.js';
@@ -17,6 +19,7 @@ import { renderAccountSection } from './settings-account.js';
 import { buildCustomAccentCard, buildReadingCard, buildSurfaceCard, renderAccessibilitySection } from './settings-appearance.js';
 import { buildZoomCard, buildDesktopCard, buildHotkeysCard, buildIdleCard, renderExtensionsSection } from './settings-extras.js';
 import { initMobileSettings } from './settings-mobile.js';
+import { buildMyServerTagCard } from './server-profile.js';
 
 // Navegação lista → seção no celular (no desktop não faz nada; ver settings-mobile.js)
 let mobileSettings = null;
@@ -43,6 +46,10 @@ const FRAME_STYLES = [
   { id: 'none', label: 'Nenhuma' },
   { id: 'glacial', label: 'Glacial' },
   { id: 'aurora', label: 'Aurora' },
+  { id: 'neon', label: 'Neon' },
+  { id: 'chama', label: 'Chama' },
+  { id: 'ouro', label: 'Ouro' },
+  { id: 'galaxia', label: 'Galáxia' },
 ];
 
 let activeSection = 'perfil';
@@ -84,7 +91,7 @@ function renderNav() {
     }, [el('span', { class: 'gk-settings-nav-icon' }, [icon(s.icon, { size: 16 })]), el('span', {}, s.label)]));
   }
   nav.appendChild(el('div', { class: 'gk-settings-nav-footer' }, [
-    el('img', { src: 'img/logo.png', alt: '' }),
+    el('img', { src: 'img/logo.png?v=2', alt: '' }),
     el('p', {}, ['Mais que um chat,', el('br'), 'uma comunidade.']),
   ]));
 }
@@ -194,6 +201,7 @@ async function renderPerfilSection(content) {
     ]),
     el('div', { class: 'gk-field' }, [el('label', {}, 'Bio / status personalizado'), bioInput]),
   ]));
+  content.appendChild(buildMyServerTagCard());
 
   // --- Links sociais ---
   const linksList = el('div', { id: 'gk-settings-links-list' });
@@ -213,13 +221,15 @@ async function renderPerfilSection(content) {
   renderLinksList();
 
   const newPlatformSelect = el('select', { class: 'gk-select', style: 'width:auto;' },
-    Object.keys(SOCIAL_ICONS).map((k) => el('option', { value: k }, k)));
+    [['instagram', 'Instagram'], ['x', 'X (Twitter)'], ['github', 'GitHub'], ['youtube', 'YouTube'], ['twitch', 'Twitch'],
+      ['discord', 'Discord'], ['tiktok', 'TikTok'], ['linkedin', 'LinkedIn'], ['spotify', 'Spotify'], ['steam', 'Steam'], ['reddit', 'Reddit'], ['telegram', 'Telegram'], ['soundcloud', 'SoundCloud'], ['bluesky', 'Bluesky'], ['website', 'Site']]
+      .map(([k, t]) => el('option', { value: k }, t)));
   const newUrlInput = el('input', { type: 'text', placeholder: 'https://...', style: 'flex:1;' });
 
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Links sociais'),
     linksList,
-    el('div', { style: 'display:flex;gap:6px;margin-top:6px;' }, [
+    el('div', { class: 'gk-link-add' }, [
       newPlatformSelect, newUrlInput,
       el('button', {
         class: 'gk-btn gk-btn-ghost',
@@ -335,14 +345,14 @@ async function renderPerfilSection(content) {
     el('div', { class: 'gk-settings-card-title' }, [icon('diamond', { size: 14 }), ' Aparência do cartão']),
     !isPrime ? el('div', { class: 'gk-hint' }, 'Exclusivo G.K.IO Prime — você pode olhar as opções, mas só assinantes aplicam.') : null,
     pv,
-    el('label', { class: 'gk-admin-badge-check', style: 'margin-top:12px;' }, [themeToggle, ' Usar cores personalizadas']),
+    el('label', { class: 'gk-admin-badge-check gk-check', style: 'margin-top:12px;' }, [themeToggle, el('span', {}, 'Usar cores personalizadas')]),
     el('div', { class: 'gk-field-row', style: 'gap:12px;margin-top:6px;' }, [
       el('label', { class: 'gk-color-field' }, ['Cor principal ', colorPrimary]),
       el('label', { class: 'gk-color-field' }, ['Cor de destaque ', colorAccent]),
     ]),
-    el('div', { class: 'gk-settings-card-title', style: 'margin-top:14px;' }, 'Efeito ao abrir o perfil'),
+    el('div', { class: 'gk-settings-card-title gk-sub', style: 'margin-top:14px;' }, 'Efeito ao abrir o perfil'),
     swatchRow(PROFILE_EFFECTS, 'effect'),
-    el('div', { class: 'gk-settings-card-title', style: 'margin-top:14px;' }, 'Placa de nome'),
+    el('div', { class: 'gk-settings-card-title gk-sub', style: 'margin-top:14px;' }, 'Placa de nome'),
     el('div', { class: 'gk-hint' }, 'Aparece atrás do seu nome na lista de membros, nas conversas diretas e no cartão.'),
     swatchRow(NAMEPLATES, 'nameplate'),
   ]));
@@ -355,8 +365,8 @@ async function renderPerfilSection(content) {
   hideLinksCb.checked = !!priv.hideLinks;
   content.appendChild(el('div', { class: 'gk-settings-card' }, [
     el('div', { class: 'gk-settings-card-title' }, 'Privacidade do perfil'),
-    el('label', { class: 'gk-admin-badge-check' }, [hideActivityCb, ' Ocultar o jogo que estou jogando']),
-    el('label', { class: 'gk-admin-badge-check' }, [hideLinksCb, ' Ocultar meus links sociais no cartão']),
+    el('label', { class: 'gk-admin-badge-check gk-check' }, [hideActivityCb, el('span', {}, 'Ocultar o jogo que estou jogando')]),
+    el('label', { class: 'gk-admin-badge-check gk-check' }, [hideLinksCb, el('span', {}, 'Ocultar meus links sociais no cartão')]),
     el('div', { class: 'gk-hint' }, 'Vale para o cartão de perfil das outras pessoas. Você continua vendo tudo no seu.'),
   ]));
 
@@ -648,6 +658,10 @@ const WALLPAPER_PRESETS = [
   { id: 'mountains', label: 'Montanhas' },
   { id: 'mascot', label: 'Mascote' },
   { id: 'waves', label: 'Ondas' },
+  { id: 'sunset', label: 'Pôr do sol' },
+  { id: 'ocean', label: 'Oceano' },
+  { id: 'grid', label: 'Grade' },
+  { id: 'dots', label: 'Pontinhos' },
 ];
 
 function buildWallpaperCard() {
@@ -742,8 +756,44 @@ function renderNotificacoesSection(content) {
       }
       setNotifPrefs({ desktop: v });
     }),
+    ...(isWebPushSupported() ? [toggleRow('Avisos mesmo com o site fechado (push)', isWebPushOn(), async (v, rowEl) => {
+      const off = () => rowEl.querySelector('.gk-toggle').classList.remove('gk-on');
+      if (!v) { await disableWebPush(); toast('Push desativado neste navegador.'); return; }
+      const r = await enableWebPush();
+      if (r === 'ok') toast('Pronto! Você receberá avisos mesmo com o site fechado.');
+      else { off(); toast(r === 'not-configured' ? 'O push ainda não foi configurado pelo administrador (chave VAPID).' : r === 'denied' ? 'Permissão de notificação negada pelo navegador.' : 'Não foi possível ativar o push.', 'danger'); }
+    })] : []),
   ]));
+  content.appendChild(buildQuietCard());
   content.appendChild(buildIdleCard());
+}
+
+// Não perturbe com horário (ver js/quiet-hours.js)
+function buildQuietCard() {
+  const p = getNotifPrefs();
+  const from = el('input', { type: 'time', value: p.quietFrom || '22:00', 'aria-label': 'Começa às' });
+  const to = el('input', { type: 'time', value: p.quietTo || '07:00', 'aria-label': 'Termina às' });
+  const save = () => { setNotifPrefs({ quietFrom: from.value || '22:00', quietTo: to.value || '07:00' }); syncQuietToProfile(getNotifPrefs()); };
+  from.addEventListener('change', save); to.addEventListener('change', save);
+  const times = el('div', { class: 'gk-quiet-times' }, [
+    el('label', { class: 'gk-quiet-time' }, [el('span', {}, 'Começa às'), from]),
+    el('div', { class: 'gk-quiet-arrow', 'aria-hidden': 'true' }, '→'),
+    el('label', { class: 'gk-quiet-time' }, [el('span', {}, 'Termina às'), to]),
+  ]);
+  const setDim = (on) => times.classList.toggle('gk-dim', !on);
+  setDim(!!p.quiet);
+  return el('div', { class: 'gk-settings-card gk-quiet-card' }, [
+    el('div', { class: 'gk-quiet-head' }, [
+      el('div', { class: 'gk-quiet-ico' }, [icon('clock', { size: 20 })]),
+      el('div', {}, [
+        el('div', { class: 'gk-settings-card-title', style: 'margin:0' }, 'Não perturbe com horário'),
+        el('div', { class: 'gk-hint' }, 'Sem sons, avisos nem push durante a janela escolhida.'),
+      ]),
+    ]),
+    toggleRow('Ativar horário silencioso', !!p.quiet, (v) => { setNotifPrefs({ quiet: v }); syncQuietToProfile(getNotifPrefs()); setDim(v); }),
+    times,
+    el('div', { class: 'gk-hint gk-quiet-note' }, 'Vale também para o push com o app fechado. Nem menções avisam nesse período.'),
+  ]);
 }
 
 // ============================================================
@@ -831,7 +881,8 @@ function renderPrimeActiveView(content) {
 }
 
 function selectFrameStyle(frameId, frameRow) {
-  state.user.frameStyle = frameId; // otimista — a persistência real acontece no updateDoc abaixo
+  state.user.frameStyle = frameId;
+  window.dispatchEvent(new CustomEvent('gkio-frame-changed', { detail: { uid: state.user.uid, frame: frameId } })); // otimista — a persistência real acontece no updateDoc abaixo
   frameRow.querySelectorAll('.gk-frame-style-swatch').forEach((n) => n.classList.remove('gk-active'));
   frameRow.querySelector(`[data-frame-preview="${frameId}"]`).classList.add('gk-active');
   updateDoc(userDoc(state.user.uid), { frameStyle: frameId })
@@ -848,6 +899,28 @@ function primeSinceLabel(ts) {
 // ============================================================
 // Seção: Administração (só visível com isAdmin: true)
 // ============================================================
+// Números gerais do app, por contagem agregada do Firestore (barata: ~1 leitura a cada 1000 docs).
+function buildStatsCard() {
+  const grid = el('div', { class: 'gk-hint' }, 'Carregando…');
+  (async () => {
+    try {
+      const { getCountFromServer, collection, query: q2, where: w2 } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      const { db } = await import('./db.js');
+      const count = async (ref) => (await getCountFromServer(ref)).data().count;
+      const [users, servers, prime, reports] = await Promise.all([
+        count(collection(db, 'users')),
+        count(collection(db, 'servers')),
+        count(q2(collection(db, 'users'), w2('role', '==', 'prime'))),
+        count(collection(db, 'reports')),
+      ]);
+      grid.className = 'gk-admin-stats';
+      grid.replaceChildren(...[['Usuários', users], ['Servidores', servers], ['Prime', prime], ['Denúncias', reports]].map(([k, v]) =>
+        el('div', { class: 'gk-admin-stat' }, [el('b', {}, String(v)), el('span', {}, k)])));
+    } catch (e) { grid.textContent = 'Não foi possível carregar as estatísticas.'; }
+  })();
+  return el('div', { class: 'gk-settings-card' }, [el('div', { class: 'gk-settings-card-title' }, 'Visão geral'), grid]);
+}
+
 function renderAdminSection(content) {
   content.appendChild(sectionHeader('Administração', 'Gerencie assinaturas Prime e insígnias de qualquer usuário.', 'shield'));
 
@@ -860,6 +933,7 @@ function renderAdminSection(content) {
     el('div', { class: 'gk-field-row' }, [searchInput, searchBtn]),
   ]));
   content.appendChild(resultBox);
+  content.appendChild(buildStatsCard());
   content.appendChild(buildReportsCard({ canDelete: true }));
 
   async function doSearch() {

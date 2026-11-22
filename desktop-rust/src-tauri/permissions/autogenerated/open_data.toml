@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-data"
+description = "Enables the open_data command without any pre-configured scope."
+commands.allow = ["open_data"]
+
+[[permission]]
+identifier = "deny-open-data"
+description = "Denies the open_data command without any pre-configured scope."
+commands.deny = ["open_data"]

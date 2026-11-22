@@ -11,6 +11,7 @@ import { state, el, cleanupListener, toast } from './state.js';
 import { icon } from './icons.js';
 import { selectServer, joinServerAsMember, openCreateServerModal } from './servers.js';
 import { hideFriendsHome } from './dms.js';
+import { bannerGradient, buildServerTagChip, buildServerHighlights } from './server-profile.js';
 
 let unsubCommunities = null;
 let lastCommunities = [];
@@ -113,15 +114,20 @@ function renderCommunityList() {
 
   for (const server of list) {
     const alreadyIn = (server.memberIds || []).includes(auth.currentUser?.uid);
-    grid.appendChild(el('div', { class: 'gk-community-card' }, [
-      el('div', { class: 'gk-avatar gk-sz-56' }, [
+    const bannerStyle = server.bannerUrl && /^https?:\/\//i.test(server.bannerUrl)
+      ? `background-image:url("${server.bannerUrl.replace(/"/g, '%22')}")` : `background:${bannerGradient(server.bannerColor) || 'linear-gradient(135deg, #8B5CF6, #4F7DF7)'}`;
+    const tagChip = buildServerTagChip(server.serverTag);
+    grid.appendChild(el('div', { class: 'gk-community-card gk-community-rich' }, [
+      el('div', { class: 'gk-community-banner', style: bannerStyle }),
+      el('div', { class: 'gk-avatar gk-sz-56 gk-community-ico' }, [
         server.iconUrl
           ? el('img', { src: server.iconUrl })
           : el('div', { class: 'gk-server-picker-fallback' }, (server.name || '?').slice(0, 2).toUpperCase()),
       ]),
-      el('div', { class: 'gk-community-name' }, server.name || 'Servidor'),
-      el('div', { class: 'gk-community-desc' }, server.description || 'Sem descrição.'),
+      el('div', { class: 'gk-community-name' }, tagChip ? [server.name || 'Servidor', ' ', tagChip] : (server.name || 'Servidor')),
       el('div', { class: 'gk-community-sub' }, `${(server.memberIds || []).length} membro(s)`),
+      el('div', { class: 'gk-community-desc' }, server.description || 'Sem descrição.'),
+      buildServerHighlights(server),
       alreadyIn
         ? el('button', { class: 'gk-btn gk-btn-ghost gk-btn-block', onclick: () => selectServer(server.id) }, 'Abrir')
         : el('button', {

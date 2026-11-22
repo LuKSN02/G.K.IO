@@ -1,6 +1,7 @@
 // ============================================================
 // G.K.IO — Servidores, categorias e canais (estilo Discord)
 // ============================================================
+import { guardServer, isAdultConfirmed } from './nsfw-gate.js';
 import {
   db, auth, serversCol, serverDoc, categoriesCol, channelsCol, channelDoc, channelMessagesCol, addChannelMessage,
   membersCol, memberDoc, invitesCol, inviteDoc, userDoc, rolesCol, roleDoc,
@@ -22,6 +23,8 @@ import { confirmDialog, resetGenericModal } from './dialogs.js';
 import { icon, iconHtml } from './icons.js';
 import { hideFriendsHome } from './dms.js';
 import { maybeShowRules } from './server-extras.js';
+import { maybeShowVerify } from './server-guard.js';
+import { initServerFolders, buildFolderedList } from './server-folders.js';
 
 // Sempre que o estado de leitura mudar, re-renderiza a sidebar de canais
 // do servidor atualmente aberto pra atualizar os indicadores de não lida.
@@ -213,6 +216,10 @@ export async function listServerInvites(serverId, { all = false } = {}) {
 }
 
 // Privacidade: 'private' = só entra com convite · 'public' = aparece em Comunidades e qualquer pessoa entra.
+export async function setServerNsfw(serverId, nsfw) {
+  await updateDoc(serverDoc(serverId), { nsfw: !!nsfw });
+}
+
 export async function setServerVisibility(serverId, visibility) {
   const value = visibility === 'public' ? 'public' : 'private';
   await updateDoc(serverDoc(serverId), { visibility: value });
@@ -276,7 +283,7 @@ export async function joinServerAsMember(serverId, { inviteCode = null, inviteUs
   } catch (err) {
     // As regras barram quem foi banido (servers/{id}/bans/{uid}) — a pessoa não pode ler a
     // lista de bans, então não dá para confirmar; deixamos a pista na mensagem.
-    if (err?.code === 'permission-denied') throw new Error('Não foi possível entrar neste servidor. Você pode ter sido banido dele.');
+    if (err?.code === 'permission-denied') throw new Error('Não foi possível entrar neste servidor. Você pode ter sido banido, ou ele trancou as entradas por um tempo (anti-raid).');
     throw err;
   }
   return { usesCounted: false };
@@ -314,7 +321,7 @@ async function joinPrivateWithInvite(serverId, cfg, { inviteCode, inviteUses }) 
     }
   } catch (err) {
     if (err?.code === 'permission-denied') {
-      throw new Error('Não foi possível entrar com este convite. Ele pode ter expirado ou esgotado, ou você foi banido deste servidor.');
+      throw new Error('Não foi possível entrar com este convite. Ele pode ter expirado ou esgotado, você foi banido, ou o servidor trancou as entradas por um tempo (anti-raid).');
     }
     throw err;
   }
@@ -418,11 +425,12 @@ export function getRoles() {
   return [...lastRoles.values()].sort((a, b) => (a.position || 0) - (b.position || 0));
 }
 
-export async function createRole(serverId, { name, color, permissions }) {
+export async function createRole(serverId, { name, color, permissions, hoist }) {
   const existing = await getDocs(query(rolesCol(serverId)));
   const ref = await addDoc(rolesCol(serverId), {
     name: (name || '').trim() || 'Novo cargo',
     color: color || ROLE_COLOR_SWATCHES[0],
+    hoist: !!hoist,
     permissions: { ...emptyPermissions(), ...(permissions || {}) },
     position: existing.size,
     createdAt: serverTimestamp(),
@@ -436,6 +444,7 @@ export async function updateRole(serverId, roleId, patch) {
   const clean = {};
   if (patch.name !== undefined) clean.name = patch.name.trim() || 'Cargo';
   if (patch.color !== undefined) clean.color = patch.color;
+  if (patch.hoist !== undefined) clean.hoist = !!patch.hoist;
   if (patch.permissions !== undefined) clean.permissions = { ...emptyPermissions(), ...patch.permissions };
   await updateDoc(roleDoc(serverId, roleId), clean);
   // As permissões desse cargo podem ter mudado — recalcula e regrava a
@@ -665,6 +674,41 @@ export async function createCategory(serverId, name) {
   logAudit(serverId, 'category.create', { details: { name: name.trim() || 'Nova categoria' } });
 }
 
+export function openCreateCategoryModal(serverId) {
+  const overlay = document.getElementById('gk-generic-modal-overlay');
+  const modal = document.getElementById('gk-generic-modal');
+  modal.innerHTML = '';
+  const input = el('input', { type: 'text', placeholder: 'Ex.: Geral, Jogos, Estudos', maxlength: '40' });
+  let btn = null;
+  const submit = async () => {
+    const name = input.value.trim();
+    if (!name) { toast('Digite um nome para a categoria.', 'danger'); input.focus(); return; }
+    btn.disabled = true; btn.textContent = 'Criando…';
+    try {
+      await createCategory(serverId, name);
+      closeGenericModal();
+      toast(`Categoria "${name}" criada.`);
+    } catch (err) {
+      console.error('[categoria] falha ao criar:', err);
+      const denied = err && (err.code === 'permission-denied' || /permission/i.test(err.message || ''));
+      toast(denied ? 'Sem permissão para criar categorias neste servidor.' : 'Não foi possível criar a categoria: ' + (err.message || err), 'danger');
+      btn.disabled = false; btn.textContent = 'Criar categoria';
+    }
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
+    el('div', { class: 'gk-modal-icon' }, [icon('plus', { size: 20 })]),
+    el('div', {}, [el('h2', {}, 'Criar categoria'), el('p', { class: 'gk-modal-sub' }, 'Categorias agrupam canais na lista do servidor.')]),
+  ]));
+  modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome da categoria'), input]));
+  modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
+    el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
+    btn = el('button', { class: 'gk-btn gk-btn-primary', onclick: submit }, 'Criar categoria'),
+  ]));
+  overlay.classList.add('gk-open');
+  input.focus();
+}
+
 export async function renameCategory(serverId, catId, name) {
   await updateDoc(doc(db, 'servers', serverId, 'categories', catId), { name: name.trim() || 'Categoria' });
 }
@@ -708,6 +752,7 @@ export async function deleteChannel(serverId, channelId) {
 // ---------- Rail de servidores ----------
 export function listenUserServers() {
   cleanupListener('_servers');
+  initServerFolders(() => { if (state.currentView === 'server-picker') renderServerPicker(); });
   const uid = auth.currentUser.uid;
   const q = query(serversCol(), where('memberIds', 'array-contains', uid));
   unsubServers = onSnapshot(q, (snap) => {
@@ -731,14 +776,14 @@ function renderServerPicker() {
   if (!state.servers.size) {
     body.appendChild(el('div', { class: 'gk-empty-state' }, [
       el('div', { class: 'gk-emoji' }, [icon('gamepad', { size: 32 })]),
-      el('div', {}, 'Você ainda não está em nenhum servidor. Crie um ou entre com um convite.'),
+      el('div', {}, 'Você ainda não está em nenhum servidor. Crie um ou peça para um amigo te convidar.'),
     ]));
     return;
   }
-  const list = el('div', { class: 'gk-server-picker-list' });
-  for (const server of state.servers.values()) {
-    list.appendChild(el('div', {
+  const makeRow = (server) => (
+    el('div', {
       class: 'gk-server-picker-row',
+      'data-server-id': server.id,
       onclick: () => selectServer(server.id),
     }, [
       el('div', { class: 'gk-avatar gk-sz-40' }, [
@@ -750,9 +795,9 @@ function renderServerPicker() {
         el('div', { class: 'gk-server-picker-name' }, server.name || 'Servidor'),
         el('div', { class: 'gk-server-picker-sub' }, `${(server.memberIds || []).length} membro(s)`),
       ]),
-    ]));
-  }
-  body.appendChild(list);
+    ])
+  );
+  body.appendChild(buildFolderedList([...state.servers.values()], makeRow));
 }
 
 // Chamado quando a pessoa clica em "Servidor" no rail principal — mostra
@@ -791,6 +836,7 @@ export function goToServerPickerView() {
 
 // ---------- Selecionar servidor ----------
 export function selectServer(serverId) {
+  if (!guardServer(serverId, () => selectServer(serverId))) return; // servidor +18: pede confirmação
   state.currentView = 'server';
   state.currentServerId = serverId;
   state.currentChannelId = null;
@@ -812,6 +858,7 @@ export function selectServer(serverId) {
   document.getElementById('gk-server-settings-btn').style.display = 'inline-flex';
   const evBtn = document.getElementById('gk-server-events-btn'); if (evBtn) evBtn.style.display = 'inline-flex';
   document.getElementById('gk-members-toggle-btn').style.display = 'inline-flex';
+  maybeShowVerify(serverId); // pergunta de verificação (se o servidor exige)
   maybeShowRules(serverId); // tela de regras (só aparece se o servidor exige aceite e você ainda não aceitou)
 }
 
@@ -830,7 +877,7 @@ function listenCategoriesAndChannels(serverId) {
       lastChannels = channels;
       renderServerSidebar(serverId, categories, channels);
       emitServerDataChange(serverId);
-      if (!state.currentChannelId) {
+      if (!state.currentChannelId && !window.matchMedia('(max-width: 900px)').matches) { // no celular a pessoa escolhe o canal na lista
         const firstText = channels.find((c) => c.type === 'text' && canViewChannel(serverId, c));
         if (firstText) selectChannel(serverId, firstText.id, firstText.name, !canSendInChannel(serverId, firstText));
       }
@@ -844,7 +891,7 @@ function renderServerSidebar(serverId, categories, channels) {
   const body = document.getElementById('gk-sidebar-body');
   body.innerHTML = '';
   for (const cat of categories) {
-    const catChannels = channels.filter((c) => c.categoryId === cat.id && canViewChannel(serverId, c));
+    const catChannels = channels.filter((c) => c.categoryId === cat.id && canViewChannel(serverId, c) && !(c.nsfw && !isAdultConfirmed() && !canManageChannels(serverId))); // NSFW some da lista de quem não confirmou 18+ (quem gerencia canais continua vendo, senão não acharia o canal que acabou de criar)
     const list = el('div', { class: 'gk-channel-list' });
     for (const ch of catChannels) {
       const isActive = state.currentChannelId === ch.id;
@@ -861,12 +908,13 @@ function renderServerSidebar(serverId, categories, channels) {
         // Canal marcado como +18: fica exposto como atributo para temas/plugins
         // (ex.: o plugin BetterNsfwTag mostra uma tag "NSFW" ao lado do nome).
         'data-nsfw': ch.nsfw ? 'true' : undefined,
+        'data-channel-id': ch.id, 'data-ch-server': serverId, 'data-ch-type': ch.type,
         onclick: () => ch.type === 'text'
           ? selectChannel(serverId, ch.id, ch.name, !canSendInChannel(serverId, ch))
           : confirmJoinVoiceChannel(serverId, ch),
       }, [
-        el('span', { class: 'gk-channel-icon' }, ch.type === 'text' ? '#' : [icon('speaker', { size: 14 })]),
-        el('span', {}, ch.name),
+        el('span', { class: 'gk-channel-icon' }, ch.type === 'text' ? (ch.forum ? '▤' : '#') : [icon('speaker', { size: 14 })]),
+        el('span', {}, ch.stage ? `${ch.name} · palco` : ch.name),
       ]);
       list.appendChild(row);
       if (ch.type === 'voice') {
@@ -878,7 +926,14 @@ function renderServerSidebar(serverId, categories, channels) {
       el('div', {
         class: 'gk-category-label',
         onclick: (e) => e.currentTarget.parentElement.classList.toggle('gk-collapsed'),
-      }, [el('span', { class: 'gk-chevron' }, [icon('chevronDown', { size: 13 })]), el('span', {}, cat.name)]),
+      }, [
+        el('span', { class: 'gk-chevron' }, [icon('chevronDown', { size: 13 })]),
+        el('span', { class: 'gk-category-name' }, cat.name),
+        canManageChannels(serverId) ? el('button', {
+          type: 'button', class: 'gk-category-add', title: 'Criar canal nesta categoria', 'aria-label': `Criar canal em ${cat.name}`,
+          onclick: (e) => { e.stopPropagation(); openCreateChannelModal(serverId, categories, cat.id); },
+        }, [icon('plus', { size: 14 })]) : null,
+      ].filter(Boolean)),
       list,
     ]);
     body.appendChild(catNode);
@@ -891,6 +946,11 @@ function renderServerSidebar(serverId, categories, channels) {
       onclick: () => openCreateChannelModal(serverId, categories),
     }, [el('span', { class: 'gk-channel-icon' }, [icon('plus', { size: 14 })]), el('span', {}, 'Novo canal')]);
     body.appendChild(addBtn);
+    body.appendChild(el('div', {
+      class: 'gk-channel', style: 'color:var(--gk-accent);font-weight:600;',
+      onclick: () => openCreateCategoryModal(serverId),
+    }, [el('span', { class: 'gk-channel-icon' }, [icon('plus', { size: 14 })]), el('span', {}, 'Nova categoria')]));
+    if (!categories.length) body.appendChild(el('div', { class: 'gk-hint', style: 'padding:6px 14px;opacity:.7;' }, 'Este servidor ainda não tem categorias. Crie uma para começar a adicionar canais.'));
   }
   // quem está numa sala de voz precisa redesenhar a lista de participantes (ver calls.js)
   window.dispatchEvent(new CustomEvent('gkio-channels-rendered', { detail: { serverId } }));
@@ -938,6 +998,7 @@ function listenMembers(serverId) {
     resolved.forEach((m) => { if (m) cache.set(m.uid, m); });
     state.serverMembersCache.set(serverId, cache);
     renderMembersPanel(cache, serverId);
+    watchMemberPresence(serverId, cache);
     // Um cargo pode ter mudado (ex: alguém virou admin) — re-renderiza a
     // sidebar de canais para atualizar a visibilidade do "Novo canal".
     if (state.currentServerId === serverId) renderServerSidebar(serverId, lastCategories, lastChannels);
@@ -949,14 +1010,35 @@ function listenMembers(serverId) {
 function renderMembersPanel(cache, serverId) {
   const panel = document.getElementById('gk-members');
   panel.innerHTML = '';
-  panel.appendChild(el('div', { class: 'gk-members-label' }, `Membros — ${cache.size}`));
   const isOwner = canIManageMembers(serverId);
-  for (const m of cache.values()) {
+  const me = auth.currentUser?.uid;
+  const nameOf = (m) => (m.nickname || m.user.displayName || m.user.username || '').toLowerCase();
+  const all = [...cache.values()].sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'pt-BR'));
+  // Cargos com "exibir separadamente" viram grupos próprios (como no Discord). A ordem é a da lista de cargos.
+  const rolesSorted = [...lastRoles.values()].sort((a, b) => (a.position || 0) - (b.position || 0));
+  const hoistOf = (m) => rolesSorted.find((r) => r.hoist && (m.roleIds || []).includes(r.id));
+  const colorOf = (m) => rolesSorted.find((r) => r.color && (m.roleIds || []).includes(r.id))?.color || '';
+  const isOnline = (m) => effectiveStatus(m.user) !== 'offline';
+  const taken = new Set();
+  const take = (list) => { list.forEach((m) => taken.add(m.uid)); return list; };
+  const owners = take(all.filter((m) => (m.role || 'member') === 'owner'));
+  const admins = take(all.filter((m) => m.role === 'admin' && isOnline(m) && !taken.has(m.uid)));
+  const hoisted = rolesSorted.filter((r) => r.hoist).map((r) => [r.name, take(all.filter((m) => !taken.has(m.uid) && isOnline(m) && hoistOf(m)?.id === r.id))]);
+  const groups = [
+    ['Dono', owners],
+    ['Administradores', admins],
+    ...hoisted,
+    ['Online', all.filter((m) => !taken.has(m.uid) && isOnline(m))],
+    ['Offline', all.filter((m) => m.role !== 'owner' && !isOnline(m))],
+  ];
+  const renderRow = (m) => {
     const role = m.role || 'member';
     const roleLabel = role === 'owner' ? 'Dono' : role === 'admin' ? 'Admin' : null;
-
+    const nameColor = colorOf(m);
     const nameLine = el('div', { class: 'gk-name' }, [
-      document.createTextNode(m.nickname || m.user.displayName || m.user.username),
+      nameColor && isOnline(m)
+        ? el('span', { style: `color:${nameColor}` }, m.nickname || m.user.displayName || m.user.username)
+        : document.createTextNode(m.nickname || m.user.displayName || m.user.username),
     ]);
     if (roleLabel) nameLine.appendChild(el('span', { class: `gk-role-badge gk-role-${role}` }, roleLabel));
     for (const rid of m.roleIds || []) {
@@ -967,30 +1049,64 @@ function renderMembersPanel(cache, serverId) {
         style: `background:${customRole.color}22;color:${customRole.color};border-color:${customRole.color}55;`,
       }, customRole.name));
     }
-
     const rowChildren = [
-      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(m.user) }, [
+      el('div', { class: 'gk-avatar gk-sz-32', 'data-status': effectiveStatus(m.user), 'data-frame': m.user.frameStyle || 'none' }, [
         el('img', { src: m.user.avatarUrl || fallbackAvatar(m.user.username) }),
       ]),
       el('div', { class: 'gk-member-text' }, [
         nameLine,
-        (currentActivity(m.user) && !(m.user.privacy?.hideActivity && m.uid !== auth.currentUser?.uid)) ? el('div', { class: 'gk-activity-line', title: 'Jogando ' + currentActivity(m.user).name }, 'Jogando ' + currentActivity(m.user).name) : null,
+        (currentActivity(m.user) && !(m.user.privacy?.hideActivity && m.uid !== me)) ? el('div', { class: 'gk-activity-line', title: 'Jogando ' + currentActivity(m.user).name }, 'Jogando ' + currentActivity(m.user).name) : null,
       ]),
     ];
-
     // Só o dono vê o botão de promover/rebaixar, e nunca para si mesmo ou para outro dono.
-    if (isOwner && role !== 'owner' && m.uid !== auth.currentUser?.uid) {
+    if (isOwner && role !== 'owner' && m.uid !== me) {
       rowChildren.push(el('button', {
         class: 'gk-member-role-btn',
         title: role === 'admin' ? 'Remover cargo de administrador' : 'Tornar administrador (pode criar canais)',
         onclick: (e) => { e.stopPropagation(); setMemberRole(serverId, m.uid, role === 'admin' ? 'member' : 'admin'); },
       }, [icon(role === 'admin' ? 'starFilled' : 'starOutline', { size: 14 })]));
     }
-
-    const row = el('div', { class: 'gk-member-row', 'data-nameplate': profileCosmetics(m.user).nameplate, onclick: () => openProfileCard(m.uid) }, rowChildren);
-    panel.appendChild(row);
+    return el('div', {
+      class: 'gk-member-row' + (effectiveStatus(m.user) === 'offline' ? ' gk-member-offline' : ''),
+      'data-member-uid': m.uid, 'data-nameplate': profileCosmetics(m.user).nameplate, onclick: () => openProfileCard(m.uid),
+    }, rowChildren);
+  };
+  for (const [label, list] of groups) {
+    if (!list.length) continue;
+    panel.appendChild(el('div', { class: 'gk-members-label' }, `${label} — ${list.length}`));
+    list.forEach((m) => panel.appendChild(renderRow(m)));
   }
 }
+
+// Presença ao vivo dos membros do servidor (limitada para não abrir centenas de ouvintes).
+let memberPresenceUnsubs = new Map();
+let memberPresenceTimer = null;
+function watchMemberPresence(serverId, cache) {
+  const want = new Set([...cache.keys()].filter((u) => u !== auth.currentUser?.uid).slice(0, 80));
+  for (const [uid, un] of memberPresenceUnsubs) if (!want.has(uid)) { un(); memberPresenceUnsubs.delete(uid); }
+  for (const uid of want) {
+    if (memberPresenceUnsubs.has(uid)) continue;
+    let first = true;
+    const un = onSnapshot(userDoc(uid), (snap) => {
+      if (!snap.exists()) return;
+      const m = (state.serverMembersCache.get(serverId) || cache).get(uid);
+      if (!m) return;
+      const before = [effectiveStatus(m.user), m.user.displayName, m.user.avatarUrl, m.user.frameStyle, currentActivity(m.user)?.name].join('|');
+      m.user = snap.data();
+      const after = [effectiveStatus(m.user), m.user.displayName, m.user.avatarUrl, m.user.frameStyle, currentActivity(m.user)?.name].join('|');
+      if (first) { first = false; if (before === after) return; }
+      first = false;
+      if (before === after) return;
+      clearTimeout(memberPresenceTimer);
+      memberPresenceTimer = setTimeout(() => {
+        const c = state.serverMembersCache.get(serverId);
+        if (c && state.currentServerId === serverId) renderMembersPanel(c, serverId);
+      }, 150);
+    }, () => {});
+    memberPresenceUnsubs.set(uid, un);
+  }
+}
+function stopMemberPresence() { for (const un of memberPresenceUnsubs.values()) un(); memberPresenceUnsubs.clear(); }
 
 // Promover/rebaixar o cargo legado 'admin' continua exclusivo do dono
 // (mesma lógica de canManageRoles) — é diferente de canKickMembers, que
@@ -1000,12 +1116,14 @@ export function canIManageMembers(serverId) {
 }
 
 // ---------- Criação de categoria / canal ----------
-export function openCreateChannelModal(serverId, categories) {
+export function openCreateChannelModal(serverId, categories, presetCategoryId = null) {
+  if (!categories || !categories.length) { toast('Crie uma categoria primeiro — os canais ficam dentro dela.'); openCreateCategoryModal(serverId); return; }
   const overlay = document.getElementById('gk-generic-modal-overlay');
   const modal = document.getElementById('gk-generic-modal');
   modal.innerHTML = '';
 
   let selectedType = 'text';
+  let createBtn = null;
 
   // Campo de nome, com prefixo # (texto) ou 🔊 (voz) que acompanha o tipo escolhido.
   const nameInput = el('input', { type: 'text', placeholder: 'novo-canal', maxlength: '80' });
@@ -1035,16 +1153,27 @@ export function openCreateChannelModal(serverId, categories) {
     voiceOption.classList.toggle('gk-active', type === 'voice');
     prefixEl.innerHTML = type === 'text' ? '#' : iconHtml('speaker', { size: 15 });
     nsfwRow.style.display = type === 'text' ? '' : 'none';
+    forumRow.style.display = type === 'text' ? '' : 'none';
+    stageRow.style.display = type === 'voice' ? '' : 'none';
   }
+
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); createBtn?.click(); } });
 
   const catSelect = el('select', { class: 'gk-select' },
     categories.map((c) => el('option', { value: c.id }, c.name)));
+  if (presetCategoryId) catSelect.value = presetCategoryId;
 
   // Canal +18 (só faz sentido em canais de texto).
   const nsfwCheckbox = el('input', { type: 'checkbox' });
   const nsfwRow = el('label', { class: 'gk-nsfw-option' }, [
     nsfwCheckbox,
-    el('span', {}, [el('strong', {}, 'Canal NSFW (+18)'), el('small', {}, 'Marca o canal como conteúdo adulto. Plugins e temas podem destacá-lo.')]),
+    el('span', {}, [el('strong', {}, 'Canal NSFW (+18)'), el('small', {}, 'Conteúdo adulto: só abre depois de a pessoa confirmar ter 18 anos, e as imagens ficam desfocadas.')]),
+  ]);
+
+  const forumCheckbox = el('input', { type: 'checkbox' });
+  const forumRow = el('label', { class: 'gk-nsfw-option' }, [
+    forumCheckbox,
+    el('span', {}, [el('strong', {}, 'Fórum'), el('small', {}, 'Cada mensagem vira um post com título e etiquetas; as respostas ficam num tópico.')]),
   ]);
 
   modal.appendChild(el('div', { class: 'gk-modal-icon-header' }, [
@@ -1057,24 +1186,44 @@ export function openCreateChannelModal(serverId, categories) {
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Nome do canal'), nameWrap]));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Tipo'), el('div', { class: 'gk-type-picker' }, [textOption, voiceOption])]));
   modal.appendChild(el('div', { class: 'gk-field' }, [el('label', {}, 'Categoria'), catSelect]));
+  const stageCheckbox = el('input', { type: 'checkbox' });
+  const stageRow = el('label', { class: 'gk-nsfw-option' }, [
+    stageCheckbox,
+    el('span', {}, [el('strong', {}, 'Palco'), el('small', {}, 'Só quem você chamar ao palco fala; a plateia pede a palavra. Moderadores sempre podem falar.')]),
+  ]);
+  stageRow.style.display = 'none';
   modal.appendChild(nsfwRow);
+  modal.appendChild(forumRow);
+  modal.appendChild(stageRow);
   modal.appendChild(el('div', { class: 'gk-modal-actions' }, [
     el('button', { class: 'gk-btn gk-btn-ghost', onclick: closeGenericModal }, 'Cancelar'),
-    el('button', {
+    createBtn = el('button', {
       class: 'gk-btn gk-btn-primary',
       onclick: async () => {
-        if (!nameInput.value.trim()) return;
-        const chQ = query(channelsCol(serverId));
-        const existing = await getDocs(chQ);
-        await addDoc(channelsCol(serverId), {
-          name: nameInput.value.trim(),
-          type: selectedType,
-          categoryId: catSelect.value,
-          position: existing.size,
-          nsfw: selectedType === 'text' && nsfwCheckbox.checked,
-        });
-        logAudit(serverId, 'channel.create', { details: { name: nameInput.value.trim() } });
-        closeGenericModal();
+        const name = nameInput.value.trim().replace(/^-+|-+$/g, '');
+        if (!name) { toast('Digite um nome para o canal (letras, números, - e _).', 'danger'); nameInput.focus(); return; }
+        if (!catSelect.value) { toast('Crie uma categoria antes de criar o canal.', 'danger'); return; }
+        createBtn.disabled = true; createBtn.textContent = 'Criando…';
+        try {
+          const existing = await getDocs(query(channelsCol(serverId)));
+          await addDoc(channelsCol(serverId), {
+            name,
+            type: selectedType,
+            categoryId: catSelect.value,
+            position: existing.size,
+            nsfw: selectedType === 'text' && nsfwCheckbox.checked,
+            forum: selectedType === 'text' && forumCheckbox.checked,
+            stage: selectedType === 'voice' && stageCheckbox.checked,
+          });
+          logAudit(serverId, 'channel.create', { details: { name } });
+          closeGenericModal();
+          toast(`Canal ${selectedType === 'voice' ? '' : '#'}${name} criado.`);
+        } catch (err) {
+          console.error('[canal] falha ao criar:', err);
+          const denied = err && (err.code === 'permission-denied' || /permission/i.test(err.message || ''));
+          toast(denied ? 'Sem permissão para criar canais neste servidor (confira as regras do Firestore e o seu cargo).' : 'Não foi possível criar o canal: ' + (err.message || err), 'danger');
+          createBtn.disabled = false; createBtn.textContent = 'Criar canal';
+        }
       },
     }, 'Criar canal'),
   ]));
@@ -1273,7 +1422,7 @@ export function openCreateServerModal() {
         type: 'button', class: 'gk-server-icon-option' + (iconMode === preset.id ? ' gk-active' : ''),
         title: preset.label,
         onclick: () => { iconMode = preset.id; iconFile = null; renderAll(); },
-      }, [preset.kind === 'logo' ? el('img', { src: 'img/logo.png' }) : icon(preset.icon, { size: 20 })]));
+      }, [preset.kind === 'logo' ? el('img', { src: 'img/logo.png?v=2' }) : icon(preset.icon, { size: 20 })]));
     }
     const fileInput = el('input', { type: 'file', accept: 'image/*', style: 'display:none;' });
     fileInput.addEventListener('change', async () => {
@@ -1396,7 +1545,7 @@ export function openCreateServerModal() {
     const iconEl = iconMode === 'custom' && iconFile
       ? el('img', { src: URL.createObjectURL(iconFile) })
       : iconMode === 'brand'
-        ? el('img', { src: 'img/logo.png' })
+        ? el('img', { src: 'img/logo.png?v=2' })
         : el('div', { class: 'gk-wizard-preview-icon-glyph' }, [icon(ICON_PRESETS.find((p) => p.id === iconMode)?.icon || 'sparkles', { size: 24 })]);
 
     const chanList = el('div', { class: 'gk-wizard-preview-channels' });
